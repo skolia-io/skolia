@@ -1,1 +1,1 @@
-{"author":{"id":"ad87ffa09351c4e5a412ec8ee1546e86b314f33d6f28629bb4bcfe7b2290924d"},"ops":[{"type":5,"timestamp":1794657356,"nonce":"a+noClFawGeTWqcId5t6qYqCv2o=","added":["p0"],"removed":null}]}
+{"author":{"id":"ad87ffa09351c4e5a412ec8ee1546e86b314f33d6f28629bb4bcfe7b2290924d"},"ops":[{"type":2,"timestamp":1794657356,"nonce":"hY6Cv9A8mUBEeyDid49XDWDKxBM=","title":"Make every text offset a UTF-16 index, as JavaScript counts, starting with the analysis","was":"Analysis offsets are code points; the reader and API read them as UTF-16 units"}]}
