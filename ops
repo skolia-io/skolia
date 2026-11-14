@@ -1,1 +1,1 @@
-{"author":{"id":"ad87ffa09351c4e5a412ec8ee1546e86b314f33d6f28629bb4bcfe7b2290924d"},"ops":[{"type":3,"timestamp":1794653100,"nonce":"57Jd/5MPoNMMXJkku5KkQJ4ogW0=","message":"Done in #76: the kind, per-kind data and cap CHECKs are dropped; the API (AnnotationContent) checks kinds and data, the insert's WHERE the cap.","files":null}]}
+{"author":{"id":"ad87ffa09351c4e5a412ec8ee1546e86b314f33d6f28629bb4bcfe7b2290924d"},"ops":[{"type":4,"timestamp":1794653100,"nonce":"rA7I0qVE7pCFnYnbdGlmSz/EeF8=","status":2}]}
