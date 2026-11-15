@@ -90,15 +90,17 @@ test("0011 moves entries' and annotations' licences, authors and sources to one 
     { licence: "unknown", author: null, source: null },
   ]);
   assert.deepEqual(
-    all(`SELECT e.document_id, e.title, e.visibility, e.annotations_count, c.licence, c.author FROM user_document e
-         JOIN attribution c ON c.id = e.attribution_id ORDER BY e.document_id`),
+    all(`SELECT entry.document_id, entry.title, entry.visibility, entry.annotations_count, attribution.licence, attribution.author FROM user_document entry
+         JOIN attribution ON attribution.id = entry.attribution_id ORDER BY entry.document_id`),
     [
       { document_id: "a", title: "Bajka", visibility: "public", annotations_count: 2, licence: "cc-by-nc-4.0", author: "Ala" },
       { document_id: "b", title: "Notatki", visibility: "private", annotations_count: 0, licence: "unknown", author: null },
     ],
   );
   assert.deepEqual(
-    all("SELECT n.id, c.licence FROM user_document_annotation n JOIN attribution c ON c.id = n.attribution_id ORDER BY n.id"),
+    all(
+      "SELECT annotation.id, attribution.licence FROM user_document_annotation annotation JOIN attribution ON attribution.id = annotation.attribution_id ORDER BY annotation.id",
+    ),
     [
       { id: "x", licence: "cc-by-nc-4.0" },
       { id: "y", licence: "cc0" },

@@ -438,18 +438,18 @@ function removeQuery(id: DocumentId, user: UserId): Sql {
 }
 
 const SELECT_ANNOTATION = select({
-  id: "a.id",
-  start: "a.start",
-  end: "a.end",
-  kind: "a.kind",
-  data: "a.data",
+  id: "annotation.id",
+  start: "annotation.start",
+  end: "annotation.end",
+  kind: "annotation.kind",
+  data: "annotation.data",
   licence: "attribution.licence",
   author: "attribution.author",
   source: "attribution.source",
-  addedAt: "a.added_at",
+  addedAt: "annotation.added_at",
 })
-  .from("user_document_annotation", "a")
-  .join("attribution", eq("attribution.id", col("a.attribution_id")));
+  .from("user_document_annotation", "annotation")
+  .join("attribution", eq("attribution.id", col("annotation.attribution_id")));
 
 /** A page of the entry's annotations that overlap the range, and one more if there is one,
  * by user_document_annotation_start_idx. The index bounds start; end is checked on each row,
@@ -462,13 +462,13 @@ function annotationsQuery(
   { after, limit }: PageRequest<AnnotationKey>,
 ): Query {
   return SELECT_ANNOTATION.where(
-    eq("a.user_id", user),
-    eq("a.document_id", id),
-    to !== undefined && lt("a.start", to),
-    from !== undefined && gt("a.end", from),
-    after !== undefined && gt(row("a.start", "a.id"), after),
+    eq("annotation.user_id", user),
+    eq("annotation.document_id", id),
+    to !== undefined && lt("annotation.start", to),
+    from !== undefined && gt("annotation.end", from),
+    after !== undefined && gt(row("annotation.start", "annotation.id"), after),
   )
-    .orderBy("a.start", "a.id")
+    .orderBy("annotation.start", "annotation.id")
     .limit(limit + 1);
 }
 
@@ -483,7 +483,7 @@ function annotateQuery(id: DocumentId, user: UserId, a: Annotation): Sql {
 }
 
 function annotationQuery(id: DocumentId, user: UserId, annotationId: AnnotationId): Query {
-  return SELECT_ANNOTATION.where(eq("a.user_id", user), eq("a.document_id", id), eq("a.id", annotationId));
+  return SELECT_ANNOTATION.where(eq("annotation.user_id", user), eq("annotation.document_id", id), eq("annotation.id", annotationId));
 }
 
 function unannotateQuery(id: DocumentId, user: UserId, annotationId: AnnotationId): Sql {
