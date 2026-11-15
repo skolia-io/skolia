@@ -73,7 +73,7 @@ test("a file that isn't YAML of a kind is refused, naming the file and what's wr
 
 const WLOSY = `kind: inline
 title: Włosy
-licence: cc-by-nc
+licence: cc-by-nc-4.0
 text: |
 
   [Thuli ma krótkie włosy.]{2}
@@ -83,7 +83,7 @@ annotations:
   "2":
     kind: audio
     url: https://example.org/02.mp3
-    licence: cc-by
+    licence: cc-by-4.0
     author: Helena Gabriela
     source: https://example.org/story
   3:
@@ -120,7 +120,7 @@ test("an inline text's annotations are on its spans, in the text without markup,
       await annotationId({
         kind: "audio",
         data: { url: "https://example.org/02.mp3" },
-        licence: "cc-by",
+        licence: "cc-by-4.0",
         author: "Helena Gabriela",
         source: "https://example.org/story",
         start: 0,
@@ -200,11 +200,12 @@ test("a Wolne Lektury header with an ISBN ends at it, however many blank lines f
 
 test("a Wolne Lektury licence is read from its footer", () => {
   assert.equal(wolneLekturyLicence(`a\n\n\n\nb${FOOTER_PD}`), "public-domain");
-  const cc = (version: string) =>
-    `a\n\n\n\nb\n-----\nTen utwór jest udostępniony na licencji Creative Commons: https://creativecommons.org/licenses/${version}/3.0/\n`;
-  assert.equal(wolneLekturyLicence(cc("by-sa")), "cc-by-sa");
-  assert.equal(wolneLekturyLicence(cc("by")), "cc-by");
-  assert.throws(() => wolneLekturyLicence(cc("by-nc-nd")), /names no licence/u);
+  const cc = (kind: string, version = "3.0") =>
+    `a\n\n\n\nb\n-----\nTen utwór jest udostępniony na licencji Creative Commons: https://creativecommons.org/licenses/${kind}/${version}/\n`;
+  assert.equal(wolneLekturyLicence(cc("by-sa")), "cc-by-sa-3.0");
+  assert.equal(wolneLekturyLicence(cc("by")), "cc-by-3.0");
+  assert.equal(wolneLekturyLicence(cc("by-sa", "4.0")), "cc-by-sa-4.0");
+  assert.throws(() => wolneLekturyLicence(cc("by-sa", "2.5")), /names no licence/u);
   assert.throws(() => wolneLekturyLicence("a\n\n\n\nb"), /no "-----" footer/u);
 });
 
@@ -271,14 +272,14 @@ test("curated/ is read by language, and holds only .yaml files", async () => {
 test("annotations can share fields through YAML merge keys", async () => {
   const yaml =
     "kind: inline\ntitle: A\nlicence: cc0\nsource: &story https://example.org/story\ntext: '[a]{x} [b]{y}'\nannotations:\n" +
-    "  x:\n    <<: &narration\n      kind: audio\n      licence: cc-by\n      source: *story\n    url: https://example.org/x.mp3\n" +
+    "  x:\n    <<: &narration\n      kind: audio\n      licence: cc-by-4.0\n      source: *story\n    url: https://example.org/x.mp3\n" +
     "  y:\n    <<: *narration\n    url: https://example.org/y.mp3\n";
   const [text] = await resolveCurated([parseCurated("pl/a.yaml", "pl", yaml)], noFetch);
   assert.deepEqual(
     text?.annotations.map((a) => [a.request.kind, a.request.data, a.request.licence, a.request.source]),
     [
-      ["audio", { url: "https://example.org/x.mp3" }, "cc-by", "https://example.org/story"],
-      ["audio", { url: "https://example.org/y.mp3" }, "cc-by", "https://example.org/story"],
+      ["audio", { url: "https://example.org/x.mp3" }, "cc-by-4.0", "https://example.org/story"],
+      ["audio", { url: "https://example.org/y.mp3" }, "cc-by-4.0", "https://example.org/story"],
     ],
   );
 });

@@ -63,12 +63,18 @@ export type Visibility = (typeof VISIBILITIES)[number];
 export const LICENCES = [
   "public-domain",
   "cc0",
-  "cc-by",
-  "cc-by-sa",
-  "cc-by-nc",
-  "cc-by-nc-sa",
-  "cc-by-nd",
-  "cc-by-nc-nd",
+  "cc-by-4.0",
+  "cc-by-3.0",
+  "cc-by-sa-4.0",
+  "cc-by-sa-3.0",
+  "cc-by-nc-4.0",
+  "cc-by-nc-3.0",
+  "cc-by-nc-sa-4.0",
+  "cc-by-nc-sa-3.0",
+  "cc-by-nd-4.0",
+  "cc-by-nd-3.0",
+  "cc-by-nc-nd-4.0",
+  "cc-by-nc-nd-3.0",
   "all-rights-reserved",
   "unknown",
 ] as const;
@@ -83,12 +89,18 @@ export type Licence = (typeof LICENCES)[number];
 export const SHAREABLE_LICENCES = [
   "public-domain",
   "cc0",
-  "cc-by",
-  "cc-by-sa",
-  "cc-by-nc",
-  "cc-by-nc-sa",
-  "cc-by-nd",
-  "cc-by-nc-nd",
+  "cc-by-4.0",
+  "cc-by-3.0",
+  "cc-by-sa-4.0",
+  "cc-by-sa-3.0",
+  "cc-by-nc-4.0",
+  "cc-by-nc-3.0",
+  "cc-by-nc-sa-4.0",
+  "cc-by-nc-sa-3.0",
+  "cc-by-nd-4.0",
+  "cc-by-nd-3.0",
+  "cc-by-nc-nd-4.0",
+  "cc-by-nc-nd-3.0",
 ] as const satisfies readonly Licence[];
 
 export type ShareableLicence = (typeof SHAREABLE_LICENCES)[number];
@@ -106,31 +118,27 @@ export interface LicenceInfo {
   url: string | null;
 }
 
+/** A CC licence's names and deed: cc("by-sa", "4.0", …) is CC BY-SA 4.0. */
+function cc(kind: string, version: string, terms: string): LicenceInfo {
+  const short = `CC ${kind.toUpperCase()} ${version}`;
+  return { short, label: `${short} (${terms})`, url: `https://creativecommons.org/licenses/${kind}/${version}/` };
+}
+
 export const LICENCE_INFO: Record<Licence, LicenceInfo> = {
   "public-domain": { short: "Public domain", label: "Public domain", url: null },
   cc0: { short: "CC0", label: "CC0 (no rights reserved)", url: "https://creativecommons.org/publicdomain/zero/1.0/" },
-  "cc-by": { short: "CC BY", label: "CC BY (attribution)", url: "https://creativecommons.org/licenses/by/4.0/" },
-  "cc-by-sa": { short: "CC BY-SA", label: "CC BY-SA (attribution, share-alike)", url: "https://creativecommons.org/licenses/by-sa/4.0/" },
-  "cc-by-nc": {
-    short: "CC BY-NC",
-    label: "CC BY-NC (attribution, non-commercial)",
-    url: "https://creativecommons.org/licenses/by-nc/4.0/",
-  },
-  "cc-by-nc-sa": {
-    short: "CC BY-NC-SA",
-    label: "CC BY-NC-SA (attribution, non-commercial, share-alike)",
-    url: "https://creativecommons.org/licenses/by-nc-sa/4.0/",
-  },
-  "cc-by-nd": {
-    short: "CC BY-ND",
-    label: "CC BY-ND (attribution, no derivatives)",
-    url: "https://creativecommons.org/licenses/by-nd/4.0/",
-  },
-  "cc-by-nc-nd": {
-    short: "CC BY-NC-ND",
-    label: "CC BY-NC-ND (attribution, non-commercial, no derivatives)",
-    url: "https://creativecommons.org/licenses/by-nc-nd/4.0/",
-  },
+  "cc-by-4.0": cc("by", "4.0", "attribution"),
+  "cc-by-3.0": cc("by", "3.0", "attribution"),
+  "cc-by-sa-4.0": cc("by-sa", "4.0", "attribution, share-alike"),
+  "cc-by-sa-3.0": cc("by-sa", "3.0", "attribution, share-alike"),
+  "cc-by-nc-4.0": cc("by-nc", "4.0", "attribution, non-commercial"),
+  "cc-by-nc-3.0": cc("by-nc", "3.0", "attribution, non-commercial"),
+  "cc-by-nc-sa-4.0": cc("by-nc-sa", "4.0", "attribution, non-commercial, share-alike"),
+  "cc-by-nc-sa-3.0": cc("by-nc-sa", "3.0", "attribution, non-commercial, share-alike"),
+  "cc-by-nd-4.0": cc("by-nd", "4.0", "attribution, no derivatives"),
+  "cc-by-nd-3.0": cc("by-nd", "3.0", "attribution, no derivatives"),
+  "cc-by-nc-nd-4.0": cc("by-nc-nd", "4.0", "attribution, non-commercial, no derivatives"),
+  "cc-by-nc-nd-3.0": cc("by-nc-nd", "3.0", "attribution, non-commercial, no derivatives"),
   "all-rights-reserved": { short: "All rights reserved", label: "All rights reserved, or not sure", url: null },
   unknown: { short: "Licence unknown", label: "Unknown", url: null },
 };

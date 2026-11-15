@@ -150,11 +150,11 @@ test("a public text needs a licence that allows sharing it", async () => {
     assert.equal(response.status, 400, String(licence));
   }
   assert.equal((await importText(app, TEXT, { visibility: "public", licence: "mit" })).status, 400);
-  assert.equal((await importText(app, TEXT, { visibility: "public", licence: "cc-by", source: "ftp://x" })).status, 400);
+  assert.equal((await importText(app, TEXT, { visibility: "public", licence: "cc-by-4.0", source: "ftp://x" })).status, 400);
   assert.deepEqual(await local.takeQueued(), []);
   const response = await importText(app, TEXT, {
     visibility: "public",
-    licence: "cc-by-nc-nd",
+    licence: "cc-by-nc-nd-4.0",
     author: " Bolesław Prus ",
     source: "https://example.org/lalka",
   });
@@ -162,7 +162,7 @@ test("a public text needs a licence that allows sharing it", async () => {
   const summary = (await response.json()) as DocumentSummary;
   assert.deepEqual(
     { visibility: summary.visibility, licence: summary.licence, author: summary.author, source: summary.source },
-    { visibility: "public", licence: "cc-by-nc-nd", author: "Bolesław Prus", source: "https://example.org/lalka" },
+    { visibility: "public", licence: "cc-by-nc-nd-4.0", author: "Bolesław Prus", source: "https://example.org/lalka" },
   );
   assert.equal("licensor" in summary, false);
 });
@@ -179,7 +179,7 @@ test("a public import of the user's own private text makes it public under the n
   );
   assert.deepEqual(await listed(app), [summary.id]);
   // A private import of their public text doesn't hide it or change its licence
-  await importText(app, TEXT, { visibility: "private", licence: "cc-by-nd" });
+  await importText(app, TEXT, { visibility: "private", licence: "cc-by-nd-4.0" });
   assert.deepEqual(await listed(app), [summary.id]);
   assert.equal((await summaryOf(app, summary.id)).licence, "public-domain");
 });
@@ -275,11 +275,11 @@ test("the importer changes a document's title, licence, author and source; nobod
   const id = await imported(app, importer, TEXT, { visibility: "public", licence: "cc0", author: "A", source: "https://example.org/a" });
   const { title, licence, author, source } = await body(
     "patch",
-    patch(app, importer, id, { title: " Nowy tytuł ", licence: "cc-by", author: null }),
+    patch(app, importer, id, { title: " Nowy tytuł ", licence: "cc-by-4.0", author: null }),
   );
   assert.deepEqual(
     { title, licence, author, source },
-    { title: "Nowy tytuł", licence: "cc-by", author: null, source: "https://example.org/a" },
+    { title: "Nowy tytuł", licence: "cc-by-4.0", author: null, source: "https://example.org/a" },
   );
   await expectStatus("unshareable licence", patch(app, importer, id, { licence: "all-rights-reserved" }), 400);
   await expectStatus("blank title", patch(app, importer, id, { title: "  " }), 400);
@@ -373,11 +373,11 @@ test("the importer makes a document public under a shareable licence, and privat
   const id = await imported(app, importer, TEXT);
   const alice = await local.signIn((await local.signUp(ALICE)).id);
   await expectStatus("public without a licence", patch(app, importer, id, { visibility: "public" }), 400);
-  await expectStatus("public", patch(app, importer, id, { visibility: "public", licence: "cc-by-sa" }), 200);
+  await expectStatus("public", patch(app, importer, id, { visibility: "public", licence: "cc-by-sa-4.0" }), 200);
   assert.deepEqual(await listed(app, alice), [id]);
   await expectStatus("private", patch(app, importer, id, { visibility: "private" }), 200);
   assert.deepEqual(await listed(app, alice), []);
-  assert.equal((await body("get", view(app, importer, id))).licence, "cc-by-sa");
+  assert.equal((await body("get", view(app, importer, id))).licence, "cc-by-sa-4.0");
 });
 
 test("a summary says whether the viewer imported it", async () => {

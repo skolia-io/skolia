@@ -1,7 +1,7 @@
 kind: inline
 title: "Nozibele i jej trzy włosy"
 author: "Tessa Welch; translated by Aleksandra Migorska"
-licence: cc-by
+licence: cc-by-4.0
 source: &story https://global-asp.github.io/storybooks-poland/stories/pl/0066/
 tags:
   level: A2
@@ -35,7 +35,7 @@ annotations:
   "02":
     <<: &narration
       kind: audio
-      licence: cc-by
+      licence: cc-by-4.0
       author: Helena Gabriela
       source: *story
     url: https://globalstorybooks.net/media/audio/pl/0066/mp3/02.mp3

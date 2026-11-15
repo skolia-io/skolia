@@ -15,7 +15,7 @@ function summary(state: DocumentSummary["state"], reading?: typeof OLD, error?: 
     importedAt: timestamp(new Date(0)),
     words: 1,
     visibility: "public",
-    licence: "cc-by",
+    licence: "cc-by-4.0",
     author: null,
     source: null,
     tags: {},
