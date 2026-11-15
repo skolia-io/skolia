@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { annotationId, canonicalJson, cutsWord, insideWord, type IdentifiedBy } from "./annotations.ts";
+
+const segmenter = (lang: string) => new Intl.Segmenter(lang, { granularity: "word" });
 import { NewAnnotation } from "./schemas.ts";
 
 test("an offset is inside a word only strictly within a word-like segment", () => {
   const text = "Idę do starego psa.";
-  const inside = Array.from({ length: text.length + 1 }, (_, i) => i).filter((i) => insideWord(text, i, "pl"));
+  const inside = Array.from({ length: text.length + 1 }, (_, i) => i).filter((i) => insideWord(text, i, segmenter("pl")));
   assert.deepEqual(inside, [1, 2, 5, 8, 9, 10, 11, 12, 13, 16, 17]);
 });
 
@@ -22,11 +24,12 @@ test("a range cuts a word when it starts or ends inside one; whitespace and punc
 test("a word longer than the window around an offset is still one word", () => {
   const long = "a".repeat(300);
   const text = `x ${long} y`;
-  for (const offset of [3, 65, 66, 67, 130, 200, 300]) assert.equal(insideWord(text, offset, "en"), true, String(offset));
-  for (const offset of [0, 1, 2, 302, 303, text.length]) assert.equal(insideWord(text, offset, "en"), false, String(offset));
+  for (const offset of [3, 65, 66, 67, 130, 200, 300]) assert.equal(insideWord(text, offset, segmenter("en")), true, String(offset));
+  for (const offset of [0, 1, 2, 302, 303, text.length]) assert.equal(insideWord(text, offset, segmenter("en")), false, String(offset));
   const words = Array.from({ length: 50 }, (_, i) => `słowo${i}`).join(" ");
   const boundaries = [...new Intl.Segmenter("pl", { granularity: "word" }).segment(words)].map((s) => s.index);
-  for (let i = 0; i <= words.length; i++) assert.equal(insideWord(words, i, "pl"), !boundaries.includes(i) && i < words.length, String(i));
+  for (let i = 0; i <= words.length; i++)
+    assert.equal(insideWord(words, i, segmenter("pl")), !boundaries.includes(i) && i < words.length, String(i));
 });
 
 test("canonical JSON sorts every object's keys and has no whitespace", () => {

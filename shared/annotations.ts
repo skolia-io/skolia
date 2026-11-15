@@ -23,23 +23,20 @@ export async function annotationId({ start, end, kind, data, licence, author, so
  * it cuts through a word, or null when it doesn't. Words are Intl.Segmenter's word-like
  * segments in the text's language; a range may start or end on whitespace or punctuation. */
 export function cutsWord(text: string, start: number, end: number, lang: string): string | null {
-  if (insideWord(text, start, lang)) return `the annotation starts inside a word, at ${start}`;
-  if (insideWord(text, end, lang)) return `the annotation ends inside a word, at ${end}`;
+  const segmenter = new Intl.Segmenter(lang, { granularity: "word" });
+  if (insideWord(text, start, segmenter)) return `the annotation starts inside a word, at ${start}`;
+  if (insideWord(text, end, segmenter)) return `the annotation ends inside a word, at ${end}`;
   return null;
 }
 
 /** Code units either side of an offset that insideWord segments, at first. */
 const WINDOW = 64;
 
-const segmenters = new Map<string, Intl.Segmenter>();
-
 /** Whether the offset is strictly inside a word-like segment of the text. Segments a window
  * around the offset rather than the whole text, widened while the segment at the offset, or
  * the one ending there, reaches a place where the window cut the text, so it might go on. */
-export function insideWord(text: string, offset: number, lang: string): boolean {
+export function insideWord(text: string, offset: number, segmenter: Intl.Segmenter): boolean {
   if (offset <= 0 || offset >= text.length) return false;
-  const segmenter = segmenters.get(lang) ?? new Intl.Segmenter(lang, { granularity: "word" });
-  segmenters.set(lang, segmenter);
   for (let radius = WINDOW; ; radius *= 2) {
     const from = Math.max(0, offset - radius);
     const to = Math.min(text.length, offset + radius);
