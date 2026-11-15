@@ -30,7 +30,7 @@ The back shows the sentence filled in, the word's grammar (accusative · singula
 cloze(card_id, document_id, sentence, sentence_start, blank_start, blank_end, feats, why)
 ```
 
-`sentence_start`, `blank_start` and `blank_end` are offsets in the text, as the analysis gives them; the blank in `sentence` is at `blank_start - sentence_start`. A text never changes (its id is its hash), so a word's offset in it is the same however a redone analysis splits its sentences, and `UNIQUE (document_id, blank_start)` finds its card again. The analysis counts code points and the reader UTF-16 units, which differ outside the BMP (a git-bug).
+`sentence_start`, `blank_start` and `blank_end` are offsets in the text, as the analysis gives them; the blank in `sentence` is at `blank_start - sentence_start`. A text never changes (its id is its hash), so a word's offset in it is the same however a redone analysis splits its sentences, and `UNIQUE (document_id, blank_start)` finds its card again. They are UTF-16 code units, JavaScript string indices, as every offset is.
 
 `cloze` has a constant `kind = 'cloze'` and a foreign key on `(card_id, kind)` to `card (id, kind)`, so a cloze row belongs to a cloze card; deleting a card deletes its cloze row, and its reviews, by `ON DELETE CASCADE`.
 

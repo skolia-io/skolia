@@ -10,21 +10,6 @@ export function audioAnnotations(annotations: readonly Annotation[]): readonly A
   return annotations.filter((a): a is AudioAnnotation => a.kind === "audio");
 }
 
-/** An audio annotation and its range in code points, as the analysis counts (git-bug ec23aef). */
-export type PlacedAudio = {
-  readonly annotation: AudioAnnotation;
-  readonly start: number;
-  readonly end: number;
-};
-
-/** Code points past the BMP, two UTF-16 units each: a text without them counts the same both ways. */
-const ASTRAL = /[\u{10000}-\u{10FFFF}]/u;
-
-/** A UTF-16 offset into the text, in code points; astral: whether the text has any past the BMP. */
-function codePoints(text: string, astral: boolean, offset: number): number {
-  return astral ? [...text.slice(0, offset)].length : offset;
-}
-
 /** The text's paragraphs, split on blank lines and trimmed, as [start, end) in UTF-16 units. */
 function paragraphs(text: string): readonly (readonly [number, number])[] {
   const breaks = [...text.matchAll(/\n[^\S\n]*\n\s*/gu)];
@@ -44,22 +29,20 @@ export function placeAudio(
   text: string,
   pieces: readonly Piece[],
   annotations: readonly AudioAnnotation[],
-): ReadonlyMap<number, readonly PlacedAudio[]> {
+): ReadonlyMap<number, readonly AudioAnnotation[]> {
   const words = pieces.flatMap((piece, index) => {
     const token = piece.kind === "word" ? piece.words[0]?.token : undefined;
     return token ? [{ index, start: token.start, end: token.end }] : [];
   });
-  const astral = ASTRAL.test(text);
   const bounds = paragraphs(text);
   const starts = new Set(bounds.map(([start]) => start));
   const ends = new Set(bounds.map(([, end]) => end));
   return annotations.reduce((places, annotation) => {
     if (!starts.has(annotation.start) || !ends.has(annotation.end)) return places;
-    const placed = { annotation, start: codePoints(text, astral, annotation.start), end: codePoints(text, astral, annotation.end) };
-    const word = words[firstEndingAfter(words, placed.start)];
-    if (word && word.start < placed.end) places.set(word.index, [...(places.get(word.index) ?? []), placed]);
+    const word = words[firstEndingAfter(words, annotation.start)];
+    if (word && word.start < annotation.end) places.set(word.index, [...(places.get(word.index) ?? []), annotation]);
     return places;
-  }, new Map<number, readonly PlacedAudio[]>());
+  }, new Map<number, readonly AudioAnnotation[]>());
 }
 
 /** The first word, in order, that ends after offset; words.length if none does. */
@@ -74,7 +57,7 @@ function firstEndingAfter(words: readonly { readonly end: number }[], offset: nu
 }
 
 /** Whether the piece is a word in the range. */
-export function inRange(range: PlacedAudio, piece: Piece): boolean {
+export function inRange(range: AudioAnnotation, piece: Piece): boolean {
   const token = piece.kind === "word" ? piece.words[0]?.token : undefined;
   return token !== undefined && token.start < range.end && token.end > range.start;
 }

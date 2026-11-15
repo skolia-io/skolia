@@ -88,6 +88,8 @@ export const ReviewRequest = z.object({
 
 /** The start of the reader's day, for counting today's new cards in its time zone. */
 const Index = z.number().int().min(0).max(MAX_TEXT_LENGTH);
+/** An offset into a text in UTF-16 code units: a JavaScript string index. */
+const TextOffset = z.number().int().min(0).max(MAX_TEXT_LENGTH);
 
 /** Where a reader was in a text: the word at the top of their screen, by sentence and
  * token index in its analysis, and when they were there, so an older position doesn't
@@ -108,9 +110,9 @@ export const DueQuery = z.object({ lang: Lang, dayStart: IsoTime, group: z.enum(
 export const Cloze = z.object({
   documentId: DocumentId,
   sentence: z.string().min(1).max(MAX_CLOZE_SENTENCE),
-  sentenceStart: Index,
-  blankStart: Index,
-  blankEnd: Index,
+  sentenceStart: TextOffset,
+  blankStart: TextOffset,
+  blankEnd: TextOffset,
   feats: z.record(z.string(), z.string()),
   why: z.string().max(MAX_CLOZE_WHY).nullable(),
 });
@@ -131,7 +133,7 @@ export const WordKey = z.tuple([LemmaId]).readonly();
 export const WordsQuery = pageQuery(WordKey, WORD_PAGE);
 
 /** Where a cloze card is in the list of a text's: where its blank starts. */
-export const ClozeKey = z.tuple([Index]).readonly();
+export const ClozeKey = z.tuple([TextOffset]).readonly();
 export const ClozesQuery = pageQuery(ClozeKey, CLOZE_PAGE).extend({ documentId: DocumentId });
 
 /** cloze: a cloze card's sentence, null for a word's cards. */
@@ -280,8 +282,8 @@ export const AnnotationContent = z.discriminatedUnion(
 export const Annotation = z.intersection(
   z.object({
     id: AnnotationId,
-    start: Index,
-    end: Index,
+    start: TextOffset,
+    end: TextOffset,
     licence: z.enum(SHAREABLE_LICENCES),
     author: z.string().nullable(),
     source: z.string().nullable(),
@@ -300,11 +302,12 @@ export const AnnotationAttribution = z.object({
 /** An annotation to add: its data must be its kind's, and it must end after it starts. That
  * it ends within the text is checked against the text. */
 export const NewAnnotation = z
-  .intersection(z.object({ start: Index, end: Index, ...AnnotationAttribution.shape }), AnnotationContent)
+  .intersection(z.object({ start: TextOffset, end: TextOffset, ...AnnotationAttribution.shape }), AnnotationContent)
   .refine((a) => a.start < a.end, { message: "an annotation must end after it starts", path: ["end"] })
   .transform((a) => ({ ...a, author: a.author ?? null, source: a.source ?? null }));
 
-export const AnnotationKey = z.tuple([Index, AnnotationId]).readonly();
+export const AnnotationKey = z.tuple([TextOffset, AnnotationId]).readonly();
+/** A TextOffset in a query string. */
 const Offset = z.coerce.number().int().min(0).max(MAX_TEXT_LENGTH);
 /** A page of an entry's annotations; from and to, only those overlapping [from, to). */
 export const AnnotationsQuery = pageQuery(AnnotationKey, ANNOTATION_PAGE)

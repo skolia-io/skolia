@@ -23,7 +23,7 @@ from .nkjp import VERB_FORM_CLASSES, tag_class
 from .valency import Valency
 
 LANG = "pl"
-PLUGIN_VERSION = "0.7"
+PLUGIN_VERSION = "0.8"
 
 # Parser models, by name. Each loads on first use. All are trained on UD Polish PDB, whose
 # conventions schema.py and the dictionary conversion assume. Scores: analysis/EVALUATION.md.

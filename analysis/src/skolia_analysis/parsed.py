@@ -37,7 +37,8 @@ class ParsedToken:
 
     text: str
     start: int
-    """Character offset into the source text."""
+    """Code point offset into the source text, a Python string index; the blob converts it
+    to UTF-16."""
     end: int
     words: tuple[ParsedWord, ...]
 

@@ -389,9 +389,10 @@ export interface DueCard extends ScheduledCard {
 export type ScheduledCard = z.output<typeof schemas.ScheduledCard>;
 
 /** A cloze card's sentence, copied from its text so the card outlives the text and its
- * analysis. sentenceStart, blankStart and blankEnd are offsets in the text (blankParts
- * cuts the sentence at the blank). feats: the blanked word's, and why: the reader's
- * explanation of its case, both from the analysis when the card was made. */
+ * analysis. sentenceStart, blankStart and blankEnd are offsets in the text in UTF-16 code
+ * units, JavaScript string indices (blankParts cuts the sentence at the blank). feats: the
+ * blanked word's, and why: the reader's explanation of its case, both from the analysis
+ * when the card was made. */
 export type Cloze = z.output<typeof schemas.Cloze>;
 export type NewCloze = z.output<typeof schemas.NewCloze>;
 /** What the reader sends: the same, before the API's validation brands its ids. */
@@ -449,9 +450,9 @@ export type ReadingFilter = { readonly status: ReadingStatus; readonly lang: Lan
  * first, then by id. */
 export type ReadingKey = z.output<typeof schemas.ReadingKey>;
 
-/** Something an entry's user attached to a range of its text, start to end in UTF-16 units
- * as JavaScript counts them: a kind and its data (AnnotationContent). Seen wherever the entry
- * is, with its own licence, author and source. id: a hash of what it says. */
+/** Something an entry's user attached to a range of its text, start to end in UTF-16 code
+ * units, JavaScript string indices: a kind and its data (AnnotationContent). Seen wherever
+ * the entry is, with its own licence, author and source. id: a hash of what it says. */
 export type Annotation = z.output<typeof schemas.Annotation>;
 export type AnnotationId = z.output<typeof schemas.AnnotationId>;
 /** What the reader sends to add one. */
@@ -460,7 +461,7 @@ export type NewAnnotation = z.input<typeof schemas.NewAnnotation>;
 export type AnnotationKey = z.output<typeof schemas.AnnotationKey>;
 
 /** Which of an entry's annotations a page keeps: those overlapping [from, to), in UTF-16
- * units, either side open when it's left out. */
+ * code units, either side open when it's left out. */
 export type AnnotationFilter = { readonly from: number | undefined; readonly to: number | undefined };
 
 /** What an annotation holds, its kind and that kind's data. */
