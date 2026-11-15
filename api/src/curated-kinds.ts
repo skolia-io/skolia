@@ -17,8 +17,8 @@ export type Resolved = {
   readonly annotations: readonly NewAnnotation[];
 };
 
-const CREDIT_FIELDS: readonly string[] = Object.keys(schemas.AnnotationCredit.shape);
-const Annotation = z.intersection(schemas.AnnotationCredit, schemas.AnnotationContent);
+const ATTRIBUTION_FIELDS: readonly string[] = Object.keys(schemas.AnnotationAttribution.shape);
+const Annotation = z.intersection(schemas.AnnotationAttribution, schemas.AnnotationContent);
 
 /** An annotation in a curated file: what the API's NewAnnotation takes but where it is,
  * which its span gives, and with its kind's data beside its kind and credit rather than
@@ -26,8 +26,8 @@ const Annotation = z.intersection(schemas.AnnotationCredit, schemas.AnnotationCo
 const CuratedAnnotation = z.looseObject({}).transform((item, context): z.output<typeof Annotation> => {
   const fields = Object.entries(item);
   const nested = {
-    ...Object.fromEntries(fields.filter(([key]) => key === "kind" || CREDIT_FIELDS.includes(key))),
-    data: Object.fromEntries(fields.filter(([key]) => key !== "kind" && !CREDIT_FIELDS.includes(key))),
+    ...Object.fromEntries(fields.filter(([key]) => key === "kind" || ATTRIBUTION_FIELDS.includes(key))),
+    data: Object.fromEntries(fields.filter(([key]) => key !== "kind" && !ATTRIBUTION_FIELDS.includes(key))),
   };
   const parsed = Annotation.safeParse(nested);
   if (parsed.success) return parsed.data;

@@ -278,9 +278,9 @@ const COLUMNS = {
   title: "entry.title",
   importedAt: "entry.imported_at",
   visibility: "entry.visibility",
-  licence: "credit.licence",
-  author: "credit.author",
-  source: "credit.source",
+  licence: "attribution.licence",
+  author: "attribution.author",
+  source: "attribution.source",
   lang: "document.lang",
   words: "document.words",
   importerName: "user.name",
@@ -293,7 +293,7 @@ const joined = (query: Select): Select =>
   query
     .join("document", eq("document.id", col("entry.document_id")))
     .join("user", eq("user.id", col("entry.user_id")))
-    .join("attribution", "credit", eq("credit.id", col("entry.attribution_id")));
+    .join("attribution", eq("attribution.id", col("entry.attribution_id")));
 
 const SELECT_DOCUMENT = joined(select({ id: "entry.document_id", user: "entry.user_id", ...COLUMNS }).from("user_document", "entry"));
 
@@ -403,25 +403,25 @@ function addContentQuery({ id, lang, words }: DocumentContent): Sql {
   return sql`INSERT OR IGNORE INTO document (id, lang, words) VALUES ${sql.tuple([id, lang, words])}`;
 }
 
-type Credit = { readonly licence: Licence; readonly author: string | null; readonly source: string | null };
+type Attribution = { readonly licence: Licence; readonly author: string | null; readonly source: string | null };
 
-/** Adds the credit unless there's a row for it already. A row the CHECKs refuse fails. */
-function addCreditQuery({ licence, author, source }: Credit): Sql {
+/** Adds the attribution unless there's a row for it already. A row the CHECKs refuse fails. */
+function addAttributionQuery({ licence, author, source }: Attribution): Sql {
   return sql`INSERT INTO attribution (licence, author, source) VALUES ${sql.tuple([licence, author, source])} ON CONFLICT DO NOTHING`;
 }
 
-/** The credit's row's id, by attribution_credit_idx, for a statement after addCreditQuery's. */
-function creditId({ licence, author, source }: Credit): Sql {
+/** The attribution's id, by attribution_credit_idx, for a statement after addAttributionQuery's. */
+function attributionId({ licence, author, source }: Attribution): Sql {
   return sql`(SELECT id FROM attribution WHERE licence = ${licence} AND ifnull(author, '') = ${author ?? ""} AND ifnull(source, '') = ${source ?? ""})`;
 }
 
 function addEntryQuery(e: DocumentEntry): Sql {
   return sql`INSERT OR IGNORE INTO user_document (user_id, document_id, title, imported_at, visibility, attribution_id)
-    VALUES ${sql.tuple([e.user, e.id, e.title, e.importedAt, e.visibility, creditId(e)])}`;
+    VALUES ${sql.tuple([e.user, e.id, e.title, e.importedAt, e.visibility, attributionId(e)])}`;
 }
 
 function updateQuery(id: DocumentId, user: UserId, fields: EntryFields): Sql {
-  return sql`UPDATE user_document SET title = ${fields.title}, visibility = ${fields.visibility}, attribution_id = ${creditId(fields)}
+  return sql`UPDATE user_document SET title = ${fields.title}, visibility = ${fields.visibility}, attribution_id = ${attributionId(fields)}
     WHERE document_id = ${id} AND user_id = ${user}`;
 }
 
@@ -443,13 +443,13 @@ const SELECT_ANNOTATION = select({
   end: "a.end",
   kind: "a.kind",
   data: "a.data",
-  licence: "credit.licence",
-  author: "credit.author",
-  source: "credit.source",
+  licence: "attribution.licence",
+  author: "attribution.author",
+  source: "attribution.source",
   addedAt: "a.added_at",
 })
   .from("user_document_annotation", "a")
-  .join("attribution", "credit", eq("credit.id", col("a.attribution_id")));
+  .join("attribution", eq("attribution.id", col("a.attribution_id")));
 
 /** A page of the entry's annotations that overlap the range, and one more if there is one,
  * by user_document_annotation_start_idx. The index bounds start; end is checked on each row,
@@ -477,7 +477,7 @@ function annotationsQuery(
  * Only a duplicate is skipped: a row the table's CHECKs refuse fails. */
 function annotateQuery(id: DocumentId, user: UserId, a: Annotation): Sql {
   return sql`INSERT INTO user_document_annotation (user_id, document_id, id, start, "end", kind, data, attribution_id, added_at)
-    SELECT ${sql.join([user, id, a.id, a.start, a.end, a.kind, JSON.stringify(a.data), creditId(a), a.addedAt], ", ")}
+    SELECT ${sql.join([user, id, a.id, a.start, a.end, a.kind, JSON.stringify(a.data), attributionId(a), a.addedAt], ", ")}
     WHERE (SELECT annotations_count FROM user_document WHERE user_id = ${user} AND document_id = ${id}) < ${MAX_ANNOTATIONS}
     ON CONFLICT (user_id, document_id, id) DO NOTHING`;
 }
@@ -536,7 +536,7 @@ export const DOCUMENT_QUERIES = {
   visible: compile(visibleQuery(SOME_ENTRY.id, SOMEONE)).text,
   has: compile(hasQuery(SOME_ENTRY.id)).text,
   addContent: compile(addContentQuery({ id: SOME_ENTRY.id, lang: "pl", words: 1 })).text,
-  addCredit: compile(addCreditQuery(SOME_ENTRY)).text,
+  addAttribution: compile(addAttributionQuery(SOME_ENTRY)).text,
   addEntry: compile(addEntryQuery(SOME_ENTRY)).text,
   update: compile(updateQuery(SOME_ENTRY.id, SOMEONE, SOME_ENTRY)).text,
   addTag: compile(addTagQuery(SOMEONE, SOME_ENTRY.id, "level", "A1")).text,
@@ -615,7 +615,7 @@ export class D1Documents implements DocumentStore {
   async add(content: DocumentContent, entry: DocumentEntry): Promise<void> {
     await this.db.batch([
       prepare(this.db, addContentQuery(content)),
-      prepare(this.db, addCreditQuery(entry)),
+      prepare(this.db, addAttributionQuery(entry)),
       prepare(this.db, addEntryQuery(entry)),
       ...this.addTags(entry.user, entry.id, entry.tags),
     ]);
@@ -623,7 +623,7 @@ export class D1Documents implements DocumentStore {
 
   async update(id: DocumentId, user: UserId, fields: EntryFields): Promise<void> {
     await this.db.batch([
-      prepare(this.db, addCreditQuery(fields)),
+      prepare(this.db, addAttributionQuery(fields)),
       prepare(this.db, updateQuery(id, user, fields)),
       prepare(this.db, removeTagsQuery(user, id)),
       ...this.addTags(user, id, fields.tags),
@@ -655,7 +655,7 @@ export class D1Documents implements DocumentStore {
 
   async annotate(id: DocumentId, user: UserId, annotation: Annotation): Promise<AnnotateResult> {
     const [, inserted, stored] = await this.db.batch([
-      prepare(this.db, addCreditQuery(annotation)),
+      prepare(this.db, addAttributionQuery(annotation)),
       prepare(this.db, annotateQuery(id, user, annotation)),
       prepare(this.db, annotationQuery(id, user, annotation.id)),
     ]);

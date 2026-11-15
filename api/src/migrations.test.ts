@@ -66,7 +66,7 @@ test("0007 makes each document its text's content and its importer's entry", () 
   assert.equal(db.prepare("SELECT name FROM sqlite_master WHERE name = 'document_0006'").get(), undefined);
 });
 
-test("0011 moves each entry's and annotation's credit to one attribution row per credit, and keeps their tags and annotations", () => {
+test("0011 moves entries' and annotations' licences, authors and sources to one attribution row each, and keeps their tags and annotations", () => {
   const db = migratedUpTo("0011_attribution.sql");
   db.exec(`INSERT INTO "user" ("id", "name", "email", "emailVerified", "createdAt", "updatedAt")
            VALUES ('ivy', 'Ivy', 'ivy@example.com', 0, '2026-11-01T00:00:00.000Z', '2026-11-01T00:00:00.000Z')`);

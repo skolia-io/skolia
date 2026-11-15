@@ -40,16 +40,16 @@ test("every D1 table is STRICT, and timestamps must be toISOString()'s", async (
   const document = env.DB.prepare(`insert into document (id, lang, words) values (?, 'pl', ?)`);
   await document.bind("a", 1).run();
   await assert.rejects(document.bind("b", "many").run(), /cannot store TEXT/);
-  const credit = (licence: string, author: string | null = null, source: string | null = null) =>
+  const addAttribution = (licence: string, author: string | null = null, source: string | null = null) =>
     env.DB.prepare("insert into attribution (licence, author, source) values (?, ?, ?)").bind(licence, author, source).run();
-  const cc0 = await creditId("cc0");
-  await credit("cc-by-3.0", "A", "https://example.org");
-  await assert.rejects(credit("cc0"), /UNIQUE constraint failed/);
-  await assert.rejects(credit("cc-by-3.0", "A", "https://example.org"), /UNIQUE constraint failed/);
-  await assert.rejects(credit("mit"), /CHECK constraint failed/);
-  await assert.rejects(credit("cc-by"), /CHECK constraint failed/);
-  await assert.rejects(credit("cc-by-4.0", ""), /CHECK constraint failed/);
-  await assert.rejects(credit("cc-by-4.0", null, "ftp://x"), /CHECK constraint failed/);
+  const cc0 = await attributionId("cc0");
+  await addAttribution("cc-by-3.0", "A", "https://example.org");
+  await assert.rejects(addAttribution("cc0"), /UNIQUE constraint failed/);
+  await assert.rejects(addAttribution("cc-by-3.0", "A", "https://example.org"), /UNIQUE constraint failed/);
+  await assert.rejects(addAttribution("mit"), /CHECK constraint failed/);
+  await assert.rejects(addAttribution("cc-by"), /CHECK constraint failed/);
+  await assert.rejects(addAttribution("cc-by-4.0", ""), /CHECK constraint failed/);
+  await assert.rejects(addAttribution("cc-by-4.0", null, "ftp://x"), /CHECK constraint failed/);
   const entry = (
     document: string,
     visibility: string,
@@ -72,7 +72,7 @@ test("every D1 table is STRICT, and timestamps must be toISOString()'s", async (
   await assert.rejects(entry("a", "public", { owner: "nobody" }), /FOREIGN KEY constraint failed/);
   await assert.rejects(entry("a", "public", { attribution: 99 }), /FOREIGN KEY constraint failed/);
   await assert.rejects(entry("a", "secret"), /CHECK constraint failed/);
-  await entry("a", "public", { attribution: await creditId("all-rights-reserved") });
+  await entry("a", "public", { attribution: await attributionId("all-rights-reserved") });
   // Deleting a user takes their entries, and leaves the text
   await env.DB.prepare(`delete from "user" where "id" = ?`).bind(user.id).run();
   assert.equal(await env.DB.prepare("select 1 from user_document where document_id = 'a'").first(), null);
@@ -89,7 +89,7 @@ test("a D1 column is a toISOString() timestamp exactly when its name ends in _at
 });
 
 /** The id of the attribution row for the licence, with no author or source, added if there's none. */
-async function creditId(licence: string): Promise<number> {
+async function attributionId(licence: string): Promise<number> {
   await local.env.DB.prepare("insert into attribution (licence) values (?) on conflict do nothing").bind(licence).run();
   const row = await local.env.DB.prepare("select id from attribution where licence = ? and author is null and source is null")
     .bind(licence)
@@ -142,7 +142,7 @@ test("an entry's tags are tags skolia has, one of each kind, and go with the ent
   await env.DB.prepare(
     `insert into user_document (user_id, document_id, title, imported_at, visibility, attribution_id) values (?, 'a', 't', '2026-11-07T00:00:00.000Z', 'public', ?)`,
   )
-    .bind(user.id, await creditId("cc0"))
+    .bind(user.id, await attributionId("cc0"))
     .run();
   const tag = (kind: string, value: string, document = "a") =>
     env.DB.prepare("insert into user_document_tag (user_id, document_id, kind, value) values (?, ?, ?, ?)")
@@ -162,12 +162,12 @@ test("an entry's tags are tags skolia has, one of each kind, and go with the ent
   assert.equal(await env.DB.prepare("select 1 from user_document_tag").first(), null);
 });
 
-test("an annotation is a range of an entry's text, with JSON data and a credit, counted on the entry, and goes with the entry", async () => {
+test("an annotation is a range of an entry's text, with JSON data and an attribution, counted on the entry, and goes with the entry", async () => {
   const { env } = local;
   const user = await local.signUp(ALICE);
   await env.DB.prepare("insert into document (id, lang, words) values ('a', 'pl', 1)").run();
-  const unknown = await creditId("unknown");
-  const cc0 = await creditId("cc0");
+  const unknown = await attributionId("unknown");
+  const cc0 = await attributionId("cc0");
   await env.DB.prepare(
     `insert into user_document (user_id, document_id, title, imported_at, visibility, attribution_id) values (?, 'a', 't', '2026-11-07T00:00:00.000Z', 'private', ?)`,
   )

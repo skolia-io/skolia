@@ -18,16 +18,16 @@ useLocal();
 
 const PUBLIC = { visibility: "public", licence: "cc0" } as const;
 
-type Credit = Partial<Pick<NewAnnotation, "licence" | "author" | "source">>;
+type Attribution = Partial<Pick<NewAnnotation, "licence" | "author" | "source">>;
 
 /** A recording of the text's characters start to end. */
-function audio(start: number, end: number, credit: Credit = {}, url = `https://example.org/${start}.mp3`): NewAnnotation {
-  return { start, end, kind: "audio", data: { url }, licence: "cc-by-4.0", author: "Helena", ...credit };
+function audio(start: number, end: number, attribution: Attribution = {}, url = `https://example.org/${start}.mp3`): NewAnnotation {
+  return { start, end, kind: "audio", data: { url }, licence: "cc-by-4.0", author: "Helena", ...attribution };
 }
 
 /** A note on the text's characters start to end. */
-function note(start: number, end: number, text: string, credit: Credit = {}): NewAnnotation {
-  return { start, end, kind: "text", data: { text }, licence: "cc0", ...credit };
+function note(start: number, end: number, text: string, attribution: Attribution = {}): NewAnnotation {
+  return { start, end, kind: "text", data: { text }, licence: "cc0", ...attribution };
 }
 
 async function imported(app: App, headers: Headers, fields: Partial<ImportRequest> = {}, text = TEXT): Promise<DocumentId> {
