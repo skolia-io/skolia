@@ -20,7 +20,7 @@ from .lemmas import relemmatize
 from .lexicon import Source
 
 LANG = "fr"
-PLUGIN_VERSION = "0.2"
+PLUGIN_VERSION = "0.3"
 
 # Parser models, by name. Each loads on first use. Stanza's French models are trained on
 # UD French GSD and the other UD French treebanks ("combined"). Scores: EVALUATION.md.

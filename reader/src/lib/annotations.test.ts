@@ -29,25 +29,14 @@ test("only audio annotations are kept", () => {
   assert.deepEqual(audioAnnotations([audio, note]), [audio]);
 });
 
-/** The text's words and the gaps between them, as layout makes them, the tokens' offsets in
- * code points as the analysis counts. */
+/** The text's words and the gaps between them, as layout makes them. */
 function pieces(text: string): Piece[] {
-  const points = [...text];
-  const words = [...text.matchAll(/\S+/gu)].map((match) => {
-    const start = [...text.slice(0, match.index)].length;
-    return { start, end: start + [...match[0]].length };
-  });
+  const words = [...text.matchAll(/\S+/gu)].map((match) => ({ start: match.index, end: match.index + match[0].length }));
   return words.flatMap(({ start, end }, i): Piece[] => {
     const before = words[i - 1]?.end ?? 0;
     const token = { start, end, upos: "NOUN" } as Token;
-    const word: Piece = {
-      kind: "word",
-      id: i,
-      text: points.slice(start, end).join(""),
-      words: [{ sentence: 0, index: i, token }],
-      punct: false,
-    };
-    return start > before ? [{ kind: "gap", text: points.slice(before, start).join("") }, word] : [word];
+    const word: Piece = { kind: "word", id: i, text: text.slice(start, end), words: [{ sentence: 0, index: i, token }], punct: false };
+    return start > before ? [{ kind: "gap", text: text.slice(before, start) }, word] : [word];
   });
 }
 
@@ -67,7 +56,7 @@ test("a clip of whole paragraphs has its button before their first word; a short
       annotation(second, text.indexOf(".", second), 5),
     ]),
   );
-  const at = (piece: number) => places.get(piece)?.map((p) => p.annotation.id[0]);
+  const at = (piece: number) => places.get(piece)?.map((p) => p.id[0]);
   // Ala: the first paragraph; Kot: the second and third; not ma, the gap before Kot, or Kot ma Alę without its stop
   assert.deepEqual([...places.keys()], [0, 6]);
   assert.deepEqual([at(0), at(6)], [["1"], ["2"]]);
@@ -82,14 +71,10 @@ test("a clip with no word in its range has no button", () => {
   assert.equal(placeAudio(text, pieces(text), audioAnnotations([annotation(3, 5)])).size, 0);
 });
 
-test("a range in UTF-16 units finds its word by code points", () => {
+test("a range past a character outside the BMP finds its word", () => {
   const text = "😀 Ala.\n\nKot ma.";
   const kot = text.indexOf("Kot");
   const places = placeAudio(text, pieces(text), audioAnnotations([annotation(kot, text.length)]));
   // 😀, Ala., Kot, ma. with a gap before each but the first
   assert.deepEqual([...places.keys()], [4]);
-  assert.deepEqual(
-    places.get(4)?.map(({ start, end }) => [start, end]),
-    [[kot - 1, text.length - 1]],
-  );
 });

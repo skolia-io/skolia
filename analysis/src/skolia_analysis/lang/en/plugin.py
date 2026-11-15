@@ -19,7 +19,7 @@ from ...schema import Blob
 from .lexicon import Source
 
 LANG = "en"
-PLUGIN_VERSION = "0.1"
+PLUGIN_VERSION = "0.2"
 
 # Parser models, by name. Each loads on first use. Stanza's English models are trained on
 # UD English EWT, GUM and other UD English treebanks ("combined"). Scores: EVALUATION.md.
