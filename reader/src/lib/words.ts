@@ -1,6 +1,6 @@
 // The signed-in user's word statuses, by lemma id. App loads them when someone signs in;
 // the word sheet and Review read and change them.
-import { createMutation, createQuery, mutationOptions, queryOptions } from "@tanstack/svelte-query";
+import { createMutation, createQuery, mutationOptions, queryOptions, type QueryClient } from "@tanstack/svelte-query";
 import { timestamp, type LemmaId, type Word, type WordStatus } from "@skolia/shared/api";
 import { clearWordStatus, listWords, setWord } from "./api.ts";
 import { resume, userQuery } from "./queries.ts";
@@ -47,4 +47,22 @@ const statusMutation = mutationOptions({
 /** Changes a word's status, shown at once and undone if the API refuses it. */
 export function createSetStatus() {
   return createMutation(() => statusMutation);
+}
+
+/** What making a cloze card does to its word if it has no status, shown at once: it's
+ * active. Whether it had none, so it can be taken back if the API refuses. */
+export async function activateUnmarked(client: QueryClient, lemmaId: LemmaId): Promise<boolean> {
+  await client.cancelQueries({ queryKey: wordsQuery.queryKey });
+  if (client.getQueryData(wordsQuery.queryKey)?.[lemmaId]) return false;
+  const word = { lemmaId, status: "active", mature: false, updatedAt: timestamp(new Date()) } as const;
+  client.setQueryData(wordsQuery.queryKey, (words) => words && withWord(words, lemmaId, word));
+  return true;
+}
+
+export function unmark(client: QueryClient, lemmaId: LemmaId): void {
+  client.setQueryData(wordsQuery.queryKey, (words) => words && withWord(words, lemmaId, undefined));
+}
+
+export function resumeWords(client: QueryClient): void {
+  resume(client, wordsQuery.queryKey);
 }

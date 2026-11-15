@@ -53,6 +53,7 @@ import {
 } from "@skolia/util/query";
 import { sql, type Sql } from "@skolia/util/sql";
 import type { DueCards, ReviewOutcome, StoredPosition, StoredReading } from "../ports.ts";
+import type { DefaultScheduler } from "ts-fsrs";
 import { fromJson, fsrs, newCard, review, toJson } from "./scheduler.ts";
 import { MIGRATIONS } from "../user/migrations/index.ts";
 import { READING_ENTRY, readingListQuery } from "../user/queries.ts";
@@ -201,22 +202,24 @@ export class User extends DurableObject<UserEnv> {
    * reviewed while their word is active (card.active, so the review queries need only card's indexes). */
   async setWord(lemmaId: LemmaId, status: WordStatus, now: Timestamp): Promise<void> {
     const s = await fsrs();
-    this.ctx.storage.transactionSync(() => {
+    this.ctx.storage.transactionSync(() => this.#setWord(s, lemmaId, status, now));
+  }
+
+  #setWord(s: DefaultScheduler, lemmaId: LemmaId, status: WordStatus, now: Timestamp): void {
+    this.#exec(
+      sql`INSERT INTO word (lemma_id, status, updated_at) VALUES (${lemmaId}, ${status}, ${now})
+       ON CONFLICT (lemma_id) DO UPDATE SET status = excluded.status, updated_at = excluded.updated_at`,
+    );
+    const active = status === "active" ? 1 : 0;
+    this.#exec(sql`UPDATE card SET active = ${active} WHERE lemma_id = ${lemmaId}`);
+    if (!active) return;
+    for (const kind of WORD_CARD_KINDS) {
+      const id = CardId.parse(crypto.randomUUID());
       this.#exec(
-        sql`INSERT INTO word (lemma_id, status, updated_at) VALUES (${lemmaId}, ${status}, ${now})
-         ON CONFLICT (lemma_id) DO UPDATE SET status = excluded.status, updated_at = excluded.updated_at`,
+        sql`INSERT INTO card (id, lemma_id, kind, created_at, active, fsrs) VALUES (${id}, ${lemmaId}, ${kind}, ${now}, 1, ${toJson(newCard(s, id, new Date(now)))})
+         ON CONFLICT (lemma_id, kind) WHERE kind != 'cloze' DO NOTHING`,
       );
-      const active = status === "active" ? 1 : 0;
-      this.#exec(sql`UPDATE card SET active = ${active} WHERE lemma_id = ${lemmaId}`);
-      if (!active) return;
-      for (const kind of WORD_CARD_KINDS) {
-        const id = CardId.parse(crypto.randomUUID());
-        this.#exec(
-          sql`INSERT INTO card (id, lemma_id, kind, created_at, active, fsrs) VALUES (${id}, ${lemmaId}, ${kind}, ${now}, 1, ${toJson(newCard(s, id, new Date(now)))})
-           ON CONFLICT (lemma_id, kind) WHERE kind != 'cloze' DO NOTHING`,
-        );
-      }
-    });
+    }
   }
 
   /** Clears the word's status and takes its cards, cloze cards too, out of reviews. Deletes
@@ -229,11 +232,13 @@ export class User extends DurableObject<UserEnv> {
   }
 
   /** A new cloze card for the word in the sentence, or the one it already has: the same
-   * text, sentence and blank. Whether the card was made. It's reviewed while its word is
-   * active or has no status, like the word's own cards (setWord). */
+   * text, sentence and blank. Whether the card was made. A word with no status is added,
+   * as setWord active does; the card is reviewed while its word is active, like the word's own cards. */
   async makeCloze(cloze: NewCloze, now: Timestamp): Promise<{ cardId: CardIdType; made: boolean }> {
     const s = await fsrs();
     return this.ctx.storage.transactionSync(() => {
+      const hasStatus = this.#exec(sql`SELECT 1 FROM word WHERE lemma_id = ${cloze.lemmaId}`).toArray().length > 0;
+      if (!hasStatus) this.#setWord(s, cloze.lemmaId, "active", now);
       const had = this.#exec(
         sql`SELECT card_id FROM cloze WHERE document_id = ${cloze.documentId} AND blank_start = ${cloze.blankStart}`,
       ).toArray()[0];
@@ -241,7 +246,7 @@ export class User extends DurableObject<UserEnv> {
       const id = CardId.parse(crypto.randomUUID());
       this.#exec(
         sql`INSERT INTO card (id, lemma_id, kind, created_at, active, fsrs)
-         VALUES (${id}, ${cloze.lemmaId}, 'cloze', ${now}, coalesce((SELECT status = 'active' FROM word WHERE lemma_id = ${cloze.lemmaId}), 1), ${toJson(newCard(s, id, new Date(now)))})`,
+         VALUES (${id}, ${cloze.lemmaId}, 'cloze', ${now}, (SELECT status = 'active' FROM word WHERE lemma_id = ${cloze.lemmaId}), ${toJson(newCard(s, id, new Date(now)))})`,
       );
       this.#exec(
         sql`INSERT INTO cloze (card_id, document_id, sentence, sentence_start, blank_start, blank_end, feats, why)

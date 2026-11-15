@@ -1,9 +1,10 @@
 // The signed-in user's cloze cards in a text, by where their blanks start in it, so the word
 // sheet can say a word already has one, and take it away. Reader loads them with the text.
 import { createMutation, createQuery, mutationOptions, queryOptions } from "@tanstack/svelte-query";
-import type { CardId, DocumentId, NewClozeInput } from "@skolia/shared/api";
+import type { CardId, DocumentId, LemmaId, NewClozeInput } from "@skolia/shared/api";
 import { deleteCloze, listClozes, makeCloze } from "./api.ts";
 import { resume, userQuery } from "./queries.ts";
+import { activateUnmarked, resumeWords, unmark } from "./words.ts";
 
 export type ClozesByStart = ReadonlyMap<number, CardId>;
 
@@ -25,14 +26,23 @@ export function createClozes(documentId: () => DocumentId) {
 
 const keyOf = (documentId: DocumentId) => clozesQuery(documentId).queryKey;
 
-/** The card's id comes from the API, so it's added once made. */
+/** The card's id comes from the API, so it's added once made. Its word, if it has no
+ * status, is made active with it, as the API does. */
 const addMutation = mutationOptions({
   mutationFn: makeCloze,
-  onMutate: (cloze: NewClozeInput & { readonly documentId: DocumentId }, { client }) =>
-    client.cancelQueries({ queryKey: keyOf(cloze.documentId) }),
+  onMutate: async (cloze: NewClozeInput & { readonly lemmaId: LemmaId; readonly documentId: DocumentId }, { client }) => {
+    await client.cancelQueries({ queryKey: keyOf(cloze.documentId) });
+    return { activated: await activateUnmarked(client, cloze.lemmaId) };
+  },
   onSuccess: ({ cardId }, cloze, _held, { client }) =>
     client.setQueryData(keyOf(cloze.documentId), (byStart) => byStart && new Map([...byStart, [cloze.blankStart, cardId]])),
-  onSettled: (_made, _error, cloze, _held, { client }) => resume(client, keyOf(cloze.documentId)),
+  onError: (_error, cloze, held, { client }) => {
+    if (held?.activated) unmark(client, cloze.lemmaId);
+  },
+  onSettled: (_made, _error, cloze, _held, { client }) => {
+    resume(client, keyOf(cloze.documentId));
+    resumeWords(client);
+  },
 });
 
 export function createAddCloze() {
