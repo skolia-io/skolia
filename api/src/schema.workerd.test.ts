@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { type TableColumn, tableColumns, timestampNames } from "@skolia/util/checks";
 import { getMigrations } from "better-auth/db/migration";
 import { authOptions } from "./auth.ts";
 import { ALICE, local, useLocal } from "./testing/app.ts";
@@ -70,6 +71,15 @@ test("every D1 table is STRICT, and timestamps must be toISOString()'s", async (
   await env.DB.prepare(`delete from "user" where "id" = ?`).bind(user.id).run();
   assert.equal(await env.DB.prepare("select 1 from user_document where document_id = 'a'").first(), null);
   assert.notEqual(await env.DB.prepare("select 1 from document where id = 'a'").first(), null);
+});
+
+test("a D1 column is a toISOString() timestamp exactly when its name ends in _at, Better Auth's tables aside", async () => {
+  const query = tableColumns(["d1_migrations", "user", "session", "account", "verification", "apikey"]);
+  const { results } = await local.env.DB.prepare(query.text)
+    .bind(...query.params)
+    .all<TableColumn>();
+  assert.ok(results.some((c) => c.table === "user_document" && c.column === "imported_at"));
+  assert.deepEqual(timestampNames(results), { unnamed: [], unchecked: [] });
 });
 
 // A SCAN that names an index walks it in order, as list does over the public entries' partial index
