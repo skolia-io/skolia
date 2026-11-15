@@ -19,7 +19,20 @@ import {
   type WordStatus,
 } from "@skolia/shared/api";
 import { allPages, type Cursor } from "@skolia/shared/page";
-import { ALICE, NOW, client, loadLexicon, local, raw, refusesBadPages, setup, useLocal, walk, type App } from "./testing/app.ts";
+import {
+  ALICE,
+  NOW,
+  client,
+  importSentences,
+  loadLexicon,
+  local,
+  raw,
+  refusesBadPages,
+  setup,
+  useLocal,
+  walk,
+  type App,
+} from "./testing/app.ts";
 import { body } from "./testing/responses.ts";
 
 useLocal();
@@ -49,13 +62,13 @@ function none(lang: Lang): CardCounts {
   return { lang, words: { due: 0, new: 0 }, forms: { due: 0, new: 0 } };
 }
 
-/** A cloze card for the lemma, the nth in a text. */
-function makeCloze(app: App, headers: Headers, lemmaId: LemmaId, n: number) {
+/** A cloze card for the lemma, n hundred characters into a text the user imports. */
+async function makeCloze(app: App, headers: Headers, lemmaId: LemmaId, n: number) {
+  const at = { sentence: "Widzę psa.", sentenceStart: n * 100 };
   const json: NewClozeInput = {
+    ...at,
     lemmaId,
-    documentId: "a".repeat(64),
-    sentence: "Widzę psa.",
-    sentenceStart: n * 100,
+    documentId: await importSentences(app, headers, [at]),
     blankStart: n * 100 + 6,
     blankEnd: n * 100 + 9,
     feats: { Case: "Acc" },

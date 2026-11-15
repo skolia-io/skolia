@@ -1,6 +1,7 @@
 // Words, flashcards, reviews and settings, which live in each user's Durable Object, and
 // the lexicon entries the cards show.
 import {
+  MAX_CLOZES,
   MAX_LOOKUP,
   timestamp,
   type CardCounts,
@@ -30,6 +31,7 @@ import {
 } from "@skolia/shared/api";
 import type { PageRequest } from "@skolia/shared/page";
 import type { Deps, Lexicon } from "../ports.ts";
+import { noSuchDocument } from "./documents.ts";
 import { NO_CONTENT, fail, ok, type Failed, type Json, type NoContent, type Ok } from "./result.ts";
 
 /** Most cards one due list has: a session's worth. */
@@ -78,10 +80,23 @@ export async function review(deps: Deps, user: User, request: ReviewRequest): Pr
   }
 }
 
-/** 201 for a new card, 200 when the sentence and word already had one. */
-export async function makeCloze(deps: Deps, user: User, cloze: NewCloze): Promise<Json<ClozeMade, 201> | Ok<ClozeMade>> {
-  const { cardId, made } = await deps.users.makeCloze(user.id, cloze, timestamp(deps.now()));
-  return made ? { status: 201, body: { cardId } } : ok({ cardId });
+/** 201 for a new card, 200 when the sentence and word already had one. The text is one the
+ * user sees, and the sentence is in it where it says it starts. */
+export async function makeCloze(
+  deps: Deps,
+  user: User,
+  cloze: NewCloze,
+): Promise<Json<ClozeMade, 201> | Ok<ClozeMade> | Failed<404 | 409>> {
+  if (!(await deps.documents.visible(cloze.documentId, user.id))) return noSuchDocument();
+  const made = await deps.users.makeCloze(user.id, cloze, timestamp(deps.now()));
+  switch (made.kind) {
+    case "made":
+      return { status: 201, body: { cardId: made.cardId } };
+    case "had":
+      return ok({ cardId: made.cardId });
+    case "full":
+      return fail(409, `a user has at most ${MAX_CLOZES} cloze cards`);
+  }
 }
 
 export async function clozes(
