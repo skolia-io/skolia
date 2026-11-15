@@ -56,7 +56,7 @@ const noFetch: Fetch = async (url) => {
 };
 
 async function inline(text: string, annotations = ""): Promise<Curated> {
-  const yaml = `kind: inline\ntitle: Włosy\nlicence: cc-by-nc\ntext: |\n${text.replace(/^/gmu, "  ")}\n${annotations}`;
+  const yaml = `kind: inline\ntitle: Włosy\nlicence: cc-by-nc-4.0\ntext: |\n${text.replace(/^/gmu, "  ")}\n${annotations}`;
   const [curated] = await resolveCurated([parseCurated("pl/w.yaml", "pl", yaml)], noFetch);
   assert.ok(curated);
   return curated;
@@ -81,7 +81,7 @@ test("the sync adds a text's annotations, and removes those not in its file any 
   const marked = "[Thuli ma krótkie włosy.]{2}\n\nAnna ma [długie]{d} włosy.";
   const credits = (long: string) =>
     "annotations:\n" +
-    '  "2":\n    kind: audio\n    url: https://example.org/02.mp3\n    licence: cc-by\n    author: Helena Gabriela\n' +
+    '  "2":\n    kind: audio\n    url: https://example.org/02.mp3\n    licence: cc-by-4.0\n    author: Helena Gabriela\n' +
     `  d:\n    - kind: text\n      text: ${long}\n      licence: cc0\n` +
     "    - kind: audio\n      url: https://example.org/d.mp3\n      licence: cc0\n";
 

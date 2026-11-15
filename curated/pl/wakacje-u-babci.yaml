@@ -1,7 +1,7 @@
 kind: inline
 title: "Wakacje u babci"
 author: "Violet Otieno; translated by Aleksandra Migorska"
-licence: cc-by
+licence: cc-by-4.0
 source: &story https://global-asp.github.io/storybooks-poland/stories/pl/0243/
 tags:
   level: B1
@@ -49,7 +49,7 @@ annotations:
   "02":
     <<: &narration
       kind: audio
-      licence: cc-by
+      licence: cc-by-4.0
       author: Helena Gabriela
       source: *story
     url: https://globalstorybooks.net/media/audio/pl/0243/mp3/02.mp3

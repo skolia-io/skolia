@@ -22,7 +22,7 @@ type Credit = Partial<Pick<NewAnnotation, "licence" | "author" | "source">>;
 
 /** A recording of the text's characters start to end. */
 function audio(start: number, end: number, credit: Credit = {}, url = `https://example.org/${start}.mp3`): NewAnnotation {
-  return { start, end, kind: "audio", data: { url }, licence: "cc-by", author: "Helena", ...credit };
+  return { start, end, kind: "audio", data: { url }, licence: "cc-by-4.0", author: "Helena", ...credit };
 }
 
 /** A note on the text's characters start to end. */
@@ -67,7 +67,7 @@ test("an entry's user adds annotations, which whoever sees the entry sees in ord
       end: 10,
       kind: "audio",
       data: { url: "https://example.org/5.mp3" },
-      licence: "cc-by",
+      licence: "cc-by-4.0",
       author: "Helena",
       source: "https://example.org/story",
       addedAt: "2026-11-04T00:00:00.000Z",
@@ -283,8 +283,8 @@ test("an entry has at most MAX_ANNOTATIONS, and its annotations go with it", asy
     Array.from({ length: MAX_ANNOTATIONS - 1 }, (_, i) =>
       prepare(
         db,
-        sql`INSERT INTO user_document_annotation (user_id, document_id, id, start, "end", kind, data, licence, author, source, added_at)
-          VALUES ${sql.tuple([user, id, i.toString(16).padStart(64, "0"), 1, 2, "audio", '{"url":"https://example.org/x.mp3"}', "cc0", null, null, new Date(NOW).toISOString()])}`,
+        sql`INSERT INTO user_document_annotation (user_id, document_id, id, start, "end", kind, data, attribution_id, added_at)
+          VALUES ${sql.tuple([user, id, i.toString(16).padStart(64, "0"), 1, 2, "audio", '{"url":"https://example.org/x.mp3"}', sql`(SELECT attribution_id FROM user_document_annotation WHERE id = ${kept})`, new Date(NOW).toISOString()])}`,
       ),
     ),
   );

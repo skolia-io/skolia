@@ -130,7 +130,7 @@ function stored(n: number, fields: Partial<StoredDocument>): StoredDocument {
 const PETIT_PRINCE = stored(1, {
   title: "Le Petit Prince, chapitre I",
   lang: "fr",
-  licence: "cc-by-sa",
+  licence: "cc-by-sa-4.0",
   author: "Antoine de Saint-Exupéry",
   words: 412,
   tags: { level: "B1" },
@@ -138,7 +138,7 @@ const PETIT_PRINCE = stored(1, {
 const NOTATKI = stored(2, {
   title: "Notatki",
   visibility: "private",
-  licence: "cc-by",
+  licence: "cc-by-4.0",
   author: null,
   user: user.id,
   importerName: user.name,

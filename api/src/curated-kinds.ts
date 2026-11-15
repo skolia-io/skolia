@@ -171,7 +171,8 @@ export function wolneLekturyLicence(raw: string): Licence {
   const footer = raw.split(FOOTER)[1];
   if (footer === undefined) throw new Error('no "-----" footer');
   if (footer.includes("Ten utwór jest w domenie publicznej.")) return "public-domain";
-  const cc = /creativecommons\.org\/licenses\/(by-sa|by)\//u.exec(footer);
-  if (cc) return cc[1] === "by-sa" ? "cc-by-sa" : "cc-by";
+  const cc = /creativecommons\.org\/licenses\/([a-z-]+)\/(\d\.\d)\//u.exec(footer);
+  const licence = LICENCES.find((l) => cc !== null && l === `cc-${cc[1]}-${cc[2]}`);
+  if (licence !== undefined) return licence;
   throw new Error("the footer names no licence skolia knows");
 }

@@ -16,14 +16,14 @@ test("an annotation's id is a hash of what it says, whatever order its fields ar
     end: 4,
     kind: "audio",
     data: { url: "https://example.org/a.mp3" },
-    licence: "cc-by",
+    licence: "cc-by-4.0",
     author: null,
     source: null,
   };
   const reordered: IdentifiedBy = {
     source: null,
     author: null,
-    licence: "cc-by",
+    licence: "cc-by-4.0",
     data: { url: "https://example.org/a.mp3" },
     kind: "audio",
     end: 4,
