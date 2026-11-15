@@ -28,7 +28,7 @@
   import ReadingStatusMenu from "../../components/ReadingStatusMenu.svelte";
   import { createQuery } from "@tanstack/svelte-query";
   import { audioQuery } from "../../lib/queries.ts";
-  import { inRange, placeAudio, type PlacedAudio } from "../../lib/annotations.ts";
+  import { type AudioAnnotation, inRange, placeAudio } from "../../lib/annotations.ts";
 
   let { id }: { id: DocumentId } = $props();
 
@@ -81,15 +81,15 @@
   const places = $derived(
     doc && reading && audioAnnotations.data
       ? placeAudio(reading.text, doc.pieces, audioAnnotations.data)
-      : new Map<number, readonly PlacedAudio[]>(),
+      : new Map<number, readonly AudioAnnotation[]>(),
   );
 
   let audio = $state<HTMLAudioElement>();
   /** The clip the audio element has, playing or paused. */
-  let clip = $state<PlacedAudio | null>(null);
+  let clip = $state<AudioAnnotation | null>(null);
   let paused = $state(true);
   const playing = $derived(paused ? null : clip);
-  const isPlaying = (placed: PlacedAudio) => playing?.annotation.id === placed.annotation.id;
+  const isPlaying = (placed: AudioAnnotation) => playing?.id === placed.id;
 
   /** Whether the piece is in the clip playing: a word in its range, or a gap between two. */
   function lit(i: number): boolean {
@@ -102,13 +102,13 @@
   }
 
   /** Plays the clip, or pauses it if it's playing; another clip stops the one playing. */
-  function playOrPause(placed: PlacedAudio): void {
+  function playOrPause(placed: AudioAnnotation): void {
     if (!audio) return;
     if (isPlaying(placed)) {
       audio.pause();
       return;
     }
-    if (clip?.annotation.id !== placed.annotation.id) audio.src = placed.annotation.data.url;
+    if (clip?.id !== placed.id) audio.src = placed.data.url;
     clip = placed;
     audio.play().catch(() => {
       // It couldn't load, or was paused or replaced before it started
@@ -468,8 +468,8 @@
           <!-- Words are spans, not buttons: a button is laid out as an inline block, so a
                line could break between a word and the punctuation after it. A play button is
                taken out of the line, into the gutter beside it. -->
-          {#each places.get(i) ?? [] as placed (placed.annotation.id)}
-            {@const label = `${isPlaying(placed) ? "Pause" : "Play"} “${snippet(reading?.text ?? "", placed.annotation.start, 30)}”`}
+          {#each places.get(i) ?? [] as placed (placed.id)}
+            {@const label = `${isPlaying(placed) ? "Pause" : "Play"} “${snippet(reading?.text ?? "", placed.start, 30)}”`}
             <button
               type="button"
               class={["play", { on: isPlaying(placed) }]}

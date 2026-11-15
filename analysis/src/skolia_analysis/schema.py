@@ -387,7 +387,8 @@ class CaseCorrection(TypedDict):
 
 class Token(TypedDict):
     start: int
-    """Character offset into the source text. Parts of a fused word share the whole word's span."""
+    """Offset into the source text in UTF-16 code units, a JavaScript string index. Parts of a
+    fused word share the whole word's span."""
     end: int
     text: str
     lemma: str | None
@@ -432,6 +433,7 @@ Functional TypedDict syntax because "from" is a Python keyword.
 
 class Sentence(TypedDict):
     start: int
+    """Offset into the source text in UTF-16 code units, as Token.start."""
     end: int
     tokens: list[Token]
     expressions: list[ExpressionMatch]

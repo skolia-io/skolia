@@ -13,6 +13,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .blob import utf16_slice
 from .schema import Blob, Token
 
 EMPTY = "_"
@@ -28,7 +29,7 @@ def write(blob: Blob, text: str) -> str:
     lines: list[str] = []
     for sentence in blob["sentences"]:
         tokens = sentence["tokens"]
-        lines.append(f"# text = {text[sentence['start'] : sentence['end']]}")
+        lines.append(f"# text = {utf16_slice(text, sentence['start'], sentence['end'])}")
         index = 0
         while index < len(tokens):
             token = tokens[index]
