@@ -315,9 +315,10 @@
     }
   }
 
+  /** A cloze card adds its word too, in the one request. */
   async function add({ lemmaId, cloze: request }: Addition): Promise<void> {
-    if (lemmaId && !(await learn(lemmaId))) return;
     if (request) await cloze(request);
+    else if (lemmaId) await learn(lemmaId);
   }
 
   async function addFromButton(start: number, addition: Addition): Promise<void> {
