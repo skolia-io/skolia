@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { after, before, beforeEach } from "node:test";
 import { brotliCompressSync } from "node:zlib";
 import { hc, type ClientResponse } from "hono/client";
-import type { DocumentId, DocumentKey, DocumentSummary, Lang, Paginated } from "@skolia/shared/api";
+import type { DocumentId, DocumentKey, DocumentSummary, Lang, NewClozeInput, Paginated } from "@skolia/shared/api";
 import { partKey, statusKey, versionsKey } from "@skolia/shared/keys";
 import { allPages, encodeCursor, type Cursor } from "@skolia/shared/page";
 import { createApp, type AppType } from "../app.ts";
@@ -135,6 +135,22 @@ export function importText(
     headers: allHeaders,
     body: JSON.stringify({ title: "", text, lang: "pl", ...fields }),
   });
+}
+
+/** Imports, as the user, a new text with each sentence where it starts and spaces around
+ * them, for cloze cards made from it. */
+export async function importSentences(
+  app: App,
+  headers: Headers,
+  sentences: readonly Pick<NewClozeInput, "sentence" | "sentenceStart">[],
+  fields: { visibility?: "private" | "public"; licence?: "cc0" } = {},
+): Promise<DocumentId> {
+  const text = sentences.reduce(
+    (t, { sentence, sentenceStart }) =>
+      t.slice(0, sentenceStart).padEnd(sentenceStart) + sentence + t.slice(sentenceStart + sentence.length),
+    "",
+  );
+  return (await body("import", client(app, headers).documents.$post({ json: { text, lang: "pl", ...fields } }), 202)).id;
 }
 
 /** The ids of every document the viewer sees, from all the list's pages. */

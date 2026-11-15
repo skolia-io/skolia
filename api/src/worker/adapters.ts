@@ -69,6 +69,7 @@ import { sql, type Sql } from "@skolia/util/sql";
 import type {
   AnnotateResult,
   BlobStore,
+  ClozeOutcome,
   DocumentContent,
   DocumentEntry,
   DocumentStore,
@@ -127,7 +128,7 @@ export class DurableObjectUsers implements UserData {
     return this.users.getByName(userId).review(request, now);
   }
 
-  async makeCloze(userId: UserId, cloze: NewCloze, now: Timestamp): Promise<{ cardId: CardId; made: boolean }> {
+  async makeCloze(userId: UserId, cloze: NewCloze, now: Timestamp): Promise<ClozeOutcome> {
     return this.users.getByName(userId).makeCloze(cloze, now);
   }
 

@@ -150,6 +150,10 @@ export interface DueCards {
  * id-reused: the review id is another card's. */
 export type ReviewOutcome = ({ kind: "reviewed" } & Reviewed) | { kind: "no-card" } | { kind: "out-of-order" } | { kind: "id-reused" };
 
+/** made: the card is new. had: the text's sentence and word had it. full: the user has
+ * MAX_CLOZES. */
+export type ClozeOutcome = { readonly kind: "made" | "had"; readonly cardId: CardId } | { readonly kind: "full" };
+
 /** A user's words, cards and settings, in their own Durable Object. now: the request's
  * time by the API's clock (Deps.now), which the tests set. dayStart: when the user's
  * day started in their time zone; today's new cards count from it. */
@@ -164,8 +168,9 @@ export interface UserData {
   due(userId: UserId, lang: Lang, now: Timestamp, dayStart: Timestamp, limit: number, group: CardGroup | undefined): Promise<DueCards>;
   counts(userId: UserId, now: Timestamp, dayStart: Timestamp): Promise<CardCounts[]>;
   review(userId: UserId, request: ReviewRequest, now: Timestamp): Promise<ReviewOutcome>;
-  /** The cloze card the text's sentence and word already had, if any, made: false. */
-  makeCloze(userId: UserId, cloze: NewCloze, now: Timestamp): Promise<{ cardId: CardId; made: boolean }>;
+  /** A new cloze card, unless the text's sentence and word already had one or the user has
+   * MAX_CLOZES. */
+  makeCloze(userId: UserId, cloze: NewCloze, now: Timestamp): Promise<ClozeOutcome>;
   /** A page of the text's cloze cards, by where their blanks start. */
   clozes(userId: UserId, documentId: DocumentId, page: PageRequest<ClozeKey>): Promise<Paginated<ClozeStart, ClozeKey>>;
   /** False if the user has no such cloze card. */

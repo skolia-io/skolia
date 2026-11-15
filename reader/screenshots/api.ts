@@ -285,7 +285,7 @@ function deps(signedIn: boolean, annotations: readonly Annotation[]): Deps {
         cardId: request.cardId,
         dueAt: Timestamp.parse("2026-11-10T10:00:00.000Z"),
       }),
-      makeCloze: async () => ({ cardId: CardId.parse("00000000-0000-4000-8000-000000000009"), made: true }),
+      makeCloze: async () => ({ kind: "made", cardId: CardId.parse("00000000-0000-4000-8000-000000000009") }),
       clozes: async () => ({ items: [], next: null }),
       deleteCloze: async () => true,
       settings: async () => settings,

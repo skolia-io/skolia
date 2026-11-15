@@ -4,6 +4,7 @@ import {
   LANGS,
   WORD_CARD_KINDS,
   MATURE_DAYS,
+  MAX_CLOZES,
   timestamp,
   type CardCounts,
   type CardGroup,
@@ -52,7 +53,7 @@ import {
   type Query,
 } from "@skolia/util/query";
 import { sql, type Sql } from "@skolia/util/sql";
-import type { DueCards, ReviewOutcome, StoredPosition, StoredReading } from "../ports.ts";
+import type { ClozeOutcome, DueCards, ReviewOutcome, StoredPosition, StoredReading } from "../ports.ts";
 import type { DefaultScheduler } from "ts-fsrs";
 import { fromJson, fsrs, newCard, review, toJson } from "./scheduler.ts";
 import { MIGRATIONS } from "../user/migrations/index.ts";
@@ -232,17 +233,18 @@ export class User extends DurableObject<UserEnv> {
   }
 
   /** A new cloze card for the word in the sentence, or the one it already has: the same
-   * text, sentence and blank. Whether the card was made. A word with no status is added,
-   * as setWord active does; the card is reviewed while its word is active, like the word's own cards. */
-  async makeCloze(cloze: NewCloze, now: Timestamp): Promise<{ cardId: CardIdType; made: boolean }> {
+   * text, sentence and blank; none past MAX_CLOZES. A word with no status is added, as setWord
+   * active does; the card is reviewed while its word is active, like the word's own cards. */
+  async makeCloze(cloze: NewCloze, now: Timestamp): Promise<ClozeOutcome> {
     const s = await fsrs();
-    return this.ctx.storage.transactionSync(() => {
-      const hasStatus = this.#exec(sql`SELECT 1 FROM word WHERE lemma_id = ${cloze.lemmaId}`).toArray().length > 0;
-      if (!hasStatus) this.#setWord(s, cloze.lemmaId, "active", now);
+    return this.ctx.storage.transactionSync((): ClozeOutcome => {
       const had = this.#exec(
         sql`SELECT card_id FROM cloze WHERE document_id = ${cloze.documentId} AND blank_start = ${cloze.blankStart}`,
       ).toArray()[0];
-      if (had !== undefined) return { cardId: CardId.parse(had["card_id"]), made: false };
+      if (had === undefined && Number(this.#exec(sql`SELECT count(*) AS n FROM cloze`).one()["n"]) >= MAX_CLOZES) return { kind: "full" };
+      const hasStatus = this.#exec(sql`SELECT 1 FROM word WHERE lemma_id = ${cloze.lemmaId}`).toArray().length > 0;
+      if (!hasStatus) this.#setWord(s, cloze.lemmaId, "active", now);
+      if (had !== undefined) return { kind: "had", cardId: CardId.parse(had["card_id"]) };
       const id = CardId.parse(crypto.randomUUID());
       this.#exec(
         sql`INSERT INTO card (id, lemma_id, kind, created_at, active, fsrs)
@@ -252,7 +254,7 @@ export class User extends DurableObject<UserEnv> {
         sql`INSERT INTO cloze (card_id, document_id, sentence, sentence_start, blank_start, blank_end, feats, why)
          VALUES ${sql.tuple([id, cloze.documentId, cloze.sentence, cloze.sentenceStart, cloze.blankStart, cloze.blankEnd, JSON.stringify(cloze.feats), cloze.why])}`,
       );
-      return { cardId: id, made: true };
+      return { kind: "made", cardId: id };
     });
   }
 

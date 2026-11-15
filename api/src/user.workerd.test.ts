@@ -253,7 +253,9 @@ test("cloze's migration keeps the word cards and their reviews, and down takes t
     feats: { Case: "Acc" },
     why: null,
   };
-  const { cardId } = await judy.makeCloze(cloze, at);
+  const made = await judy.makeCloze(cloze, at);
+  assert.ok(made.kind === "made");
+  const { cardId } = made;
   await judy.review({ id: schemas.ReviewId.parse(crypto.randomUUID()), cardId, rating: 3, at }, at);
   const clozeRow =
     "insert into cloze (card_id, document_id, sentence, sentence_start, blank_start, blank_end, feats) values (?, ?, 'Widzę psa.', 0, 0, 5, '{}')";
@@ -272,7 +274,9 @@ test("cloze's migration keeps the word cards and their reviews, and down takes t
   await storage.exec("insert into review values ('r1', 'c1', 3, ?)", at);
   await storage.exec("delete from card where id = 'c1'");
   assert.deepEqual(await storage.exec("select id from review where card_id = 'c1'"), []);
-  const { cardId: other } = await judy.makeCloze({ ...cloze, blankStart: 0, blankEnd: 5 }, at);
+  const second = await judy.makeCloze({ ...cloze, blankStart: 0, blankEnd: 5 }, at);
+  assert.ok(second.kind === "made");
+  const other = second.cardId;
   await judy.review({ id: schemas.ReviewId.parse(crypto.randomUUID()), cardId: other, rating: 3, at }, at);
   await storage.exec("delete from card where id = ?", other);
   assert.deepEqual(await storage.exec("select count(*) as n from cloze where card_id = ?", other), [{ n: 0 }]);
