@@ -130,7 +130,7 @@ test("the tables are STRICT, the user's are WITHOUT ROWID, and timestamps must b
   const storage = await storageOf("heidi");
   assert.deepEqual(
     await storage.exec(
-      "select name, strict, wr from pragma_table_list where name in ('word', 'card', 'cloze', 'review', 'settings', 'migration_log', 'reading_list') order by name",
+      "select name, strict, wr from pragma_table_list where name in ('word', 'card', 'cloze', 'review', 'settings', 'migration_log', 'reading_list', 'row_count') order by name",
     ),
     [
       { name: "card", strict: 1, wr: 1 },
@@ -138,6 +138,7 @@ test("the tables are STRICT, the user's are WITHOUT ROWID, and timestamps must b
       { name: "migration_log", strict: 1, wr: 0 },
       { name: "reading_list", strict: 1, wr: 1 },
       { name: "review", strict: 1, wr: 1 },
+      { name: "row_count", strict: 1, wr: 1 },
       { name: "settings", strict: 1, wr: 0 },
       { name: "word", strict: 1, wr: 1 },
     ],
@@ -293,6 +294,42 @@ test("cloze's migration keeps the word cards and their reviews, and down takes t
   assert.deepEqual(await storage.exec("select id from review"), [{ id: "r0" }]);
   assert.ok(!(await tables("judy")).includes("cloze"));
   assert.deepEqual(await storage.exec("pragma foreign_key_check"), []);
+});
+
+test("row_count's triggers keep the count of cloze cards however one goes, and its migration counts those there are", async () => {
+  const at = schemas.Timestamp.parse("2026-11-07T00:00:00.000Z");
+  const mia = local.env.USER.getByName("mia");
+  await mia.migrate(LATEST);
+  const storage = await storageOf("mia");
+  const cloze = {
+    lemmaId: "pl:pies:NOUN" as const,
+    documentId: schemas.DocumentId.parse("a".repeat(64)),
+    sentence: "Widzę psa.",
+    sentenceStart: 0,
+    blankStart: 6,
+    blankEnd: 9,
+    feats: { Case: "Acc" },
+    why: null,
+  };
+  const count = async () => (await storage.exec<{ n: number }>("select n from row_count where name = 'cloze'"))[0]?.n;
+  assert.equal(await count(), 0);
+  const made = await mia.makeCloze(cloze, at);
+  assert.ok(made.kind === "made");
+  await mia.makeCloze({ ...cloze, blankStart: 16, blankEnd: 19 }, at);
+  assert.equal((await mia.makeCloze(cloze, at)).kind, "had");
+  assert.equal(await count(), 2);
+  assert.ok(await mia.deleteCloze(made.cardId));
+  assert.equal(await count(), 1);
+  await storage.exec("delete from card where kind = 'cloze'");
+  assert.equal(await count(), 0);
+  await mia.makeCloze(cloze, at);
+  await mia.makeCloze({ ...cloze, blankStart: 16, blankEnd: 19 }, at);
+
+  await mia.migrate(7);
+  assert.ok(!(await tables("mia")).includes("row_count"));
+  assert.deepEqual(await storage.exec("select name from sqlite_master where type = 'trigger' and tbl_name = 'cloze'"), []);
+  await mia.migrate(8);
+  assert.equal(await count(), 2);
 });
 
 test("card_groups' migration keeps the user's new cards a day as new words a day, and down restores it", async () => {

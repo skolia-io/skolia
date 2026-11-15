@@ -241,7 +241,8 @@ export class User extends DurableObject<UserEnv> {
       const had = this.#exec(
         sql`SELECT card_id FROM cloze WHERE document_id = ${cloze.documentId} AND blank_start = ${cloze.blankStart}`,
       ).toArray()[0];
-      if (had === undefined && Number(this.#exec(sql`SELECT count(*) AS n FROM cloze`).one()["n"]) >= MAX_CLOZES) return { kind: "full" };
+      if (had === undefined && Number(this.#exec(sql`SELECT n FROM row_count WHERE name = 'cloze'`).one()["n"]) >= MAX_CLOZES)
+        return { kind: "full" };
       const hasStatus = this.#exec(sql`SELECT 1 FROM word WHERE lemma_id = ${cloze.lemmaId}`).toArray().length > 0;
       if (!hasStatus) this.#setWord(s, cloze.lemmaId, "active", now);
       if (had !== undefined) return { kind: "had", cardId: CardId.parse(had["card_id"]) };
