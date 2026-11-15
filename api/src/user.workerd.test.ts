@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import type { Timestamp } from "@skolia/shared/api";
 import * as schemas from "@skolia/shared/schemas";
+import { type TableColumn, tableColumns, timestampNames } from "@skolia/util/checks";
 import { startLocal, type Local } from "./testing/harness.ts";
 import { MIGRATIONS } from "./user/migrations/index.ts";
 import { checksum } from "./user/migrator.ts";
@@ -155,6 +156,14 @@ test("the tables are STRICT, the user's are WITHOUT ROWID, and timestamps must b
     ),
     /CHECK constraint failed/,
   );
+});
+
+test("a column is a toISOString() timestamp exactly when its name ends in _at", async () => {
+  await local.env.USER.getByName("heidi").words(FIRST_PAGE);
+  const query = tableColumns([]);
+  const columns = await (await storageOf("heidi")).exec<TableColumn>(query.text, ...query.params);
+  assert.ok(columns.some((c) => c.table === "card" && c.column === "due_at"));
+  assert.deepEqual(timestampNames(columns), { unnamed: ["reading_position.at"], unchecked: [] });
 });
 
 test("a page of the reading list seeks to its key in an index, with or without a language, and sorts nothing", async () => {
