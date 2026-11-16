@@ -2,6 +2,7 @@
   import { createQuery } from "@tanstack/svelte-query";
   import { isLang, type CardGroup, type DocumentId, type Lang } from "@skolia/shared/api";
   import * as schemas from "@skolia/shared/schemas";
+  import About from "./pages/About.svelte";
   import Cards from "./pages/Cards.svelte";
   import Explore from "./pages/Explore.svelte";
   import { userQuery } from "./lib/queries.ts";
@@ -12,7 +13,6 @@
   import Review from "./pages/Review.svelte";
   import Settings from "./pages/Settings.svelte";
   import Upload from "./pages/Upload.svelte";
-  import { versionUrl } from "./lib/version.ts";
 
   type Route =
     | { page: "explore" }
@@ -21,6 +21,7 @@
     | { page: "review"; lang: Lang | null; group: CardGroup | null }
     | { page: "cards"; lang: Lang | null }
     | { page: "settings" }
+    | { page: "about" }
     | { page: "reader"; id: DocumentId };
 
   function parse(hash: string): Route {
@@ -35,6 +36,7 @@
     const [, cards] = /^#\/cards\/([a-z]+)$/.exec(hash) ?? [];
     if (cards !== undefined && isLang(cards)) return { page: "cards", lang: cards };
     if (hash === "#/settings") return { page: "settings" };
+    if (hash === "#/about") return { page: "about" };
     // After the id, a word in the text (lib/link.ts), which Reader reads
     const [, doc] = /^#\/doc\/([^?]+)(?:\?.*)?$/.exec(hash) ?? [];
     const id = schemas.DocumentId.safeParse(doc);
@@ -42,8 +44,6 @@
   }
 
   let route = $state(parse(location.hash));
-  const version = import.meta.env.VITE_VERSION ?? "dev";
-  const versionLink = versionUrl(version);
   const signedIn = createQuery(() => userQuery);
   /** undefined while loading, null when signed out. */
   const user = $derived(signedIn.data);
@@ -93,16 +93,12 @@
     <Cards {user} lang={route.lang} />
   {:else if route.page === "settings"}
     <Settings {user} />
+  {:else if route.page === "about"}
+    <About />
   {:else}
     <Explore {user} />
   {/if}
 </div>
-
-{#if versionLink}
-  <footer><a href={versionLink} rel="noreferrer">{version}</a></footer>
-{:else}
-  <footer>{version}</footer>
-{/if}
 
 <style>
   .content {
@@ -122,12 +118,5 @@
 
   .banner p {
     margin: 0;
-  }
-
-  footer {
-    padding: 2rem 1rem 1rem;
-    color: var(--muted);
-    font-size: 0.75rem;
-    text-align: center;
   }
 </style>
