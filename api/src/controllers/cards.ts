@@ -1,35 +1,32 @@
-// Words, flashcards, reviews and settings, which live in each user's Durable Object, and
+// Flashcards, reviews and settings, which live in each user's Durable Object, and
 // the lexicon entries the cards show.
 import {
-  MAX_CLOZES,
+  MAX_CARDS,
   MAX_LOOKUP,
   timestamp,
   type CardCounts,
   type CardGroup,
+  type Card,
   type CardId,
-  type ClozeKey,
-  type ClozeMade,
-  type ClozeStart,
+  type CardKey,
+  type CardListing,
+  type CardMade,
+  type CardState,
   type Paginated,
-  type WordKey,
-  type DocumentId,
   type Due,
   type FeatureSets,
   type Lang,
   type LemmaId,
   type LexiconEntry,
   type Lookup,
-  type NewCloze,
+  type NewCard,
   type Reviewed,
   type ReviewRequest,
   type ScheduledCard,
   type Settings,
   type Timestamp,
   type User,
-  type Word,
-  type WordStatus,
 } from "@skolia/shared/api";
-import type { PageRequest } from "@skolia/shared/page";
 import type { Deps, Lexicon } from "../ports.ts";
 import { noSuchDocument } from "./documents.ts";
 import { NO_CONTENT, fail, ok, type Failed, type Json, type NoContent, type Ok } from "./result.ts";
@@ -38,21 +35,6 @@ import { NO_CONTENT, fail, ok, type Failed, type Json, type NoContent, type Ok }
 const MAX_DUE = 200;
 /** How far ahead of the server's clock a review's time may be. */
 export const MAX_CLOCK_SKEW_MS = 5 * 60 * 1000;
-
-export async function words(deps: Deps, user: User, page: PageRequest<WordKey>): Promise<Ok<Paginated<Word, WordKey>>> {
-  return ok(await deps.users.words(user.id, page));
-}
-
-export async function setWord(deps: Deps, user: User, lemmaId: LemmaId, status: WordStatus): Promise<NoContent> {
-  await deps.users.setWord(user.id, lemmaId, status, timestamp(deps.now()));
-  return NO_CONTENT;
-}
-
-/** Clears the word's status, if it had one, and takes its cards out of reviews; deletes nothing. */
-export async function clearWordStatus(deps: Deps, user: User, lemmaId: LemmaId): Promise<NoContent> {
-  await deps.users.clearWordStatus(user.id, lemmaId);
-  return NO_CONTENT;
-}
 
 /** dayStart: when the user's day started, any ISO time; today's new cards count from it. */
 export async function counts(deps: Deps, user: User, dayStart: string): Promise<Ok<CardCounts[]>> {
@@ -80,36 +62,44 @@ export async function review(deps: Deps, user: User, request: ReviewRequest): Pr
   }
 }
 
-/** 201 for a new card, 200 when the sentence and word already had one. The text is one the
- * user sees, and the sentence is in it where it says it starts. */
-export async function makeCloze(
-  deps: Deps,
-  user: User,
-  cloze: NewCloze,
-): Promise<Json<ClozeMade, 201> | Ok<ClozeMade> | Failed<404 | 409>> {
-  if (!(await deps.documents.visible(cloze.documentId, user.id))) return noSuchDocument();
-  const made = await deps.users.makeCloze(user.id, cloze, timestamp(deps.now()));
+/** Whether the card's data refers only to what the user sees: a cloze card's text is one
+ * they see. */
+async function seesData(deps: Deps, user: User, card: NewCard): Promise<boolean> {
+  switch (card.kind) {
+    case "recognition":
+    case "production":
+      return true;
+    case "cloze":
+      return (await deps.documents.visible(card.data.documentId, user.id)) !== null;
+  }
+}
+
+/** 201 for a new card, 200 when the word had one of its kind, or the text had one at the
+ * blank. */
+export async function makeCard(deps: Deps, user: User, card: NewCard): Promise<Json<CardMade, 201> | Ok<CardMade> | Failed<404 | 409>> {
+  if (!(await seesData(deps, user, card))) return noSuchDocument();
+  const made = await deps.users.makeCard(user.id, card, timestamp(deps.now()));
   switch (made.kind) {
     case "made":
       return { status: 201, body: { cardId: made.cardId } };
     case "had":
       return ok({ cardId: made.cardId });
     case "full":
-      return fail(409, `a user has at most ${MAX_CLOZES} cloze cards`);
+      return fail(409, `a user has at most ${MAX_CARDS} cards`);
   }
 }
 
-export async function clozes(
-  deps: Deps,
-  user: User,
-  documentId: DocumentId,
-  page: PageRequest<ClozeKey>,
-): Promise<Ok<Paginated<ClozeStart, ClozeKey>>> {
-  return ok(await deps.users.clozes(user.id, documentId, page));
+export async function cards(deps: Deps, user: User, listing: CardListing): Promise<Ok<Paginated<Card, CardKey>>> {
+  return ok(await deps.users.cards(user.id, listing));
 }
 
-export async function deleteCloze(deps: Deps, user: User, cardId: CardId): Promise<NoContent | Failed<404>> {
-  return (await deps.users.deleteCloze(user.id, cardId)) ? NO_CONTENT : fail(404, "no such cloze card");
+export async function setCardState(deps: Deps, user: User, cardId: CardId, state: CardState): Promise<NoContent | Failed<404>> {
+  return (await deps.users.setCardState(user.id, cardId, state)) ? NO_CONTENT : fail(404, "no such card");
+}
+
+/** Any kind of card, with its reviews. */
+export async function deleteCard(deps: Deps, user: User, cardId: CardId): Promise<NoContent | Failed<404>> {
+  return (await deps.users.deleteCard(user.id, cardId)) ? NO_CONTENT : fail(404, "no such card");
 }
 
 export async function settings(deps: Deps, user: User): Promise<Ok<Settings>> {

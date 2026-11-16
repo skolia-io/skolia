@@ -6,22 +6,21 @@ import type { AppType } from "@skolia/api/app";
 import {
   ANNOTATION_PAGE,
   type Annotation,
-  CLOZE_PAGE,
+  CARD_PAGE,
   TAG_PAGE,
-  WORD_PAGE,
   isLang,
-  lemmaParam,
   type AnnotationKey,
   type ApiError,
+  type Card,
   type CardCounts,
   type CardGroup,
-  type ClozeKey,
-  type ClozeMade,
-  type ClozeStart,
+  type CardId,
+  type CardKey,
+  type CardMade,
+  type CardState,
   type DocumentId,
   type DocumentKey,
   type TagKey,
-  type WordKey,
   type Paginated,
   type Due,
   type DocumentSummary,
@@ -30,7 +29,8 @@ import {
   type ImportRequest,
   type Lang,
   type LemmaId,
-  type NewClozeInput,
+  type Lookup,
+  type NewCardInput,
   type Rating,
   type ListedReading,
   type ReadingEntry,
@@ -41,8 +41,6 @@ import {
   type Reviewed,
   type Settings,
   type User,
-  type Word,
-  type WordStatus,
 } from "@skolia/shared/api";
 import { allPages, type Cursor } from "@skolia/shared/page";
 import { BUNDLE_SCHEMA, SCHEMA, type Blob, type Bundle } from "@skolia/shared/schema";
@@ -189,27 +187,6 @@ export async function loadReading(id: DocumentId, names: ReadingNames): Promise<
   return { lang, text: await text.text(), analysis: a, bundle: b };
 }
 
-/** The user's words, or null when signed out. */
-export function listWords(): Promise<readonly Word[] | null> {
-  return listOwn(async (after?: Cursor<WordKey>) => {
-    const response = await api.me.words.$get({ query: { after, limit: String(WORD_PAGE.max) } });
-    if (response.status === 401) throw new SignedOut();
-    if (!response.ok) throw await failure(response);
-    return response.json();
-  });
-}
-
-export async function setWord(lemmaId: LemmaId, status: WordStatus): Promise<void> {
-  const response = await api.me.words[":lemmaId"].$put({ param: { lemmaId: lemmaParam(lemmaId) }, json: { status } });
-  if (!response.ok) throw await failure(response);
-}
-
-/** Takes the word's status away, and its cards out of reviews, keeping their history. */
-export async function clearWordStatus(lemmaId: LemmaId): Promise<void> {
-  const response = await api.me.words[":lemmaId"].$delete({ param: { lemmaId: lemmaParam(lemmaId) } });
-  if (!response.ok) throw await failure(response);
-}
-
 /** The start of the local day, which today's new cards count from. */
 function dayStartOf(now: Date): string {
   return new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
@@ -241,26 +218,57 @@ export async function review(cardId: string, rating: Rating): Promise<Reviewed> 
   return response.json();
 }
 
-/** A cloze card for the word in the sentence, or the one it already has. */
-export async function makeCloze(json: NewClozeInput): Promise<ClozeMade> {
-  const response = await api.me.clozes.$post({ json });
+/** A card, or the one there was: the word's of its kind, or the sentence's at the blank. */
+export async function makeCard(card: NewCardInput): Promise<CardMade> {
+  const response = await api.me.cards.$post({ json: card });
   if (!response.ok) throw await failure(response);
   return response.json();
 }
 
-/** The user's cloze cards from a text, or null when signed out. */
-export function listClozes(documentId: DocumentId): Promise<readonly ClozeStart[] | null> {
-  return listOwn(async (after?: Cursor<ClozeKey>) => {
-    const response = await api.me.clozes.$get({ query: { documentId, after, limit: String(CLOZE_PAGE.max) } });
+/** The user's cards from a text, by where their blanks start, or null when signed out. */
+export function listTextCards(documentId: DocumentId): Promise<readonly Card[] | null> {
+  return listOwn(async (after?: Cursor<CardKey>) => {
+    const response = await api.me.cards.$get({ query: { documentId, after, limit: String(CARD_PAGE.max) } });
     if (response.status === 401) throw new SignedOut();
     if (!response.ok) throw await failure(response);
     return response.json();
   });
 }
 
-export async function deleteCloze(cardId: string): Promise<void> {
-  const response = await api.me.clozes[":cardId"].$delete({ param: { cardId } });
+/** A word's cards, or null when signed out. */
+export function listWordCards(lemmaId: LemmaId): Promise<readonly Card[] | null> {
+  return listOwn(async (after?: Cursor<CardKey>) => {
+    const response = await api.me.cards.$get({ query: { lemmaId, after, limit: String(CARD_PAGE.max) } });
+    if (response.status === 401) throw new SignedOut();
+    if (!response.ok) throw await failure(response);
+    return response.json();
+  });
+}
+
+/** A page of a language's cards, newest first. */
+export async function listCards(lang: Lang, after?: Cursor<CardKey>): Promise<Paginated<Card, CardKey>> {
+  const response = await api.me.cards.$get({ query: { lang, after } });
   if (!response.ok) throw await failure(response);
+  return response.json();
+}
+
+export async function setCardState(cardId: CardId, state: CardState): Promise<void> {
+  const response = await api.me.cards[":cardId"].$patch({ param: { cardId }, json: { state } });
+  if (!response.ok) throw await failure(response);
+}
+
+/** Deletes a card of any kind, with its reviews. */
+export async function deleteCard(cardId: CardId): Promise<void> {
+  const response = await api.me.cards[":cardId"].$delete({ param: { cardId } });
+  if (!response.ok) throw await failure(response);
+}
+
+/** The lexicon's entries for the lemmas, MAX_LOOKUP at most. */
+export async function lookUp(ids: readonly LemmaId[]): Promise<Lookup> {
+  const response = await api.lexicon.entries.$post({ json: { ids: [...ids] } });
+  if (!response.ok) throw await failure(response);
+  // Hono's JSON type makes the entries' optional fields `| undefined`; it's the same JSON
+  return (await response.json()) as Lookup;
 }
 
 export async function getSettings(): Promise<Settings> {

@@ -42,7 +42,6 @@ const DOCUMENT_ID_MESSAGE = "document id must be 64 lowercase hex characters";
 const ANNOTATION_ID_MESSAGE = "annotation id must be 64 lowercase hex characters";
 // An annotation's data is a URL or so; this leaves room for a kind with more
 const MAX_ANNOTATION_BYTES = 16 * 1024;
-const LEMMA_ID_MESSAGE = `lemma id must be {lang}:{lemma}:{upos}, lang one of ${LANGS.join(", ")}`;
 
 export type AppType = ReturnType<typeof createApp>;
 
@@ -113,28 +112,6 @@ export function createApp(deps: Deps) {
       signedIn(c, async (user) => ok(user)),
     )
     .get(
-      "/api/me/words",
-      mine(TAGS.words, "A page of the user's words", "Every word the user has given a status, by lemma id."),
-      validator("query", schemas.WordsQuery, badRequest()),
-      responds({ 200: json(schemas.page(schemas.Word), "A page of words"), 401: NOT_SIGNED_IN }),
-      (c) => signedIn(c, (user) => cards.words(deps, user, c.req.valid("query"))),
-    )
-    .put(
-      "/api/me/words/:lemmaId",
-      mine(TAGS.words, "Set a word's status", "active: the user is learning it; known and ignored take its cards out of reviews."),
-      validator("param", z.object({ lemmaId: schemas.LemmaId }), badRequest(LEMMA_ID_MESSAGE)),
-      validator("json", schemas.SetWord, badRequest()),
-      responds({ 204: NO_BODY, 401: NOT_SIGNED_IN }),
-      (c) => signedIn(c, (user) => cards.setWord(deps, user, c.req.valid("param").lemmaId, c.req.valid("json").status)),
-    )
-    .delete(
-      "/api/me/words/:lemmaId",
-      mine(TAGS.words, "Clear a word's status", "The word is new again, and its cards are reviewed; nothing is deleted."),
-      validator("param", z.object({ lemmaId: schemas.LemmaId }), badRequest(LEMMA_ID_MESSAGE)),
-      responds({ 204: NO_BODY, 401: NOT_SIGNED_IN }),
-      (c) => signedIn(c, (user) => cards.clearWordStatus(deps, user, c.req.valid("param").lemmaId)),
-    )
-    .get(
       "/api/me/cards/counts",
       mine(TAGS.cards, "Cards to review, by language", "dayStart: when the user's day started; today's new cards count from it."),
       validator("query", schemas.CountsQuery, badRequest("dayStart must be an ISO time")),
@@ -164,35 +141,52 @@ export function createApp(deps: Deps) {
       }),
       (c) => signedIn(c, (user) => cards.review(deps, user, c.req.valid("json"))),
     )
-    .post(
-      "/api/me/clozes",
-      mine(TAGS.cards, "Make a cloze card", "A sentence from a text the user sees, with a word blanked out."),
-      validator("json", schemas.NewCloze, badRequest()),
+    .get(
+      "/api/me/cards",
+      mine(
+        TAGS.cards,
+        "A page of the user's cards",
+        "A language's (lang) or a word's (lemmaId), newest first; or a text's cloze cards (documentId), in the order of the text. One of the three, and a cursor the same kind of list gave. What the user knows of a word is its cards' states.",
+      ),
+      validator("query", schemas.CardsQuery, badRequest()),
       responds({
-        200: json(schemas.ClozeMade, "The sentence and word already had a card"),
-        201: json(schemas.ClozeMade, "A new card"),
+        200: json(schemas.page(schemas.Card), "A page of cards"),
+        400: error("Not one of lang, lemmaId and documentId, or another list's cursor"),
+        401: NOT_SIGNED_IN,
+      }),
+      (c) => signedIn(c, (user) => cards.cards(deps, user, c.req.valid("query"))),
+    )
+    .post(
+      "/api/me/cards",
+      mine(
+        TAGS.cards,
+        "Make a card",
+        "A word's recognition or production card, one of each per word; or a cloze card, a sentence from a text the user sees with the word blanked out, one per blank. A new card is learning.",
+      ),
+      validator("json", schemas.NewCard, badRequest()),
+      responds({
+        200: json(schemas.CardMade, "The word had a card of the kind, or the sentence and word had one"),
+        201: json(schemas.CardMade, "A new card"),
         401: NOT_SIGNED_IN,
         404: error("No such document"),
-        409: error("The user has as many cloze cards as they may"),
+        409: error("The user has as many cards as they may"),
       }),
-      (c) => signedIn(c, (user) => cards.makeCloze(deps, user, c.req.valid("json"))),
+      (c) => signedIn(c, (user) => cards.makeCard(deps, user, c.req.valid("json"))),
     )
-    .get(
-      "/api/me/clozes",
-      mine(TAGS.cards, "A page of a text's cloze cards", "By where each one's blank starts in the text."),
-      validator("query", schemas.ClozesQuery, badRequest()),
-      responds({ 200: json(schemas.page(schemas.ClozeStart), "A page of cards"), 401: NOT_SIGNED_IN }),
-      (c) => {
-        const { documentId, ...page } = c.req.valid("query");
-        return signedIn(c, (user) => cards.clozes(deps, user, documentId, page));
-      },
+    .patch(
+      "/api/me/cards/:cardId",
+      mine(TAGS.cards, "Change a card's state", "known takes it out of reviews; learning puts it back where it was in its schedule."),
+      validator("param", z.object({ cardId: schemas.CardId }), badRequest("card id must be a UUID")),
+      validator("json", schemas.CardChange, badRequest()),
+      responds({ 204: NO_BODY, 401: NOT_SIGNED_IN, 404: error("No such card") }),
+      (c) => signedIn(c, (user) => cards.setCardState(deps, user, c.req.valid("param").cardId, c.req.valid("json").state)),
     )
     .delete(
-      "/api/me/clozes/:cardId",
-      mine(TAGS.cards, "Delete a cloze card"),
+      "/api/me/cards/:cardId",
+      mine(TAGS.cards, "Delete a card", "A card of any kind, with its reviews."),
       validator("param", z.object({ cardId: schemas.CardId }), badRequest("card id must be a UUID")),
       responds({ 204: NO_BODY, 401: NOT_SIGNED_IN, 404: error("No such card") }),
-      (c) => signedIn(c, (user) => cards.deleteCloze(deps, user, c.req.valid("param").cardId)),
+      (c) => signedIn(c, (user) => cards.deleteCard(deps, user, c.req.valid("param").cardId)),
     )
     .get(
       "/api/me/positions/:id",

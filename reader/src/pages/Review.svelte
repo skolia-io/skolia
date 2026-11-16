@@ -27,7 +27,7 @@
   import { createRemoveCloze } from "../lib/clozes.ts";
   import { countsQuery, dueQuery, settingsQuery } from "../lib/queries.ts";
   import { clue, keyTarget, shortcut } from "../lib/review.ts";
-  import { createSetStatus } from "../lib/words.ts";
+  import { createMarkKnown } from "../lib/words.ts";
 
   /** lang and group are the URL's (#/review/pl/forms); without a language, the one with the
    * most to review. group only counts when the settings review forms on their own: without
@@ -51,7 +51,7 @@
   let error = $state<string | null>(null);
   let showButton = $state<HTMLButtonElement | null>(null);
   let goodButton = $state<HTMLButtonElement | null>(null);
-  const setStatus = createSetStatus();
+  const markWordKnown = createMarkKnown();
   const deleteCloze = createRemoveCloze();
 
   /** Cards to review in one group, or with none in both. */
@@ -125,14 +125,14 @@
     showButton?.focus();
   }
 
-  /** Known takes the word out of reviews, all its cards, and skips them in this session. */
+  /** Known marks all the word's cards known, which takes them out of reviews, and skips them in this session. */
   async function markKnown(): Promise<void> {
     if (!card || busy) return;
     const { lemmaId } = card;
     busy = true;
     error = null;
     try {
-      await setStatus.mutateAsync({ lemmaId, status: "known" });
+      await markWordKnown.mutateAsync(lemmaId);
       drop((c) => c.lemmaId !== lemmaId);
     } catch (e: unknown) {
       error = message(e);
@@ -146,8 +146,8 @@
   /** Deletes a cloze card, made from a sentence the parser got wrong or one not worth
    * practising, with its reviews. */
   async function removeCloze(): Promise<void> {
-    if (!card?.cloze || busy || !confirm("Delete this card and its reviews?")) return;
-    const { id, cloze } = card;
+    if (card?.kind !== "cloze" || busy || !confirm("Delete this card and its reviews?")) return;
+    const { id, data: cloze } = card;
     busy = true;
     error = null;
     try {
@@ -187,8 +187,8 @@
     const sets = due.featureSets;
     const language = LANGUAGES[lang];
     const featsOf = (id: number) => sets[String(id)];
-    return c.cloze
-      ? formTables(featsOf, c.entry, { text: blankOf(c.cloze), feats: c.cloze.feats }, language.paradigm, language.mergeLabels)
+    return c.kind === "cloze"
+      ? formTables(featsOf, c.entry, { text: blankOf(c.data), feats: c.data.feats }, language.paradigm, language.mergeLabels)
       : lemmaTables(featsOf, c.entry, language.paradigm, language.mergeLabels);
   }
 
@@ -343,14 +343,14 @@
       {#if card}
         <section class="flashcard" aria-live="polite" aria-atomic="true">
           <div class="known">
-            {#if card.cloze}
+            {#if card.kind === "cloze"}
               <Button variant="quiet" small disabled={busy} title="Delete this card and its reviews" onclick={removeCloze}>Delete</Button>
             {:else}
               <Button variant="quiet" small disabled={busy} title="You know this word: stop reviewing it" onclick={markKnown}>Known</Button>
             {/if}
           </div>
-          {#if card.cloze}
-            {@render sentence(card, card.cloze, revealed)}
+          {#if card.kind === "cloze"}
+            {@render sentence(card, card.data, revealed)}
           {:else if card.kind === "recognition"}
             {@render lemma(card)}
           {:else}
@@ -358,8 +358,8 @@
           {/if}
           {#if revealed}
             <hr>
-            {#if card.cloze}
-              {@render why(card.cloze)}
+            {#if card.kind === "cloze"}
+              {@render why(card.data)}
             {:else if card.kind === "production"}
               {@render lemma(card)}
             {/if}
@@ -399,6 +399,9 @@
     {/if}
     {#if failure}
       <p class="error" role="alert">{failure}</p>
+    {/if}
+    {#if user && selected}
+      <p class="manage"><a href="#/cards/{selected}">Manage cards</a></p>
     {/if}
   </div>
 </Page>
@@ -444,6 +447,16 @@
   }
 
   .muted {
+    color: var(--muted);
+  }
+
+  .manage {
+    margin: 2rem 0 0;
+    font-size: 0.85rem;
+    text-align: center;
+  }
+
+  .manage a {
     color: var(--muted);
   }
 

@@ -76,7 +76,6 @@ export const NOT_SIGNED_IN = error("Not signed in");
 /** Tags group the operations in the docs. */
 export const TAGS = {
   account: "Account",
-  words: "Words",
   cards: "Cards",
   documents: "Documents",
   annotations: "Annotations",

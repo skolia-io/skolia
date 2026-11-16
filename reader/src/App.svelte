@@ -2,9 +2,9 @@
   import { createQuery } from "@tanstack/svelte-query";
   import { isLang, type CardGroup, type DocumentId, type Lang } from "@skolia/shared/api";
   import * as schemas from "@skolia/shared/schemas";
+  import Cards from "./pages/Cards.svelte";
   import Explore from "./pages/Explore.svelte";
   import { userQuery } from "./lib/queries.ts";
-  import { createWords } from "./lib/words.ts";
   import Button from "./components/Button.svelte";
   import Nav from "./components/Nav.svelte";
   import Reader from "./pages/reader/Reader.svelte";
@@ -19,6 +19,7 @@
     | { page: "list" }
     | { page: "upload" }
     | { page: "review"; lang: Lang | null; group: CardGroup | null }
+    | { page: "cards"; lang: Lang | null }
     | { page: "settings" }
     | { page: "reader"; id: DocumentId };
 
@@ -29,6 +30,9 @@
     const [, review, group] = /^#\/review\/([a-z]+)(?:\/(words|forms))?$/.exec(hash) ?? [];
     if (review !== undefined && isLang(review))
       return { page: "review", lang: review, group: group === "words" || group === "forms" ? group : null };
+    if (hash === "#/cards") return { page: "cards", lang: null };
+    const [, cards] = /^#\/cards\/([a-z]+)$/.exec(hash) ?? [];
+    if (cards !== undefined && isLang(cards)) return { page: "cards", lang: cards };
     if (hash === "#/settings") return { page: "settings" };
     // After the id, a word in the text (lib/link.ts), which Reader reads
     const [, doc] = /^#\/doc\/([^?]+)(?:\?.*)?$/.exec(hash) ?? [];
@@ -42,12 +46,10 @@
   const signedIn = createQuery(() => userQuery);
   /** undefined while loading, null when signed out. */
   const user = $derived(signedIn.data);
-  // The word sheet's statuses, loaded once someone signs in
-  const words = createWords();
   let error = $state<string | null>(null);
 
   $effect(() => {
-    const failed = signedIn.error ?? words.error;
+    const failed = signedIn.error;
     if (failed) error = failed.message;
   });
 </script>
@@ -86,6 +88,8 @@
     <Upload {user} />
   {:else if route.page === "review"}
     <Review {user} lang={route.lang} group={route.group} />
+  {:else if route.page === "cards"}
+    <Cards {user} lang={route.lang} />
   {:else if route.page === "settings"}
     <Settings {user} />
   {:else}

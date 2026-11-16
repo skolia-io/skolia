@@ -23,8 +23,10 @@ const DOCUMENTATION = {
   servers: [{ url: "/", description: "The deployment serving this spec" }],
   tags: [
     { name: TAGS.account, description: "Who's signed in, and what's deployed" },
-    { name: TAGS.words, description: "The words a user is learning, knows or ignores" },
-    { name: TAGS.cards, description: "Review cards, their schedule and the user's review settings" },
+    {
+      name: TAGS.cards,
+      description: "Review cards, which are what the user is learning and knows, their schedule and the user's review settings",
+    },
     { name: TAGS.documents, description: "Texts, each user's entry for them, and their analyses" },
     { name: TAGS.annotations, description: "What an entry's user attached to ranges of its text" },
     { name: TAGS.reading, description: "The reading list, and where the user is in each text" },

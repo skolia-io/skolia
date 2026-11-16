@@ -2,11 +2,10 @@ import * as z from "zod";
 import {
   ANNOTATION_PAGE,
   CARD_GROUPS,
-  CARD_KINDS,
-  CLOZE_PAGE,
+  CARD_PAGE,
+  CARD_STATES,
   DOCUMENT_PAGE,
   TAG_PAGE,
-  WORD_PAGE,
   LANGS,
   LICENCES,
   MAX_ANNOTATION_TEXT,
@@ -23,13 +22,14 @@ import {
   RATINGS,
   READING_PAGE,
   READING_STATUSES,
+  SCHEDULE_STATUSES,
   SHAREABLE_LICENCES,
   TAG_KIND,
   TAG_VALUE,
   UPOS,
   USER_TYPES,
   VISIBILITIES,
-  WORD_STATUSES,
+  WORD_CARD_KINDS,
   isShareable,
   parseTag,
   tagFilter,
@@ -65,14 +65,6 @@ export const UserType = z.enum(USER_TYPES);
 export const LemmaId = z
   .templateLiteral([Lang, ":", z.string().min(1).max(MAX_LEMMA_LENGTH), ":", z.enum(UPOS)])
   .meta({ id: "LemmaId", description: "{lang}:{lemma}:{upos}, pl:pies:NOUN" });
-
-export const WordStatus = z.enum(WORD_STATUSES).meta({ id: "WordStatus" });
-
-export const Word = z
-  .object({ lemmaId: LemmaId, status: WordStatus, updatedAt: Timestamp, mature: z.boolean() })
-  .meta({ id: "Word", description: "mature: its recognition card is mature, so the reader shows it as known." });
-
-export const SetWord = z.object({ status: WordStatus });
 
 const PerDay = z.number().int().min(0).max(MAX_NEW_PER_DAY);
 
@@ -125,9 +117,9 @@ export const Cloze = z.object({
   why: z.string().max(MAX_CLOZE_WHY).nullable(),
 });
 
-/** A cloze card to make for the word in the sentence: the blank, like the sentence, is
- * offsets in the text, and must be inside the sentence. */
-export const NewCloze = Cloze.extend({ lemmaId: LemmaId }).refine(
+/** A new cloze card's data: the blank, like the sentence, is offsets in the text, and must
+ * be inside the sentence. */
+export const NewCloze = Cloze.refine(
   (c) =>
     c.sentenceStart <= c.blankStart &&
     c.blankStart < c.blankEnd &&
@@ -136,23 +128,83 @@ export const NewCloze = Cloze.extend({ lemmaId: LemmaId }).refine(
   { message: "the blank must be a word in the sentence" },
 );
 
-/** Where a word is in the list of a user's words: by lemma id. */
-export const WordKey = z.tuple([LemmaId]).readonly();
-export const WordsQuery = pageQuery(WordKey, WORD_PAGE);
+/** A word's card has no data of its own: its lemma is what it asks. */
+const WordCardData = z.strictObject({});
 
-/** Where a cloze card is in the list of a text's: where its blank starts. */
-export const ClozeKey = z.tuple([TextOffset]).readonly();
-export const ClozesQuery = pageQuery(ClozeKey, CLOZE_PAGE).extend({ documentId: DocumentId });
+/** What a card holds beyond what every card has, by kind. recognition and production:
+ * nothing. cloze: its sentence and blank. The database checks only that data is an object;
+ * a new kind is a variant here. */
+export const CardContent = z.discriminatedUnion("kind", [
+  z.object({ kind: z.enum(WORD_CARD_KINDS), data: WordCardData }),
+  z.object({ kind: z.literal("cloze"), data: Cloze }),
+]);
 
-/** cloze: a cloze card's sentence, null for a word's cards. */
-export const ScheduledCard = z.object({
-  id: CardId,
-  lemmaId: LemmaId,
-  kind: z.enum(CARD_KINDS),
-  isNew: z.boolean(),
-  dueAt: Timestamp,
-  cloze: Cloze.nullable(),
-});
+/** A card to make for the word: a recognition or production card, one of each per word,
+ * data left out; or a cloze card, any number per word, one per blank in a text. */
+export const NewCard = z
+  .intersection(
+    z.object({ lemmaId: LemmaId }),
+    z.discriminatedUnion("kind", [
+      z.object({ kind: z.enum(WORD_CARD_KINDS), data: WordCardData.default({}) }),
+      z.object({ kind: z.literal("cloze"), data: NewCloze }),
+    ]),
+  )
+  .meta({ id: "NewCard" });
+
+export const CardState = z.enum(CARD_STATES).meta({ id: "CardState" });
+
+/** What changes in a card: its state. */
+export const CardChange = z.object({ state: CardState }).meta({ id: "CardChange" });
+
+export const ScheduleStatus = z.enum(SCHEDULE_STATUSES);
+
+/** A card as the list of them has it. state: whether it's reviewed (learning) or known.
+ * scheduledDays: the interval its last review gave it. lastReviewedAt: when it was last
+ * answered, by the reviewer's clock. */
+export const Card = z
+  .intersection(
+    z.object({
+      id: CardId,
+      lemmaId: LemmaId,
+      createdAt: Timestamp,
+      state: CardState,
+      scheduleStatus: ScheduleStatus,
+      dueAt: Timestamp,
+      scheduledDays: z.number().min(0),
+      lastReviewedAt: Timestamp.nullable(),
+    }),
+    CardContent,
+  )
+  .meta({ id: "Card" });
+
+/** Where a card is in a language's list: newest first, then by id. */
+export const NewestCardKey = z.tuple([Timestamp, CardId]).readonly();
+/** Where a card is in a text's list: where its blank starts. */
+export const TextCardKey = z.tuple([TextOffset]).readonly();
+export const CardKey = z.union([NewestCardKey, TextCardKey]);
+
+/** A page of the user's cards: a language's (lang) or a word's (lemmaId), newest first; or
+ * a text's cloze cards (documentId), in the order of the text. One of the three, and a
+ * cursor the same kind of list gave. */
+export const CardsQuery = pageQuery(CardKey, CARD_PAGE)
+  .extend({ lang: Lang.optional(), lemmaId: LemmaId.optional(), documentId: DocumentId.optional() })
+  .transform(({ lang, lemmaId, documentId, after, limit }, context) => {
+    if ([lang, lemmaId, documentId].filter((given) => given !== undefined).length !== 1) {
+      context.addIssue({ code: "custom", message: "give one of lang, lemmaId and documentId" });
+      return z.NEVER;
+    }
+    if (after !== undefined && after.length !== (documentId === undefined ? 2 : 1)) {
+      context.addIssue({ code: "custom", message: "after isn't a cursor this list gave" });
+      return z.NEVER;
+    }
+    if (documentId !== undefined) return { documentId, after: after as z.output<typeof TextCardKey> | undefined, limit };
+    const newest = after as z.output<typeof NewestCardKey> | undefined;
+    return lemmaId !== undefined ? { lemmaId, after: newest, limit } : { lang: lang!, after: newest, limit };
+  });
+
+const ScheduledFields = z.object({ id: CardId, lemmaId: LemmaId, isNew: z.boolean(), dueAt: Timestamp });
+
+export const ScheduledCard = z.intersection(ScheduledFields, CardContent);
 
 export const LookupRequest = z.object({ ids: z.array(LemmaId).min(1).max(MAX_LOOKUP) });
 
@@ -449,7 +501,7 @@ export const LexiconEntry = z
 
 export const Lookup = z.object({ entries: z.array(LexiconEntry), featureSets: z.partialRecord(Lang, FeatureSets) }).meta({ id: "Lookup" });
 
-export const DueCard = ScheduledCard.extend({ entry: LexiconEntry.nullable() }).meta({ id: "DueCard" });
+export const DueCard = z.intersection(ScheduledFields.extend({ entry: LexiconEntry.nullable() }), CardContent).meta({ id: "DueCard" });
 
 const Count = z.number().int().min(0);
 
@@ -463,8 +515,6 @@ export const CardCounts = z.object({ lang: Lang, words: Tally, forms: Tally }).m
 
 export const Reviewed = z.object({ cardId: CardId, dueAt: Timestamp });
 
-export const ClozeMade = z.object({ cardId: CardId });
-
-export const ClozeStart = z.object({ cardId: CardId, start: TextOffset });
+export const CardMade = z.object({ cardId: CardId }).meta({ id: "CardMade" });
 
 export const ListedReading = ReadingEntry.extend({ document: DocumentSummary });

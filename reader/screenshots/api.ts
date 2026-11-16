@@ -13,6 +13,7 @@ import {
   blankOut,
   matchesTags,
   type Annotation,
+  type Card,
   type Cloze,
   type DocumentId as DocumentIdType,
   type Lang,
@@ -240,7 +241,7 @@ const cards: readonly ScheduledCard[] = [
     kind: "recognition",
     isNew: false,
     dueAt: Timestamp.parse("2026-11-09T08:00:00.000Z"),
-    cloze: null,
+    data: {},
   },
   {
     id: CardId.parse("00000000-0000-4000-8000-000000000002"),
@@ -248,7 +249,7 @@ const cards: readonly ScheduledCard[] = [
     kind: "production",
     isNew: true,
     dueAt: Timestamp.parse("2026-11-09T08:00:00.000Z"),
-    cloze: null,
+    data: {},
   },
   // kolację, in "schodzą się na kolację": na takes the accusative for where to
   {
@@ -257,24 +258,54 @@ const cards: readonly ScheduledCard[] = [
     kind: "cloze",
     isNew: true,
     dueAt: Timestamp.parse("2026-11-09T08:00:00.000Z"),
-    cloze: clozeOf(1, 14),
+    data: clozeOf(1, 14),
   },
 ];
+
+/** The cards as the list of them has them, newest first: one due in days, one new, one
+ * whose word is known, and the cloze card due. */
+const listedCards: readonly Card[] = [
+  listed(cards[2]!, "2026-11-08T08:00:00.000Z", { scheduleStatus: "learning", dueAt: "2026-11-09T09:00:00.000Z", scheduledDays: 0 }),
+  listed(cards[1]!, "2026-11-07T08:00:00.000Z", { scheduleStatus: "new", dueAt: "2026-11-09T08:00:00.000Z", scheduledDays: 0 }),
+  listed(cards[0]!, "2026-11-06T08:00:00.000Z", { scheduleStatus: "review", dueAt: "2026-11-13T08:00:00.000Z", scheduledDays: 4 }),
+  listed(
+    { ...cards[0]!, id: CardId.parse("00000000-0000-4000-8000-000000000004"), kind: "production", data: {} },
+    "2026-11-06T08:00:00.000Z",
+    { scheduleStatus: "review", dueAt: "2026-12-01T08:00:00.000Z", scheduledDays: 25 },
+    "known",
+  ),
+];
+
+/** A card to review as the list of cards has it, last answered the day before NOW unless it's new. */
+function listed(
+  { isNew: _, ...card }: ScheduledCard,
+  createdAt: string,
+  { scheduleStatus, dueAt, scheduledDays }: { scheduleStatus: Card["scheduleStatus"]; dueAt: string; scheduledDays: number },
+  state: Card["state"] = "learning",
+): Card {
+  return {
+    ...card,
+    state,
+    createdAt: Timestamp.parse(createdAt),
+    scheduleStatus,
+    dueAt: Timestamp.parse(dueAt),
+    scheduledDays,
+    lastReviewedAt: scheduleStatus === "new" ? null : Timestamp.parse("2026-11-08T09:00:00.000Z"),
+  };
+}
 
 /** The API's ports, in memory, for one test. Writes the pages make are accepted and
  * forgotten, except settings. */
 function deps(signedIn: boolean, annotations: readonly Annotation[]): Deps {
   const visible = (viewer: UserIdType | null) => documents.filter((d) => d.visibility === "public" || d.user === viewer);
   let settings: Settings = { newLemmasPerDay: 10, newFormsPerDay: 5, formsWithWords: true };
+  let kept = listedCards;
   return {
     auth: {
       handle: async () => new Response(null, { status: 404 }),
       user: async () => (signedIn ? user : null),
     },
     users: {
-      words: async () => ({ items: [], next: null }),
-      setWord: async () => {},
-      clearWordStatus: async () => {},
       due: async (_userId, lang: Lang, _now, _dayStart, _limit, group) => ({
         cards: lang === "pl" ? cards.filter((c) => group === undefined || (c.kind === "cloze") === (group === "forms")) : [],
         newLeft: { words: 4, forms: 3 },
@@ -285,9 +316,24 @@ function deps(signedIn: boolean, annotations: readonly Annotation[]): Deps {
         cardId: request.cardId,
         dueAt: Timestamp.parse("2026-11-10T10:00:00.000Z"),
       }),
-      makeCloze: async () => ({ kind: "made", cardId: CardId.parse("00000000-0000-4000-8000-000000000009") }),
-      clozes: async () => ({ items: [], next: null }),
-      deleteCloze: async () => true,
+      makeCard: async () => ({ kind: "made", cardId: CardId.parse("00000000-0000-4000-8000-000000000009") }),
+      cards: async (_userId, listing) => ({
+        items:
+          "documentId" in listing
+            ? []
+            : "lemmaId" in listing
+              ? kept.filter((c) => c.lemmaId === listing.lemmaId)
+              : listing.lang === "pl"
+                ? kept
+                : [],
+        next: null,
+      }),
+      setCardState: async () => true,
+      deleteCard: async (_userId, cardId) => {
+        const had = kept.some((c) => c.id === cardId);
+        kept = kept.filter((c) => c.id !== cardId);
+        return had;
+      },
       settings: async () => settings,
       setSettings: async (_userId, next) => {
         settings = next;

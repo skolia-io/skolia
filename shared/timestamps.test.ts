@@ -66,7 +66,7 @@ const timestamps = all.filter((p) => p.schema === schemas.Timestamp);
 
 test("the walk finds timestamps through objects, intersections, pipes and tuples", () => {
   const paths = timestamps.map((p) => p.path);
-  for (const path of ["Word.updatedAt", "Annotation.addedAt", "AnnotationRow.addedAt", "DocumentRow.importedAt", "ReadingKey[0]"])
+  for (const path of ["Card.createdAt", "Annotation.addedAt", "AnnotationRow.addedAt", "DocumentRow.importedAt", "ReadingKey[0]"])
     assert.ok(paths.includes(path), path);
 });
 

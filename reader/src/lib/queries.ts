@@ -22,6 +22,16 @@ export function audioQuery(id: DocumentId) {
   return queryOptions({ queryKey: ["annotations", id], queryFn: async () => audioAnnotations(await listAnnotations(id)) });
 }
 
+/** Every text's cloze cards (lib/clozes.ts). */
+export const CLOZES_KEY = ["me", "clozes"] as const;
+
+/** After a card is made, changed or deleted: what's shown of the user's cards is asked for
+ * again, but not a review session, which takes its cards out itself. */
+export function cardsChanged(client: QueryClient): void {
+  void client.invalidateQueries({ queryKey: ["me", "cards"], predicate: ({ queryKey }) => queryKey[2] !== "due" });
+  void client.invalidateQueries({ queryKey: CLOZES_KEY });
+}
+
 export const countsQuery = queryOptions({ queryKey: ["me", "cards", "counts"], queryFn: () => cardCounts() });
 
 /** A review session's cards, taken out as they're reviewed, and asked for afresh only by

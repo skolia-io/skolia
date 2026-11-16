@@ -11,16 +11,16 @@ import {
   type AnnotationKey,
   type CardCounts,
   type CardGroup,
+  type Card,
   type CardId,
-  type ClozeKey,
-  type ClozeStart,
+  type CardKey,
+  type CardListing,
   type DocumentFilter,
   type DocumentKey,
-  type NewCloze,
+  type NewCard,
   type Paginated,
   type Tag,
   type TagKey,
-  type WordKey,
   type DocumentId,
   type FeatureSets,
   type Lang,
@@ -39,8 +39,7 @@ import {
   type Settings,
   type AvailableTag,
   type Tags,
-  type Word,
-  type WordStatus,
+  type CardState,
 } from "@skolia/shared/api";
 import { paginate, type PageRequest } from "@skolia/shared/page";
 import type { BundleParadigm, IngestJob, Pronunciation, Relation, Sense } from "@skolia/shared/schema";
@@ -70,7 +69,7 @@ import { sql, type Sql } from "@skolia/util/sql";
 import type {
   AnnotateResult,
   BlobStore,
-  ClozeOutcome,
+  CardOutcome,
   DocumentContent,
   DocumentEntry,
   DocumentStore,
@@ -98,18 +97,6 @@ export class DurableObjectUsers implements UserData {
     this.users = users;
   }
 
-  async words(userId: UserId, page: PageRequest<WordKey>): Promise<Paginated<Word, WordKey>> {
-    return this.users.getByName(userId).words(page);
-  }
-
-  async setWord(userId: UserId, lemmaId: LemmaId, status: WordStatus, now: Timestamp): Promise<void> {
-    await this.users.getByName(userId).setWord(lemmaId, status, now);
-  }
-
-  async clearWordStatus(userId: UserId, lemmaId: LemmaId): Promise<void> {
-    await this.users.getByName(userId).clearWordStatus(lemmaId);
-  }
-
   async due(
     userId: UserId,
     lang: Lang,
@@ -129,16 +116,20 @@ export class DurableObjectUsers implements UserData {
     return this.users.getByName(userId).review(request, now);
   }
 
-  async makeCloze(userId: UserId, cloze: NewCloze, now: Timestamp): Promise<ClozeOutcome> {
-    return this.users.getByName(userId).makeCloze(cloze, now);
+  async makeCard(userId: UserId, card: NewCard, now: Timestamp): Promise<CardOutcome> {
+    return this.users.getByName(userId).makeCard(card, now);
   }
 
-  async clozes(userId: UserId, documentId: DocumentId, page: PageRequest<ClozeKey>): Promise<Paginated<ClozeStart, ClozeKey>> {
-    return this.users.getByName(userId).clozes(documentId, page);
+  async cards(userId: UserId, listing: CardListing): Promise<Paginated<Card, CardKey>> {
+    return this.users.getByName(userId).cards(listing);
   }
 
-  async deleteCloze(userId: UserId, cardId: CardId): Promise<boolean> {
-    return this.users.getByName(userId).deleteCloze(cardId);
+  async setCardState(userId: UserId, cardId: CardId, state: CardState): Promise<boolean> {
+    return this.users.getByName(userId).setCardState(cardId, state);
+  }
+
+  async deleteCard(userId: UserId, cardId: CardId): Promise<boolean> {
+    return this.users.getByName(userId).deleteCard(cardId);
   }
 
   async settings(userId: UserId): Promise<Settings> {

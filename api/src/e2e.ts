@@ -9,21 +9,19 @@
 // - lexicon: each language's entries, with the feature sets their paradigms use, from each
 //   language's lexicon database (load-lexicon has run).
 // - cards: in each language, as the new user e2e-keys.ts made, whose cards start empty:
-//   add a word, review its cards, mark it known.
+//   make a word's cards, review one, mark them known.
 // usage: E2E_API_KEY=<key> E2E_USER_KEY=<key> node src/e2e.ts https://staging.skolia.io $(git describe --tags --always --dirty)
 import assert from "node:assert/strict";
 import { hc } from "hono/client";
 import {
   LANGS,
-  lemmaParam,
   type CardCounts,
+  type CardKey,
   type Due,
   type ImportRequest,
   type Lang,
   type LemmaId,
   type Version,
-  type WordKey,
-  type WordStatus,
 } from "@skolia/shared/api";
 import { allPages, type Cursor } from "@skolia/shared/page";
 import type { AppType } from "./app.ts";
@@ -155,7 +153,7 @@ function dayStart(): string {
   return today.toISOString();
 }
 
-/** A new user's journey with one word: add it, review a card, mark it known. */
+/** A new user's journey with one word: make its cards, review one, mark them known. */
 async function cards(base: string, key: string, lang: Lang): Promise<void> {
   const api = client(base, key);
   const word = WORDS[lang];
@@ -164,12 +162,8 @@ async function cards(base: string, key: string, lang: Lang): Promise<void> {
     (await body(`${lang} cards due`, api.me.cards.due.$get({ query: { lang, dayStart: dayStart() } }))) as Due;
   const counts = async (): Promise<CardCounts | undefined> =>
     (await body("card counts", api.me.cards.counts.$get({ query: { dayStart: dayStart() } }))).find((c) => c.lang === lang);
-  const mark = (status: WordStatus) =>
-    expectStatus(
-      `marking ${word} ${status}`,
-      api.me.words[":lemmaId"].$put({ param: { lemmaId: lemmaParam(word) }, json: { status } }),
-      204,
-    );
+  const wordCards = () =>
+    allPages((after?: Cursor<CardKey>) => body(`${word}'s cards`, api.me.cards.$get({ query: { lemmaId: word, after } })));
   const review = (cardId: string, id = crypto.randomUUID()) =>
     body(`${lang} review`, api.me.reviews.$post({ json: { id, cardId, rating: 3, at: new Date().toISOString() } }));
 
@@ -178,9 +172,17 @@ async function cards(base: string, key: string, lang: Lang): Promise<void> {
   const none = { due: 0, new: 0 };
   assert.deepEqual(await counts(), { lang, words: none, forms: none }, `${lang}: a new user has cards`);
 
-  await mark("active");
-  const words = await allPages((after?: Cursor<WordKey>) => body("words", api.me.words.$get({ query: { after } })));
-  assert.equal(words.find((w) => w.lemmaId === word)?.status, "active", `${lang}: ${word} isn't active`);
+  for (const kind of ["recognition", "production"] as const) {
+    await expectStatus(`making ${word}'s ${kind} card`, api.me.cards.$post({ json: { kind, lemmaId: word } }), 201);
+  }
+  assert.deepEqual(
+    (await wordCards()).map((c) => [c.kind, c.state]).sort(),
+    [
+      ["production", "learning"],
+      ["recognition", "learning"],
+    ],
+    `${lang}: ${word}'s cards`,
+  );
   assert.deepEqual(await counts(), { lang, words: { due: 0, new: 1 }, forms: none }, `${lang}: counts after adding a word`);
 
   const added = await due();
@@ -203,7 +205,13 @@ async function cards(base: string, key: string, lang: Lang): Promise<void> {
     `${lang}: due after a review`,
   );
 
-  await mark("known");
+  for (const { id: cardId } of await wordCards()) {
+    await expectStatus(
+      `marking a card of ${word} known`,
+      api.me.cards[":cardId"].$patch({ param: { cardId }, json: { state: "known" } }),
+      204,
+    );
+  }
   assert.deepEqual((await due()).cards, [], `${lang}: a known word's cards are due`);
   assert.deepEqual(await counts(), { lang, words: none, forms: none }, `${lang}: counts after marking a word known`);
   console.log(`${lang}: cards ok`);

@@ -2,18 +2,17 @@
 // sheet can say a word already has one, and take it away. Reader loads them with the text.
 import { createMutation, createQuery, mutationOptions, queryOptions } from "@tanstack/svelte-query";
 import type { CardId, DocumentId, LemmaId, NewClozeInput } from "@skolia/shared/api";
-import { deleteCloze, listClozes, makeCloze } from "./api.ts";
-import { resume, userQuery } from "./queries.ts";
-import { activateUnmarked, resumeWords, unmark } from "./words.ts";
+import { deleteCard, listTextCards, makeCard } from "./api.ts";
+import { CLOZES_KEY, cardsChanged, resume, userQuery } from "./queries.ts";
 
 export type ClozesByStart = ReadonlyMap<number, CardId>;
 
 function clozesQuery(documentId: DocumentId) {
   return queryOptions({
-    queryKey: ["me", "clozes", documentId],
+    queryKey: [...CLOZES_KEY, documentId],
     queryFn: async (): Promise<ClozesByStart | null> => {
-      const list = await listClozes(documentId);
-      return list && new Map(list.map((c) => [c.start, c.cardId]));
+      const list = await listTextCards(documentId);
+      return list && new Map(list.flatMap((c) => (c.kind === "cloze" ? [[c.data.blankStart, c.id] as const] : [])));
     },
   });
 }
@@ -26,22 +25,18 @@ export function createClozes(documentId: () => DocumentId) {
 
 const keyOf = (documentId: DocumentId) => clozesQuery(documentId).queryKey;
 
-/** The card's id comes from the API, so it's added once made. Its word, if it has no
- * status, is made active with it, as the API does. */
+/** The card's id comes from the API, so it's added once made. */
 const addMutation = mutationOptions({
-  mutationFn: makeCloze,
-  onMutate: async (cloze: NewClozeInput & { readonly lemmaId: LemmaId; readonly documentId: DocumentId }, { client }) => {
+  mutationFn: ({ lemmaId, ...data }: NewClozeInput & { readonly lemmaId: LemmaId; readonly documentId: DocumentId }) =>
+    makeCard({ kind: "cloze", lemmaId, data }),
+  onMutate: async (cloze, { client }) => {
     await client.cancelQueries({ queryKey: keyOf(cloze.documentId) });
-    return { activated: await activateUnmarked(client, cloze.lemmaId) };
   },
   onSuccess: ({ cardId }, cloze, _held, { client }) =>
     client.setQueryData(keyOf(cloze.documentId), (byStart) => byStart && new Map([...byStart, [cloze.blankStart, cardId]])),
-  onError: (_error, cloze, held, { client }) => {
-    if (held?.activated) unmark(client, cloze.lemmaId);
-  },
   onSettled: (_made, _error, cloze, _held, { client }) => {
     resume(client, keyOf(cloze.documentId));
-    resumeWords(client);
+    cardsChanged(client);
   },
 });
 
@@ -53,14 +48,17 @@ export function createAddCloze() {
 export type ClozeRemoval = { readonly documentId: DocumentId; readonly start: number; readonly cardId: CardId };
 
 const removeMutation = mutationOptions({
-  mutationFn: ({ cardId }: ClozeRemoval) => deleteCloze(cardId),
+  mutationFn: ({ cardId }: ClozeRemoval) => deleteCard(cardId),
   onMutate: async ({ documentId, start }, { client }) => {
     await client.cancelQueries({ queryKey: keyOf(documentId) });
     client.setQueryData(keyOf(documentId), (byStart) => byStart && new Map([...byStart].filter(([s]) => s !== start)));
   },
   onError: (_error, { documentId, start, cardId }, _held, { client }) =>
     client.setQueryData(keyOf(documentId), (byStart) => byStart && new Map([...byStart, [start, cardId]])),
-  onSettled: (_data, _error, { documentId }, _held, { client }) => resume(client, keyOf(documentId)),
+  onSettled: (_data, _error, { documentId }, _held, { client }) => {
+    resume(client, keyOf(documentId));
+    cardsChanged(client);
+  },
 });
 
 /** Deletes a cloze card, with its reviews: gone at once, and back if the API refuses. */
