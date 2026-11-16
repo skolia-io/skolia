@@ -51,10 +51,10 @@ test("account menu", async ({ page }) => {
 test("nav drawer", async ({ page, isMobile }) => {
   test.skip(!isMobile, "On a desktop the links are in the bar");
   await open(page, "#/list");
-  await page.getByRole("button", { name: "Menu" }).click();
+  // From the keyboard: a click leaves the pointer where Explore opens, and whether Chromium
+  // then draws it hovered differs from machine to machine, even after the pointer moves away
+  await page.getByRole("button", { name: "Menu" }).press("Enter");
   await expect(page.getByRole("link", { name: "Review" })).toBeVisible();
-  // Off the drawer: the click leaves the pointer where Explore opens, hovering it
-  await page.mouse.move(380, 600);
   await expect(page).toHaveScreenshot("nav-drawer.png");
 });
 
