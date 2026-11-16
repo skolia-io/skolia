@@ -143,7 +143,7 @@ deploy-infra env: (apply env) && (migrate env)
     case {{ env }} in pr-*) infra/preview.py config {{ env }} ;; esac
 
 # The skolia Worker (reader and API) with wrangler, with Terraform's BETTER_AUTH_SECRET and, if set,
-# GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET from the environment (GitHub's, in CI) as its secrets
+# GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and OAUTH_PROXY_SECRET from the environment (GitHub's, in CI) as its secrets
 deploy-web env:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -154,8 +154,19 @@ deploy-web env:
     trap 'rm -rf "$dir"' EXIT
     # JSON: wrangler expands $ in a dotenv file
     infra/tf.sh {{ env }} output -raw better_auth_secret | jq -Rn '{BETTER_AUTH_SECRET: input}
-      + ({GOOGLE_CLIENT_ID: env.GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET: env.GOOGLE_CLIENT_SECRET} | with_entries(select((.value // "") != "")))' > "$dir/secrets.json"
+      + ({GOOGLE_CLIENT_ID: env.GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET: env.GOOGLE_CLIENT_SECRET, OAUTH_PROXY_SECRET: env.OAUTH_PROXY_SECRET} | with_entries(select((.value // "") != "")))' > "$dir/secrets.json"
     infra/wrangler.sh {{ env }} deploy --define "VERSION:\"$VITE_VERSION\"" --secrets-file "$dir/secrets.json"
+
+# The previews' Google sign-in (api/wrangler.oauth-proxy.jsonc), with GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
+# and OAUTH_PROXY_SECRET from the environment (the oauth-proxy GitHub environment's, in CI) as its secrets
+deploy-oauth-proxy:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    dir=$(mktemp -d)
+    trap 'rm -rf "$dir"' EXIT
+    jq -n '{GOOGLE_CLIENT_ID: env.GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET: env.GOOGLE_CLIENT_SECRET, OAUTH_PROXY_SECRET: env.OAUTH_PROXY_SECRET}
+      | if any(.[]; (. // "") == "") then error("GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and OAUTH_PROXY_SECRET must be set") end' > "$dir/secrets.json"
+    cd api && pnpm exec wrangler deploy -c wrangler.oauth-proxy.jsonc --secrets-file "$dir/secrets.json"
 
 # Build, push and deploy the ingest container
 deploy-ingest env:

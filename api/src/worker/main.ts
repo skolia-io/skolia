@@ -28,6 +28,9 @@ interface Env extends LexiconBindings {
   BETTER_AUTH_SECRET?: string;
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
+  /** A preview's (infra/preview.py): the OAuth proxy's URL (worker/oauth-proxy.ts), where its Google sign-in goes */
+  OAUTH_PROXY_URL?: string;
+  OAUTH_PROXY_SECRET?: string;
 }
 
 /** A Better Auth instance per request: it sets itself up on first use and keeps that
@@ -42,14 +45,15 @@ function warnOnce(message: string): void {
 }
 
 function authFor(env: Env): Auth {
-  const { BASE_URL, BETTER_AUTH_SECRET, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET } = env;
+  const { BASE_URL, BETTER_AUTH_SECRET, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, OAUTH_PROXY_URL, OAUTH_PROXY_SECRET } = env;
   if (!BASE_URL || !BETTER_AUTH_SECRET) {
     warnOnce("BASE_URL or BETTER_AUTH_SECRET isn't set; sign-in is off");
     return NO_AUTH;
   }
   const google = GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET ? { clientId: GOOGLE_CLIENT_ID, clientSecret: GOOGLE_CLIENT_SECRET } : undefined;
   if (!google) warnOnce("GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET isn't set; only API keys sign in");
-  return createAuth({ database: env.DB, baseURL: BASE_URL, secret: BETTER_AUTH_SECRET, google });
+  const oauthProxy = OAUTH_PROXY_URL && OAUTH_PROXY_SECRET ? { url: OAUTH_PROXY_URL, secret: OAUTH_PROXY_SECRET } : undefined;
+  return createAuth({ database: env.DB, baseURL: BASE_URL, secret: BETTER_AUTH_SECRET, google, oauthProxy });
 }
 
 export default {

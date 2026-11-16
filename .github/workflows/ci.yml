@@ -6,7 +6,7 @@ name: CI
 # down when the pull request closes (sweep.yml catches any left); the mergeable job
 # gates merging on it. A comment on the pull request links to the preview, and says when
 # it's torn down (.github/preview-comment.sh).
-# main: deploy staging and end-to-end test it. A v* tag on a commit in main: staging, then production. The ingest
+# main: deploy staging and end-to-end test it, and deploy the previews' OAuth proxy. A v* tag on a commit in main: staging, then production. The ingest
 # images are built once, before any deploy. The steps are just recipes (justfile) and
 # infra/deploy-ingest.sh, so a deploy by hand runs the same commands.
 # A pull request, merge group or push to main that only changes content (curated texts, docs,
@@ -298,6 +298,25 @@ jobs:
     with:
       env: staging
     secrets: inherit
+
+  # The previews' Google sign-in (api/wrangler.oauth-proxy.jsonc): one for all of them, from main
+  deploy-oauth-proxy:
+    if: needs.changes.outputs.deploy == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [changes, check]
+    runs-on: ubuntu-24.04
+    environment: oauth-proxy
+    concurrency:
+      group: deploy-oauth-proxy
+      cancel-in-progress: false
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+      GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+      OAUTH_PROXY_SECRET: ${{ secrets.OAUTH_PROXY_SECRET }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
+      - run: just deploy-oauth-proxy
 
   # A push to main that only changes content, some of it curated texts. A tag always
   # deploys (deploy-staging), which syncs them.

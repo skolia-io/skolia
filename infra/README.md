@@ -21,6 +21,7 @@ Account `1d3ca537bca3f2918d2778118d23f0a8`. Secrets in `pass` under `cloudflare/
    | `skolia-dev` | `http://localhost:5173/api/auth/callback/google` |
    | `skolia-staging` | `https://staging.skolia.io/api/auth/callback/google` |
    | `skolia-prod` | `https://skolia.io/api/auth/callback/google` |
+   | `skolia-preview` | `https://oauth-proxy.skolia.io/api/auth/callback/google` |
 
    The staging and production clients' id and secret are the `staging` and `production` GitHub environments' secrets `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` (see Deploy), which `just deploy-web` sets on the Worker with Terraform's `BETTER_AUTH_SECRET` (`random_password.better_auth_secret`). Without them nobody signs in with Google, so nobody can import; the end-to-end tests still can, with an API key (`just e2e`). Wrangler keeps secrets a deploy doesn't pass, so removing one from GitHub doesn't remove it from the Worker.
 
@@ -40,9 +41,11 @@ A new environment: add it to the checks in `tf.sh`, `wrangler.sh` and `deploy-in
 
 ### Previews
 
-Each pull request from a branch of this repository gets a preview, `pr-N`, deployed and end-to-end tested on every push (`ci.yml`, job `deploy-preview`). Merging needs it to pass (`ci.yml`, job `mergeable`); a fork's pull request gets none and isn't held up, and nor does one that only changes content (curated texts, docs, Markdown; `.github/changes.py`). It is on workers.dev only, with no Google client, so only the end-to-end tests' API keys sign in, and it accepts 20 imports a day. Its wrangler configs are made by `infra/preview.py config pr-N` from the `env.staging` blocks, with `-pr-N` names, its workers.dev URL and ingest containers that sleep after 10 s idle; `deploy-infra` makes them after Terraform, and `wrangler.sh` when they're missing. They're gitignored.
+Each pull request from a branch of this repository gets a preview, `pr-N`, deployed and end-to-end tested on every push (`ci.yml`, job `deploy-preview`). Merging needs it to pass (`ci.yml`, job `mergeable`); a fork's pull request gets none and isn't held up, and nor does one that only changes content (curated texts, docs, Markdown; `.github/changes.py`). It is on workers.dev only. Its wrangler configs are made by `infra/preview.py config pr-N` from the `env.staging` blocks, with `-pr-N` names, its workers.dev URL and ingest containers that sleep after 10 s idle; `deploy-infra` makes them after Terraform, and `wrangler.sh` when they're missing. They're gitignored.
 
 Closing the pull request tears the preview down (`just teardown pr-N`, `infra/teardown.sh`): the queue's consumer, the ingest Worker, its container applications (which `wrangler delete` leaves), the skolia Worker, the bucket's objects, `terraform destroy`, then the state object. Each step skips what's already gone, so it can be run again. Every night `sweep.yml` runs `infra/sweep.sh`, which finds previews by their resources' and state's names, tears down those whose pull request isn't open, and fails if any are left; `infra/sweep.sh -n` lists them without tearing them down.
+
+Google sends a sign-in only to a redirect URI its client lists exactly, so a preview's own URL can't be one. Previews sign in through the OAuth proxy instead, `skolia-oauth-proxy` at https://oauth-proxy.skolia.io (`api/src/oauth-proxy.ts`, `api/wrangler.oauth-proxy.jsonc`), the `skolia-preview` client's redirect URI, with Better Auth's oAuthProxy plugin: a preview's sign-in sends Google to the proxy with the preview's state, encrypted with `OAUTH_PROXY_SECRET`, which the proxy and the previews share; the proxy exchanges Google's code and redirects to the preview with the profile, encrypted too; and the preview makes the user and session in its own D1. The proxy keeps nothing, answers only `/api/auth/callback/google`, and redirects only to a preview's origin (`PREVIEWS`). `infra/preview.py` gives each preview its URL, `OAUTH_PROXY_URL`. It's deployed from main (`ci.yml`, job `deploy-oauth-proxy`; `just deploy-oauth-proxy`), so a pull request that changes how it works signs in on its preview only once it's merged. Anyone with a Google account can sign in on a preview, and import.
 
 ### Container usage
 
@@ -66,7 +69,8 @@ A push to main deploys staging and runs the end-to-end tests against it (`api/sr
 - variable `CLOUDFLARE_ACCOUNT_ID`
 - secrets `CLOUDFLARE_API_TOKEN` (the Terraform token above), `TFSTATE_ACCESS_KEY_ID`, `TFSTATE_SECRET_ACCESS_KEY`, `ALERT_EMAIL`, `CACHIX_AUTH_TOKEN`
 - in the `staging` and `production` environments, secrets `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` (the OAuth clients above)
-- environments `staging`, `production` and `preview` (every pull request's)
+- in the `preview` and `oauth-proxy` environments, the `skolia-preview` client's `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, and the same `OAUTH_PROXY_SECRET`
+- environments `staging`, `production`, `preview` (every pull request's) and `oauth-proxy`
 
 Not every change deploys. CI's `changes` job (`.github/changes.py`) sorts a run by the files it changes, into three outputs:
 
