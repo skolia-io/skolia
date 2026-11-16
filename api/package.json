@@ -17,7 +17,7 @@
     "@skolia/shared": "workspace:*",
     "@skolia/util": "workspace:*",
     "better-auth": "catalog:",
-    "hono": "4.13.13",
+    "hono": "4.13.16",
     "ts-fsrs": "6.0.0",
     "zod": "4.6.7"
   },
