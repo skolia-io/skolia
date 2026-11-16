@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { clue, shortcut, type Key } from "./review.ts";
+import { clue, shortcut, shuffled, type Key } from "./review.ts";
 
 function press(key: string, fields: Partial<Key> = {}): Key {
   return { key, repeat: false, altKey: false, ctrlKey: false, metaKey: false, target: "page", ...fields };
@@ -43,4 +43,18 @@ test("a production card's clue is the gloss's translations without its definitio
   );
   assert.equal(clue("interrogative pronoun, referring to a number of choices; what, which one"), "what, which one");
   assert.equal(clue("used to form impersonal present or future tense"), "used to form impersonal present or future tense");
+});
+
+test("a session's cards are shuffled, each kept once, and the original left alone", () => {
+  const cards = ["a", "b", "c", "d"] as const;
+  assert.deepEqual(
+    shuffled(cards, () => 0),
+    ["b", "c", "d", "a"],
+  );
+  assert.deepEqual(
+    shuffled(cards, () => 0.999),
+    ["a", "b", "c", "d"],
+  );
+  assert.deepEqual([...shuffled(cards)].sort(), [...cards]);
+  assert.deepEqual(cards, ["a", "b", "c", "d"]);
 });
