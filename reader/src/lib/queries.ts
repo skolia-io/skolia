@@ -4,6 +4,7 @@ import { QueryClient, queryOptions, skipToken, type QueryKey } from "@tanstack/s
 import type { CardGroup, DocumentId, Lang } from "@skolia/shared/api";
 import { audioAnnotations } from "./annotations.ts";
 import { cardCounts, currentUser, dueCards, getSettings, listAnnotations, listTags } from "./api.ts";
+import { shuffled } from "./review.ts";
 
 /** No retries and no refetch on focus: a failure shows at once, as the page's own error. */
 export function newQueryClient(): QueryClient {
@@ -34,12 +35,17 @@ export function cardsChanged(client: QueryClient): void {
 
 export const countsQuery = queryOptions({ queryKey: ["me", "cards", "counts"], queryFn: () => cardCounts() });
 
-/** A review session's cards, taken out as they're reviewed, and asked for afresh only by
- * Check again or by coming back to them. None until there's a language. */
+/** A review session's cards, shuffled, taken out as they're reviewed, and asked for afresh
+ * only by Check again or by coming back to them. None until there's a language. */
 export function dueQuery(lang: Lang | null, group: CardGroup | null) {
   return queryOptions({
     queryKey: ["me", "cards", "due", lang, group],
-    queryFn: lang ? () => dueCards(lang, group) : skipToken,
+    queryFn: lang
+      ? async () => {
+          const due = await dueCards(lang, group);
+          return due && { ...due, cards: shuffled(due.cards) };
+        }
+      : skipToken,
     staleTime: Infinity,
     gcTime: 0,
   });

@@ -1,5 +1,5 @@
 // The review page's keyboard shortcuts (Space or Enter shows the answer, then 1 to 4
-// grade it), and the English clue on a production card's front.
+// grade it), the English clue on a production card's front, and the session's shuffle.
 import { RATINGS, type Rating } from "@skolia/shared/api";
 
 export type Shortcut = { kind: "reveal" } | { kind: "grade"; rating: Rating };
@@ -34,6 +34,17 @@ export function keyTarget(target: EventTarget | null): KeyTarget {
   if (!(target instanceof Element)) return "page";
   if (target.closest(FIELDS)) return "field";
   return target.closest(CONTROLS) ? "control" : "page";
+}
+
+/** The items in a random order (Fisher–Yates), so a word's recognition and production
+ * cards, which the API sends together, don't follow each other. */
+export function shuffled<T>(items: readonly T[], random: () => number = Math.random): T[] {
+  const out = [...items];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1));
+    [out[i], out[j]] = [out[j] as T, out[i] as T];
+  }
+  return out;
 }
 
 /** Words in a gloss part short enough to be a translation, not a definition. */
