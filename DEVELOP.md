@@ -57,17 +57,19 @@ The runner (`api/src/user/migrator.ts`) keeps an append-only `migration_log` in 
 
 Every table, in D1 and in the Durable Objects, is `STRICT`. SQLite has no date type, so timestamps are `TEXT` in `toISOString()`'s format (`2026-11-07T00:00:00.000Z`), which sorts in time order; each has `CHECK (col IS strftime('%Y-%m-%dT%H:%M:%fZ', col))`, which refuses any other format (`IS`, not `=`, so that a value `strftime` can't read fails rather than passes). SQLite can't change an existing table's type or constraints, so a D1 migration that does rebuilds the table, as `0003_strict.sql` does.
 
-Request bodies, the blobs ingest writes, and database rows are checked with the Zod schemas in `shared/schemas.ts`; `shared/api.ts` takes its types from them with type-only imports, so the reader doesn't bundle Zod. Import Zod as `import * as z from "zod"`: `import { z } from "zod"` keeps all of Zod in the Worker bundle, its locales included (807 KiB vs 1163 KiB). esbuild, which wrangler bundles with, can only drop the parts of a namespace it imports itself, and zod's `z` is a namespace it re-exports. `api/src/bundle.test.ts` fails when the gzipped Worker grows past its budget; raise the budget when the growth is wanted.
+Request bodies, the blobs ingest writes, and database rows are checked with the Zod schemas in `shared/schemas.ts`, and responses are described by them; `shared/api.ts` takes its types from them with type-only imports, so the reader doesn't bundle Zod. Import Zod as `import * as z from "zod"`: `import { z } from "zod"` keeps all of Zod in the Worker bundle, its locales included (807 KiB vs 1163 KiB). esbuild, which wrangler bundles with, can only drop the parts of a namespace it imports itself, and zod's `z` is a namespace it re-exports. `api/src/bundle.test.ts` fails when the gzipped Worker grows past its budget; raise the budget when the growth is wanted.
 
 Both are strict TypeScript (`strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`). The API uses TypeScript 7; the reader stays on 6 because svelte-check, which type-checks the `.svelte` components, supports TypeScript 5 and 6 only (move it to 7 when svelte-check does). The tests run the `.ts` files directly with Node's type stripping (wrangler bundles them for Workers); that also means TypeScript-only syntax (enums, parameter properties) isn't allowed (`erasableSyntaxOnly`).
 
 The language-specific parts the reader shows (paradigm layout, case explanations, Walenty frames) are in `shared/lang/<lang>/`, behind the `Language` interface in `shared/lang/types.ts`; the reader only renders them.
 
-After changing a Python schema (`schema.py`, `lexicon/schema.py`, `ingest/schema.py`), regenerate the TypeScript types; `tests/test_ts_types.py` fails until you do:
+After changing a Python schema (`schema.py`, `lexicon/schema.py`, `ingest/schema.py`), regenerate the TypeScript types, and the Zod schemas of those the API sends; `tests/test_ts_types.py` fails until you do:
 
 ```fish
-cd analysis; and uv run python scripts/gen_ts_types.py > ../shared/schema.gen.ts
+cd analysis; and uv run python scripts/gen_ts_types.py > ../shared/schema.gen.ts; and uv run python scripts/gen_ts_types.py zod > ../shared/schema.zod.gen.ts
 ```
+
+The API's OpenAPI spec is made from its routes (`api/src/openapi.ts`): requests from their validators, responses from each route's `responds(…)`. The tests hold the spec to the API: with `checkResponses`, a response with a status or JSON its route's spec doesn't describe is a 500. `just openapi` writes it to `api/openapi.json`, which `src/openapi.test.ts` checks is current, and the Worker serves it at `/api/openapi.json`, with Scalar's page at `/api/scalar` (and `/api/docs`) and Redoc's at `/api/redoc`.
 
 ## Analysis (Python)
 

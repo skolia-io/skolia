@@ -53,6 +53,7 @@ export function setup({ auth = local.auth, at = NOW, jobsOf = async () => null }
     queue: new CloudflareQueue(env.INGEST, jobsOf),
     version: "v1.2.3",
     now: () => new Date(at),
+    checkResponses: true,
   });
 }
 

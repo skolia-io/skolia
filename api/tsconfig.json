@@ -15,7 +15,8 @@
     "erasableSyntaxOnly": true,
     "allowImportingTsExtensions": true,
     "noEmit": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "resolveJsonModule": true
   },
   "include": ["src", "../shared", "../util"],
   "exclude": ["src/worker", "src/testing", "src/**/*.workerd.test.ts", "../shared/**/*.test.ts", "../shared/scripts"]

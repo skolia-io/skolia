@@ -1,0 +1,4280 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "skolia API",
+    "description": "The API behind skolia.io's reader. Sign in on the reader, and the requests Scalar's page (/api/scalar) tries carry your session cookie. Lists come a page at a time: pass a page's next as ?after= for the page after it. Every offset into a text is in UTF-16 code units, a JavaScript string index.",
+    "version": "unversioned",
+    "license": {
+      "name": "Apache 2.0",
+      "identifier": "Apache-2.0"
+    }
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "The deployment serving this spec"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Account",
+      "description": "Who's signed in, and what's deployed"
+    },
+    {
+      "name": "Words",
+      "description": "The words a user is learning, knows or ignores"
+    },
+    {
+      "name": "Cards",
+      "description": "Review cards, their schedule and the user's review settings"
+    },
+    {
+      "name": "Documents",
+      "description": "Texts, each user's entry for them, and their analyses"
+    },
+    {
+      "name": "Annotations",
+      "description": "What an entry's user attached to ranges of its text"
+    },
+    {
+      "name": "Reading",
+      "description": "The reading list, and where the user is in each text"
+    },
+    {
+      "name": "Lexicon",
+      "description": "Lexicon entries by lemma id"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "session": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "__Secure-better-auth.session_token",
+        "description": "Better Auth's session"
+      },
+      "apiKey": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-api-key",
+        "description": "Only skolia's own accounts have keys: the end-to-end tests' and the curated texts'"
+      }
+    },
+    "schemas": {
+      "Version": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "version"
+        ],
+        "additionalProperties": false
+      },
+      "User": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/UserId"
+          },
+          "name": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "image": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "standard",
+              "system"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "email",
+          "image",
+          "type"
+        ],
+        "additionalProperties": false
+      },
+      "UserId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "ApiError": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "additionalProperties": false
+      },
+      "Word": {
+        "type": "object",
+        "properties": {
+          "lemmaId": {
+            "$ref": "#/components/schemas/LemmaId"
+          },
+          "status": {
+            "$ref": "#/components/schemas/WordStatus"
+          },
+          "updatedAt": {
+            "$ref": "#/components/schemas/Timestamp"
+          },
+          "mature": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "lemmaId",
+          "status",
+          "updatedAt",
+          "mature"
+        ],
+        "additionalProperties": false,
+        "description": "mature: its recognition card is mature, so the reader shows it as known."
+      },
+      "Timestamp": {
+        "type": "string",
+        "format": "date-time",
+        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d\\.\\d{3}(?:Z))$"
+      },
+      "LemmaId": {
+        "type": "string",
+        "pattern": "^(en|fr|pl):[\\s\\S]{1,100}:(ADJ|ADP|ADV|AUX|CCONJ|DET|INTJ|NOUN|NUM|PART|PRON|PROPN|PUNCT|SCONJ|SYM|VERB|X)$",
+        "description": "{lang}:{lemma}:{upos}, pl:pies:NOUN"
+      },
+      "WordStatus": {
+        "type": "string",
+        "enum": [
+          "active",
+          "known",
+          "ignored"
+        ]
+      },
+      "IsoTime": {
+        "type": "string",
+        "format": "date-time",
+        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+        "description": "An ISO 8601 UTC time, any precision"
+      },
+      "CardCounts": {
+        "type": "object",
+        "properties": {
+          "lang": {
+            "$ref": "#/components/schemas/Lang"
+          },
+          "words": {
+            "type": "object",
+            "properties": {
+              "due": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "new": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "due",
+              "new"
+            ],
+            "additionalProperties": false
+          },
+          "forms": {
+            "type": "object",
+            "properties": {
+              "due": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "new": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "due",
+              "new"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "lang",
+          "words",
+          "forms"
+        ],
+        "additionalProperties": false
+      },
+      "Lang": {
+        "type": "string",
+        "enum": [
+          "en",
+          "fr",
+          "pl"
+        ]
+      },
+      "Due": {
+        "type": "object",
+        "properties": {
+          "cards": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DueCard"
+            }
+          },
+          "newLeft": {
+            "type": "object",
+            "properties": {
+              "words": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "forms": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "words",
+              "forms"
+            ],
+            "additionalProperties": false
+          },
+          "featureSets": {
+            "$ref": "#/components/schemas/FeatureSets"
+          }
+        },
+        "required": [
+          "cards",
+          "newLeft",
+          "featureSets"
+        ],
+        "additionalProperties": false
+      },
+      "DueCard": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/CardId"
+          },
+          "lemmaId": {
+            "$ref": "#/components/schemas/LemmaId"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "recognition",
+              "production",
+              "cloze"
+            ]
+          },
+          "isNew": {
+            "type": "boolean"
+          },
+          "dueAt": {
+            "$ref": "#/components/schemas/Timestamp"
+          },
+          "cloze": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "documentId": {
+                    "$ref": "#/components/schemas/DocumentId"
+                  },
+                  "sentence": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2000
+                  },
+                  "sentenceStart": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 20000
+                  },
+                  "blankStart": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 20000
+                  },
+                  "blankEnd": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 20000
+                  },
+                  "feats": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  },
+                  "why": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "documentId",
+                  "sentence",
+                  "sentenceStart",
+                  "blankStart",
+                  "blankEnd",
+                  "feats",
+                  "why"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "entry": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LexiconEntry"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "lemmaId",
+          "kind",
+          "isNew",
+          "dueAt",
+          "cloze",
+          "entry"
+        ],
+        "additionalProperties": false
+      },
+      "LexiconEntry": {
+        "type": "object",
+        "properties": {
+          "lemmaId": {
+            "$ref": "#/components/schemas/LemmaId"
+          },
+          "lemma": {
+            "type": "string"
+          },
+          "upos": {
+            "$ref": "#/components/schemas/Upos"
+          },
+          "senses": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Sense"
+            }
+          },
+          "relations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Relation"
+            }
+          },
+          "pronunciations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Pronunciation"
+            },
+            "description": "How the lemma is said"
+          },
+          "paradigms": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BundleParadigm"
+            }
+          }
+        },
+        "required": [
+          "lemmaId",
+          "lemma",
+          "upos",
+          "senses",
+          "relations",
+          "pronunciations",
+          "paradigms"
+        ],
+        "additionalProperties": false,
+        "description": "A lexicon entry: what a card shows. Its paradigms' forms point into feature sets, [\"psa\", [50, 51]], which the response carries (FeatureSets)."
+      },
+      "Upos": {
+        "type": "string",
+        "enum": [
+          "ADJ",
+          "ADP",
+          "ADV",
+          "AUX",
+          "CCONJ",
+          "DET",
+          "INTJ",
+          "NOUN",
+          "NUM",
+          "PART",
+          "PRON",
+          "PROPN",
+          "PUNCT",
+          "SCONJ",
+          "SYM",
+          "VERB",
+          "X"
+        ]
+      },
+      "Sense": {
+        "type": "object",
+        "properties": {
+          "gloss": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "when": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Feats"
+            }
+          },
+          "examples": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Example"
+            }
+          }
+        },
+        "required": [
+          "gloss",
+          "tags"
+        ],
+        "additionalProperties": false
+      },
+      "Feats": {
+        "type": "object",
+        "properties": {
+          "Abbr": {
+            "$ref": "#/components/schemas/Yes"
+          },
+          "AdpType": {
+            "$ref": "#/components/schemas/AdpType"
+          },
+          "Animacy": {
+            "$ref": "#/components/schemas/Animacy"
+          },
+          "Aspect": {
+            "$ref": "#/components/schemas/Aspect"
+          },
+          "Case": {
+            "$ref": "#/components/schemas/Case"
+          },
+          "ConjType": {
+            "$ref": "#/components/schemas/ConjType"
+          },
+          "Definite": {
+            "$ref": "#/components/schemas/Definite"
+          },
+          "Degree": {
+            "$ref": "#/components/schemas/Degree"
+          },
+          "Emph": {
+            "type": "string",
+            "enum": [
+              "Yes",
+              "No"
+            ]
+          },
+          "ExtPos": {
+            "$ref": "#/components/schemas/ExtPos"
+          },
+          "Foreign": {
+            "$ref": "#/components/schemas/Yes"
+          },
+          "Gender": {
+            "$ref": "#/components/schemas/Gender"
+          },
+          "Hyph": {
+            "$ref": "#/components/schemas/Yes"
+          },
+          "Mood": {
+            "$ref": "#/components/schemas/Mood"
+          },
+          "NumForm": {
+            "$ref": "#/components/schemas/NumForm"
+          },
+          "NumType": {
+            "$ref": "#/components/schemas/NumType"
+          },
+          "Number": {
+            "$ref": "#/components/schemas/Number"
+          },
+          "Number[psor]": {
+            "type": "string",
+            "enum": [
+              "Sing",
+              "Plur"
+            ]
+          },
+          "PartType": {
+            "$ref": "#/components/schemas/PartType"
+          },
+          "Person": {
+            "$ref": "#/components/schemas/Person"
+          },
+          "Person[psor]": {
+            "type": "string",
+            "enum": [
+              "1",
+              "2",
+              "3"
+            ]
+          },
+          "Polarity": {
+            "$ref": "#/components/schemas/Polarity"
+          },
+          "Polite": {
+            "$ref": "#/components/schemas/Polite"
+          },
+          "Poss": {
+            "$ref": "#/components/schemas/Yes"
+          },
+          "PrepCase": {
+            "$ref": "#/components/schemas/PrepCase"
+          },
+          "PronType": {
+            "$ref": "#/components/schemas/PronType"
+          },
+          "PunctSide": {
+            "$ref": "#/components/schemas/PunctSide"
+          },
+          "PunctType": {
+            "$ref": "#/components/schemas/PunctType"
+          },
+          "Reflex": {
+            "$ref": "#/components/schemas/Yes"
+          },
+          "Style": {
+            "$ref": "#/components/schemas/Style"
+          },
+          "Tense": {
+            "$ref": "#/components/schemas/Tense"
+          },
+          "Typo": {
+            "$ref": "#/components/schemas/Yes"
+          },
+          "Variant": {
+            "$ref": "#/components/schemas/Variant"
+          },
+          "VerbForm": {
+            "$ref": "#/components/schemas/VerbForm"
+          },
+          "VerbType": {
+            "$ref": "#/components/schemas/VerbType"
+          },
+          "Voice": {
+            "$ref": "#/components/schemas/Voice"
+          }
+        },
+        "additionalProperties": false
+      },
+      "Yes": {
+        "type": "string",
+        "enum": [
+          "Yes"
+        ]
+      },
+      "AdpType": {
+        "type": "string",
+        "enum": [
+          "Prep",
+          "Post"
+        ]
+      },
+      "Animacy": {
+        "type": "string",
+        "enum": [
+          "Hum",
+          "Nhum",
+          "Inan"
+        ]
+      },
+      "Aspect": {
+        "type": "string",
+        "enum": [
+          "Imp",
+          "Perf"
+        ]
+      },
+      "Case": {
+        "type": "string",
+        "enum": [
+          "Nom",
+          "Gen",
+          "Dat",
+          "Acc",
+          "Ins",
+          "Loc",
+          "Voc"
+        ]
+      },
+      "ConjType": {
+        "type": "string",
+        "enum": [
+          "Comp",
+          "Pred",
+          "Oper"
+        ]
+      },
+      "Definite": {
+        "type": "string",
+        "enum": [
+          "Def",
+          "Ind"
+        ]
+      },
+      "Degree": {
+        "type": "string",
+        "enum": [
+          "Pos",
+          "Cmp",
+          "Sup"
+        ]
+      },
+      "ExtPos": {
+        "$ref": "#/components/schemas/Upos"
+      },
+      "Gender": {
+        "type": "string",
+        "enum": [
+          "Masc",
+          "Fem",
+          "Neut"
+        ]
+      },
+      "Mood": {
+        "type": "string",
+        "enum": [
+          "Ind",
+          "Imp",
+          "Sub",
+          "Cnd"
+        ]
+      },
+      "NumForm": {
+        "type": "string",
+        "enum": [
+          "Word",
+          "Digit",
+          "Roman",
+          "Combi"
+        ]
+      },
+      "NumType": {
+        "type": "string",
+        "enum": [
+          "Card",
+          "Ord",
+          "Sets",
+          "Frac",
+          "Mult"
+        ]
+      },
+      "Number": {
+        "type": "string",
+        "enum": [
+          "Sing",
+          "Plur",
+          "Ptan"
+        ]
+      },
+      "PartType": {
+        "type": "string",
+        "enum": [
+          "Int",
+          "Mod"
+        ]
+      },
+      "Person": {
+        "type": "string",
+        "enum": [
+          "0",
+          "1",
+          "2",
+          "3"
+        ]
+      },
+      "Polarity": {
+        "type": "string",
+        "enum": [
+          "Pos",
+          "Neg"
+        ]
+      },
+      "Polite": {
+        "type": "string",
+        "enum": [
+          "Depr"
+        ]
+      },
+      "PrepCase": {
+        "type": "string",
+        "enum": [
+          "Pre",
+          "Npr"
+        ]
+      },
+      "PronType": {
+        "type": "string",
+        "enum": [
+          "Prs",
+          "Dem",
+          "Rel",
+          "Int",
+          "Ind",
+          "Tot",
+          "Neg",
+          "Art",
+          "Emp",
+          "Rcp",
+          "Exc"
+        ]
+      },
+      "PunctSide": {
+        "type": "string",
+        "enum": [
+          "Ini",
+          "Fin"
+        ]
+      },
+      "PunctType": {
+        "type": "string",
+        "enum": [
+          "Peri",
+          "Comm",
+          "Dash",
+          "Quot",
+          "Brck",
+          "Qest",
+          "Colo",
+          "Excl",
+          "Semi",
+          "Slsh",
+          "Elip"
+        ]
+      },
+      "Style": {
+        "type": "string",
+        "enum": [
+          "Arch",
+          "Coll",
+          "Expr",
+          "Slng",
+          "Vrnc"
+        ]
+      },
+      "Tense": {
+        "type": "string",
+        "enum": [
+          "Past",
+          "Pres",
+          "Fut",
+          "Imp"
+        ]
+      },
+      "Variant": {
+        "type": "string",
+        "enum": [
+          "Short",
+          "Long"
+        ]
+      },
+      "VerbForm": {
+        "type": "string",
+        "enum": [
+          "Fin",
+          "Inf",
+          "Part",
+          "Conv",
+          "Ger",
+          "Vnoun"
+        ]
+      },
+      "VerbType": {
+        "type": "string",
+        "enum": [
+          "Quasi",
+          "Mod"
+        ]
+      },
+      "Voice": {
+        "type": "string",
+        "enum": [
+          "Act",
+          "Pass"
+        ]
+      },
+      "Example": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "translation": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "additionalProperties": false
+      },
+      "Relation": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "$ref": "#/components/schemas/RelationType"
+          },
+          "lemma": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "lemma"
+        ],
+        "additionalProperties": false
+      },
+      "RelationType": {
+        "type": "string",
+        "enum": [
+          "aspect-partner",
+          "derived-from"
+        ]
+      },
+      "Pronunciation": {
+        "type": "object",
+        "properties": {
+          "ipa": {
+            "type": "string"
+          },
+          "accents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Accent"
+            }
+          }
+        },
+        "required": [
+          "ipa"
+        ],
+        "additionalProperties": false
+      },
+      "Accent": {
+        "type": "string",
+        "enum": [
+          "UK",
+          "US"
+        ]
+      },
+      "BundleParadigm": {
+        "type": "object",
+        "properties": {
+          "homonym": {
+            "type": "string"
+          },
+          "forms": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FormRow"
+            }
+          }
+        },
+        "required": [
+          "homonym",
+          "forms"
+        ],
+        "additionalProperties": false
+      },
+      "FormRow": {
+        "type": "array",
+        "prefixItems": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          }
+        ],
+        "items": false,
+        "minItems": 2,
+        "maxItems": 2
+      },
+      "FeatureSets": {
+        "type": "object",
+        "propertyNames": {
+          "type": "string"
+        },
+        "additionalProperties": {
+          "$ref": "#/components/schemas/Feats"
+        },
+        "description": "The feature sets a response's paradigms use, by id: { \"50\": { Case: \"Gen\", ... } }. An id means something only within its language's loaded lexicon."
+      },
+      "CardId": {
+        "type": "string",
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+      },
+      "DocumentId": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$"
+      },
+      "ReadingStatus": {
+        "type": "string",
+        "enum": [
+          "to-read",
+          "reading",
+          "finished"
+        ]
+      },
+      "DocumentSummary": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "description": "The text's: the same text imported twice in one language is one document.",
+            "$ref": "#/components/schemas/DocumentId"
+          },
+          "title": {
+            "type": "string"
+          },
+          "lang": {
+            "$ref": "#/components/schemas/Lang"
+          },
+          "importedAt": {
+            "$ref": "#/components/schemas/Timestamp"
+          },
+          "words": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "visibility": {
+            "$ref": "#/components/schemas/Visibility"
+          },
+          "licence": {
+            "$ref": "#/components/schemas/Licence"
+          },
+          "author": {
+            "description": "Who wrote the text, as the uploader gives it.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source": {
+            "description": "An http(s) URL of where the text is from.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tags": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "importer": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "$ref": "#/components/schemas/UserId"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ],
+            "additionalProperties": false,
+            "description": "The entry's user: with id, the summary is one (document, user) pair."
+          },
+          "mine": {
+            "type": "boolean",
+            "description": "Whether it's the viewer's entry, so they can change or delete it."
+          },
+          "queue": {
+            "description": "Where it is in its language's analysis queue: for the viewer's own document, while it's queued or analysing, when it's asked for on its own.",
+            "$ref": "#/components/schemas/QueuePlace"
+          },
+          "state": {
+            "$ref": "#/components/schemas/State"
+          },
+          "reading": {
+            "description": "The analysis and bundle to show, by name (GET .../analysis/{name}): the current ones, or while newer ones are queued or analysing (or failed), the previous ones. Absent until a first analysis is ready.",
+            "$ref": "#/components/schemas/ReadingNames"
+          },
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "lang",
+          "importedAt",
+          "words",
+          "visibility",
+          "licence",
+          "author",
+          "source",
+          "tags",
+          "importer",
+          "mine",
+          "state"
+        ],
+        "additionalProperties": false,
+        "description": "One user's entry for a text: the viewer's own, or someone's public one. Its title, visibility, licence, author and source are that user's."
+      },
+      "QueuePlace": {
+        "type": "object",
+        "properties": {
+          "starting": {
+            "type": "boolean"
+          },
+          "ahead": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "starting",
+          "ahead"
+        ],
+        "additionalProperties": false,
+        "description": "starting: the language's analyser is starting, its container booting or its model loading. ahead: how many texts it analyses before this one, the one it's analysing included; null when it hasn't been handed this one yet."
+      },
+      "State": {
+        "type": "string",
+        "enum": [
+          "queued",
+          "analysing",
+          "ready",
+          "failed"
+        ]
+      },
+      "ReadingNames": {
+        "type": "object",
+        "properties": {
+          "analysis": {
+            "type": "string"
+          },
+          "bundle": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "analysis",
+          "bundle"
+        ],
+        "additionalProperties": false
+      },
+      "ReadingEntry": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/ReadingStatus"
+          },
+          "addedAt": {
+            "$ref": "#/components/schemas/Timestamp"
+          },
+          "updatedAt": {
+            "$ref": "#/components/schemas/Timestamp"
+          }
+        },
+        "required": [
+          "status",
+          "addedAt",
+          "updatedAt"
+        ],
+        "additionalProperties": false
+      },
+      "Lookup": {
+        "type": "object",
+        "properties": {
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LexiconEntry"
+            }
+          },
+          "featureSets": {
+            "type": "object",
+            "propertyNames": {
+              "$ref": "#/components/schemas/Lang"
+            },
+            "additionalProperties": {
+              "$ref": "#/components/schemas/FeatureSets"
+            }
+          }
+        },
+        "required": [
+          "entries",
+          "featureSets"
+        ],
+        "additionalProperties": false
+      },
+      "Visibility": {
+        "type": "string",
+        "enum": [
+          "public",
+          "private"
+        ]
+      },
+      "Licence": {
+        "type": "string",
+        "enum": [
+          "public-domain",
+          "cc0",
+          "cc-by-4.0",
+          "cc-by-3.0",
+          "cc-by-sa-4.0",
+          "cc-by-sa-3.0",
+          "cc-by-nc-4.0",
+          "cc-by-nc-3.0",
+          "cc-by-nc-sa-4.0",
+          "cc-by-nc-sa-3.0",
+          "cc-by-nd-4.0",
+          "cc-by-nd-3.0",
+          "cc-by-nc-nd-4.0",
+          "cc-by-nc-nd-3.0",
+          "all-rights-reserved",
+          "unknown"
+        ]
+      },
+      "Annotation": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "$ref": "#/components/schemas/AnnotationId"
+              },
+              "start": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 20000
+              },
+              "end": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 20000
+              },
+              "licence": {
+                "type": "string",
+                "enum": [
+                  "public-domain",
+                  "cc0",
+                  "cc-by-4.0",
+                  "cc-by-3.0",
+                  "cc-by-sa-4.0",
+                  "cc-by-sa-3.0",
+                  "cc-by-nc-4.0",
+                  "cc-by-nc-3.0",
+                  "cc-by-nc-sa-4.0",
+                  "cc-by-nc-sa-3.0",
+                  "cc-by-nd-4.0",
+                  "cc-by-nd-3.0",
+                  "cc-by-nc-nd-4.0",
+                  "cc-by-nc-nd-3.0"
+                ]
+              },
+              "author": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "source": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "addedAt": {
+                "$ref": "#/components/schemas/Timestamp"
+              },
+              "kind": {
+                "type": "string",
+                "const": "audio"
+              },
+              "data": {
+                "type": "object",
+                "properties": {
+                  "url": {
+                    "type": "string",
+                    "maxLength": 2000,
+                    "format": "uri"
+                  }
+                },
+                "required": [
+                  "url"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "id",
+              "start",
+              "end",
+              "licence",
+              "author",
+              "source",
+              "addedAt",
+              "kind",
+              "data"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "$ref": "#/components/schemas/AnnotationId"
+              },
+              "start": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 20000
+              },
+              "end": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 20000
+              },
+              "licence": {
+                "type": "string",
+                "enum": [
+                  "public-domain",
+                  "cc0",
+                  "cc-by-4.0",
+                  "cc-by-3.0",
+                  "cc-by-sa-4.0",
+                  "cc-by-sa-3.0",
+                  "cc-by-nc-4.0",
+                  "cc-by-nc-3.0",
+                  "cc-by-nc-sa-4.0",
+                  "cc-by-nc-sa-3.0",
+                  "cc-by-nd-4.0",
+                  "cc-by-nd-3.0",
+                  "cc-by-nc-nd-4.0",
+                  "cc-by-nc-nd-3.0"
+                ]
+              },
+              "author": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "source": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "addedAt": {
+                "$ref": "#/components/schemas/Timestamp"
+              },
+              "kind": {
+                "type": "string",
+                "const": "text"
+              },
+              "data": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2000
+                  }
+                },
+                "required": [
+                  "text"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "id",
+              "start",
+              "end",
+              "licence",
+              "author",
+              "source",
+              "addedAt",
+              "kind",
+              "data"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      },
+      "AnnotationId": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$"
+      }
+    }
+  },
+  "paths": {
+    "/api/version": {
+      "get": {
+        "operationId": "getApiVersion",
+        "tags": [
+          "Account"
+        ],
+        "summary": "The deployed version",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "The version, from git describe",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Version"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me": {
+      "get": {
+        "operationId": "getApiMe",
+        "tags": [
+          "Account"
+        ],
+        "summary": "The signed-in user",
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me/words": {
+      "get": {
+        "operationId": "getApiMeWords",
+        "tags": [
+          "Words"
+        ],
+        "summary": "A page of the user's words",
+        "description": "Every word the user has given a status, by lemma id.",
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of words",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Word"
+                      }
+                    },
+                    "next": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "next"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request doesn't fit its schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "query",
+            "name": "after",
+            "schema": {}
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 500,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000
+            }
+          }
+        ]
+      }
+    },
+    "/api/me/words/{lemmaId}": {
+      "put": {
+        "operationId": "putApiMeWordsByLemmaId",
+        "tags": [
+          "Words"
+        ],
+        "summary": "Set a word's status",
+        "description": "active: the user is learning it; known and ignored take its cards out of reviews.",
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Done; no body"
+          },
+          "400": {
+            "description": "The request doesn't fit its schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "lemmaId",
+            "schema": {
+              "$ref": "#/components/schemas/LemmaId"
+            },
+            "required": true,
+            "description": "{lang}:{lemma}:{upos}, pl:pies:NOUN"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "$ref": "#/components/schemas/WordStatus"
+                  }
+                },
+                "required": [
+                  "status"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteApiMeWordsByLemmaId",
+        "tags": [
+          "Words"
+        ],
+        "summary": "Clear a word's status",
+        "description": "The word is new again, and its cards are reviewed; nothing is deleted.",
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Done; no body"
+          },
+          "400": {
+            "description": "The request doesn't fit its schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "lemmaId",
+            "schema": {
+              "$ref": "#/components/schemas/LemmaId"
+            },
+            "required": true,
+            "description": "{lang}:{lemma}:{upos}, pl:pies:NOUN"
+          }
+        ]
+      }
+    },
+    "/api/me/cards/counts": {
+      "get": {
+        "operationId": "getApiMeCardsCounts",
+        "tags": [
+          "Cards"
+        ],
+        "summary": "Cards to review, by language",
+        "description": "dayStart: when the user's day started; today's new cards count from it.",
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Each language's due and new cards, by group",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CardCounts"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request doesn't fit its schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "query",
+            "name": "dayStart",
+            "schema": {
+              "$ref": "#/components/schemas/IsoTime"
+            },
+            "required": true,
+            "description": "An ISO 8601 UTC time, any precision"
+          }
+        ]
+      }
+    },
+    "/api/me/cards/due": {
+      "get": {
+        "operationId": "getApiMeCardsDue",
+        "tags": [
+          "Cards"
+        ],
+        "summary": "Cards to review now",
+        "description": "Cards due now, then new cards up to what's left of today's allowances.",
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The cards, with their lexicon entries",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Due"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request doesn't fit its schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "query",
+            "name": "lang",
+            "schema": {
+              "$ref": "#/components/schemas/Lang"
+            },
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "dayStart",
+            "schema": {
+              "$ref": "#/components/schemas/IsoTime"
+            },
+            "required": true,
+            "description": "An ISO 8601 UTC time, any precision"
+          },
+          {
+            "in": "query",
+            "name": "group",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "words",
+                "forms"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "/api/me/reviews": {
+      "post": {
+        "operationId": "postApiMeReviews",
+        "tags": [
+          "Cards"
+        ],
+        "summary": "Review a card",
+        "description": "The review's id is the client's, so a retried review isn't counted twice.",
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "When the card is due next",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "cardId": {
+                      "$ref": "#/components/schemas/CardId"
+                    },
+                    "dueAt": {
+                      "$ref": "#/components/schemas/Timestamp"
+                    }
+                  },
+                  "required": [
+                    "cardId",
+                    "dueAt"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The review is in the future",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such card",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The review's id was used for another review",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "cardId": {
+                    "$ref": "#/components/schemas/CardId"
+                  },
+                  "rating": {
+                    "anyOf": [
+                      {
+                        "type": "number",
+                        "const": 1
+                      },
+                      {
+                        "type": "number",
+                        "const": 2
+                      },
+                      {
+                        "type": "number",
+                        "const": 3
+                      },
+                      {
+                        "type": "number",
+                        "const": 4
+                      }
+                    ]
+                  },
+                  "at": {
+                    "$ref": "#/components/schemas/IsoTime"
+                  }
+                },
+                "required": [
+                  "id",
+                  "cardId",
+                  "rating",
+                  "at"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me/clozes": {
+      "post": {
+        "operationId": "postApiMeClozes",
+        "tags": [
+          "Cards"
+        ],
+        "summary": "Make a cloze card",
+        "description": "A sentence from a text the user sees, with a word blanked out.",
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The sentence and word already had a card",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "cardId": {
+                      "$ref": "#/components/schemas/CardId"
+                    }
+                  },
+                  "required": [
+                    "cardId"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "A new card",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "cardId": {
+                      "$ref": "#/components/schemas/CardId"
+                    }
+                  },
+                  "required": [
+                    "cardId"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request doesn't fit its schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The user has as many cloze cards as they may",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "documentId": {
+                    "$ref": "#/components/schemas/DocumentId"
+                  },
+                  "sentence": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2000
+                  },
+                  "sentenceStart": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 20000
+                  },
+                  "blankStart": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 20000
+                  },
+                  "blankEnd": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 20000
+                  },
+                  "feats": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  },
+                  "why": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "lemmaId": {
+                    "$ref": "#/components/schemas/LemmaId"
+                  }
+                },
+                "required": [
+                  "documentId",
+                  "sentence",
+                  "sentenceStart",
+                  "blankStart",
+                  "blankEnd",
+                  "feats",
+                  "why",
+                  "lemmaId"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "getApiMeClozes",
+        "tags": [
+          "Cards"
+        ],
+        "summary": "A page of a text's cloze cards",
+        "description": "By where each one's blank starts in the text.",
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of cards",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "cardId": {
+                            "$ref": "#/components/schemas/CardId"
+                          },
+                          "start": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 20000
+                          }
+                        },
+                        "required": [
+                          "cardId",
+                          "start"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "next": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "next"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request doesn't fit its schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "query",
+            "name": "after",
+            "schema": {}
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 500,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000
+            }
+          },
+          {
+            "in": "query",
+            "name": "documentId",
+            "schema": {
+              "$ref": "#/components/schemas/DocumentId"
+            },
+            "required": true
+          }
+        ]
+      }
+    },
+    "/api/me/clozes/{cardId}": {
+      "delete": {
+        "operationId": "deleteApiMeClozesByCardId",
+        "tags": [
+          "Cards"
+        ],
+        "summary": "Delete a cloze card",
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Done; no body"
+          },
+          "400": {
+            "description": "The request doesn't fit its schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such card",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "cardId",
+            "schema": {
+              "$ref": "#/components/schemas/CardId"
+            },
+            "required": true
+          }
+        ]
+      }
+    },
+    "/api/me/positions/{id}": {
+      "get": {
+        "operationId": "getApiMePositionsById",
+        "tags": [
+          "Reading"
+        ],
+        "summary": "Where the user is in a text",
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The position, null if there's none",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "position": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "sentence": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 20000
+                            },
+                            "token": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 20000
+                            },
+                            "at": {
+                              "$ref": "#/components/schemas/Timestamp"
+                            }
+                          },
+                          "required": [
+                            "sentence",
+                            "token",
+                            "at"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "position"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request doesn't fit its schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "$ref": "#/components/schemas/DocumentId"
+            },
+            "required": true
+          }
+        ]
+      },
+      "put": {
+        "operationId": "putApiMePositionsById",
+        "tags": [
+          "Reading"
+        ],
+        "summary": "Save where the user is in a text",
+        "description": "A position older than the saved one is ignored.",
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Done; no body"
+          },
+          "400": {
+            "description": "The position is in the future",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "$ref": "#/components/schemas/DocumentId"
+            },
+            "required": true
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "sentence": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 20000
+                  },
+                  "token": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 20000
+                  },
+                  "at": {
+                    "$ref": "#/components/schemas/IsoTime"
+                  }
+                },
+                "required": [
+                  "sentence",
+                  "token",
+                  "at"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me/reading-list": {
+      "get": {
+        "operationId": "getApiMeReadingList",
+        "tags": [
+          "Reading"
+        ],
+        "summary": "A page of the reading list",
+        "description": "The texts with a status, latest changed first.",
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of texts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "status": {
+                            "$ref": "#/components/schemas/ReadingStatus"
+                          },
+                          "addedAt": {
+                            "$ref": "#/components/schemas/Timestamp"
+                          },
+                          "updatedAt": {
+                            "$ref": "#/components/schemas/Timestamp"
+                          },
+                          "document": {
+                            "$ref": "#/components/schemas/DocumentSummary"
+                          }
+                        },
+                        "required": [
+                          "status",
+                          "addedAt",
+                          "updatedAt",
+                          "document"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "next": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "next"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request doesn't fit its schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "query",
+            "name": "after",
+            "schema": {}
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 24,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "$ref": "#/components/schemas/ReadingStatus"
+            },
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "lang",
+            "schema": {
+              "$ref": "#/components/schemas/Lang"
+            }
+          }
+        ]
+      }
+    },
+    "/api/me/reading-list/{id}": {
+      "get": {
+        "operationId": "getApiMeReadingListById",
+        "tags": [
+          "Reading"
+        ],
+        "summary": "A text's place on the reading list",
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Its entry, null if it isn't on the list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "entry": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/ReadingEntry"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "entry"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request doesn't fit its schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "$ref": "#/components/schemas/DocumentId"
+            },
+            "required": true
+          }
+        ]
+      },
+      "put": {
+        "operationId": "putApiMeReadingListById",
+        "tags": [
+          "Reading"
+        ],
+        "summary": "Put a text on the reading list, or change its status",
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Its entry",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "entry": {
+                      "$ref": "#/components/schemas/ReadingEntry"
+                    }
+                  },
+                  "required": [
+                    "entry"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request doesn't fit its schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "$ref": "#/components/schemas/DocumentId"
+            },
+            "required": true
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "$ref": "#/components/schemas/ReadingStatus"
+                  }
+                },
+                "required": [
+                  "status"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteApiMeReadingListById",
+        "tags": [
+          "Reading"
+        ],
+        "summary": "Take a text off the reading list",
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Done; no body"
+          },
+          "400": {
+            "description": "The request doesn't fit its schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "$ref": "#/components/schemas/DocumentId"
+            },
+            "required": true
+          }
+        ]
+      }
+    },
+    "/api/me/documents": {
+      "get": {
+        "operationId": "getApiMeDocuments",
+        "tags": [
+          "Documents"
+        ],
+        "summary": "A page of the user's own documents",
+        "description": "Public and private.",
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of documents",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/DocumentSummary"
+                      }
+                    },
+                    "next": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "next"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request doesn't fit its schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "query",
+            "name": "after",
+            "schema": {}
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 24,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50
+            }
+          }
+        ]
+      }
+    },
+    "/api/me/settings": {
+      "get": {
+        "operationId": "getApiMeSettings",
+        "tags": [
+          "Cards"
+        ],
+        "summary": "The user's review settings",
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The settings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "newLemmasPerDay": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 1000
+                    },
+                    "newFormsPerDay": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 1000
+                    },
+                    "formsWithWords": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "newLemmasPerDay",
+                    "newFormsPerDay",
+                    "formsWithWords"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "putApiMeSettings",
+        "tags": [
+          "Cards"
+        ],
+        "summary": "Change the user's review settings",
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Done; no body"
+          },
+          "400": {
+            "description": "The request doesn't fit its schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "newLemmasPerDay": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1000
+                  },
+                  "newFormsPerDay": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1000
+                  },
+                  "formsWithWords": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "newLemmasPerDay",
+                  "newFormsPerDay",
+                  "formsWithWords"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/lexicon/entries": {
+      "post": {
+        "operationId": "postApiLexiconEntries",
+        "tags": [
+          "Lexicon"
+        ],
+        "summary": "Look up lexicon entries",
+        "description": "A POST so the ids fit in a body.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "The entries the lexicon has",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Lookup"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request doesn't fit its schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "ids": {
+                    "minItems": 1,
+                    "maxItems": 100,
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/LemmaId"
+                    }
+                  }
+                },
+                "required": [
+                  "ids"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/documents": {
+      "get": {
+        "operationId": "getApiDocuments",
+        "tags": [
+          "Documents"
+        ],
+        "summary": "A page of the documents the viewer sees",
+        "description": "Public entries, and the viewer's own. tag=kind:value, once or more, keeps entries with any of the values of each kind; lang, those in the language; q, those whose title has it; mine=true, only the viewer's own.",
+        "security": [
+          {},
+          {
+            "session": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of documents",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/DocumentSummary"
+                      }
+                    },
+                    "next": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "next"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request doesn't fit its schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "mine=true without a session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "query",
+            "name": "after",
+            "schema": {}
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 24,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50
+            }
+          },
+          {
+            "in": "query",
+            "name": "lang",
+            "schema": {
+              "$ref": "#/components/schemas/Lang"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            }
+          },
+          {
+            "in": "query",
+            "name": "mine",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tag",
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "post": {
+        "operationId": "postApiDocuments",
+        "tags": [
+          "Documents"
+        ],
+        "summary": "Import a text",
+        "description": "A text someone else imported gets the user's own entry, with their title, visibility and licence. A failed import is retried by importing the same text again.",
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The text was here already",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentSummary"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "The text is queued for analysis",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentSummary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A tag skolia doesn't have",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The text is too long",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string"
+                  },
+                  "text": {
+                    "type": "string"
+                  },
+                  "lang": {
+                    "$ref": "#/components/schemas/Lang"
+                  },
+                  "visibility": {
+                    "default": "private",
+                    "$ref": "#/components/schemas/Visibility"
+                  },
+                  "licence": {
+                    "default": "unknown",
+                    "$ref": "#/components/schemas/Licence"
+                  },
+                  "author": {
+                    "type": "string",
+                    "maxLength": 200
+                  },
+                  "source": {
+                    "type": "string",
+                    "maxLength": 2000
+                  },
+                  "tags": {
+                    "default": {},
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9-]{0,31}$"
+                    },
+                    "additionalProperties": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9.+-]{0,31}$"
+                    }
+                  }
+                },
+                "required": [
+                  "text",
+                  "lang"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tags": {
+      "get": {
+        "operationId": "getApiTags",
+        "tags": [
+          "Documents"
+        ],
+        "summary": "A page of the tags that can be given",
+        "security": [],
+        "description": "By kind, then in each kind's order.",
+        "responses": {
+          "200": {
+            "description": "A page of tags",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "pattern": "^[a-z][a-z0-9-]{0,31}$"
+                          },
+                          "value": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9.+-]{0,31}$"
+                          },
+                          "description": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "value",
+                          "description"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "next": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "next"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request doesn't fit its schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "query",
+            "name": "after",
+            "schema": {}
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 100,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500
+            }
+          }
+        ]
+      }
+    },
+    "/api/documents/{id}": {
+      "get": {
+        "operationId": "getApiDocumentsById",
+        "tags": [
+          "Documents"
+        ],
+        "summary": "A document",
+        "description": "The viewer's own entry for it, else a public one. Opening it queues it again if it needs it.",
+        "security": [
+          {},
+          {
+            "session": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The entry, with where it is in the queue",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentSummary"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ]
+      },
+      "patch": {
+        "operationId": "patchApiDocumentsById",
+        "tags": [
+          "Documents"
+        ],
+        "summary": "Change the user's entry for a text",
+        "description": "A field left out stays as it is; null clears author or source; tags replace all of its tags.",
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The changed entry",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentSummary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A change that isn't allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not the user's entry",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "licence": {
+                    "$ref": "#/components/schemas/Licence"
+                  },
+                  "author": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 200
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "source": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 2000
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "visibility": {
+                    "$ref": "#/components/schemas/Visibility"
+                  },
+                  "tags": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9-]{0,31}$"
+                    },
+                    "additionalProperties": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9.+-]{0,31}$"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ]
+      },
+      "delete": {
+        "operationId": "deleteApiDocumentsById",
+        "tags": [
+          "Documents"
+        ],
+        "summary": "Delete the user's entry for a text",
+        "description": "The text and its analyses stay, so importing it again needn't analyse it again.",
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Done; no body"
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not the user's entry",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ]
+      }
+    },
+    "/api/documents/{id}/text": {
+      "get": {
+        "operationId": "getApiDocumentsByIdText",
+        "tags": [
+          "Documents"
+        ],
+        "summary": "A document's text",
+        "description": "Its id is the text's hash, so what's here never changes; the ETag says so.",
+        "security": [
+          {},
+          {
+            "session": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The text",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "The client's copy is current"
+          },
+          "404": {
+            "description": "No such document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ]
+      }
+    },
+    "/api/documents/{id}/analysis/{name}": {
+      "get": {
+        "operationId": "getApiDocumentsByIdAnalysisByName",
+        "tags": [
+          "Documents"
+        ],
+        "summary": "A document's analysis",
+        "description": "By its name in DocumentSummary.reading: its sentences and tokens (Blob in shared/schema.gen.ts), Brotli-compressed.",
+        "security": [
+          {},
+          {
+            "session": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The JSON, with Content-Encoding: br",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "The client's copy is current"
+          },
+          "404": {
+            "description": "No such document, or it has no such analysis or bundle",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "406": {
+            "description": "The client doesn't accept Brotli",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "name",
+            "required": true
+          }
+        ]
+      }
+    },
+    "/api/documents/{id}/bundle/{name}": {
+      "get": {
+        "operationId": "getApiDocumentsByIdBundleByName",
+        "tags": [
+          "Documents"
+        ],
+        "summary": "A document's lexicon bundle",
+        "description": "By its name in DocumentSummary.reading: the lexicon entries its words need (Bundle in shared/schema.gen.ts), Brotli-compressed.",
+        "security": [
+          {},
+          {
+            "session": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The JSON, with Content-Encoding: br",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "The client's copy is current"
+          },
+          "404": {
+            "description": "No such document, or it has no such analysis or bundle",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "406": {
+            "description": "The client doesn't accept Brotli",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "name",
+            "required": true
+          }
+        ]
+      }
+    },
+    "/api/documents/{id}/annotations": {
+      "get": {
+        "operationId": "getApiDocumentsByIdAnnotations",
+        "tags": [
+          "Annotations"
+        ],
+        "summary": "A page of an entry's annotations",
+        "description": "Those of the entry the viewer sees, by where they start; from and to keep those overlapping [from, to).",
+        "security": [
+          {},
+          {
+            "session": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of annotations",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Annotation"
+                      }
+                    },
+                    "next": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "next"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request doesn't fit its schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "query",
+            "name": "after",
+            "schema": {}
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 500,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 20000
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 20000
+            }
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ]
+      },
+      "post": {
+        "operationId": "postApiDocumentsByIdAnnotations",
+        "tags": [
+          "Annotations"
+        ],
+        "summary": "Annotate the user's entry",
+        "description": "Attach a kind and its data to a range of the text.",
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The entry had it already",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Annotation"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "A new annotation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Annotation"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "It ends after the text does",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The user hasn't imported the text",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The entry has as many annotations as it may",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The annotation is too big",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "start": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 20000
+                      },
+                      "end": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 20000
+                      },
+                      "licence": {
+                        "type": "string",
+                        "enum": [
+                          "public-domain",
+                          "cc0",
+                          "cc-by-4.0",
+                          "cc-by-3.0",
+                          "cc-by-sa-4.0",
+                          "cc-by-sa-3.0",
+                          "cc-by-nc-4.0",
+                          "cc-by-nc-3.0",
+                          "cc-by-nc-sa-4.0",
+                          "cc-by-nc-sa-3.0",
+                          "cc-by-nd-4.0",
+                          "cc-by-nd-3.0",
+                          "cc-by-nc-nd-4.0",
+                          "cc-by-nc-nd-3.0"
+                        ]
+                      },
+                      "author": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                      },
+                      "source": {
+                        "type": "string",
+                        "maxLength": 2000
+                      },
+                      "kind": {
+                        "type": "string",
+                        "const": "audio"
+                      },
+                      "data": {
+                        "type": "object",
+                        "properties": {
+                          "url": {
+                            "type": "string",
+                            "maxLength": 2000,
+                            "format": "uri"
+                          }
+                        },
+                        "required": [
+                          "url"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "required": [
+                      "start",
+                      "end",
+                      "licence",
+                      "kind",
+                      "data"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "start": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 20000
+                      },
+                      "end": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 20000
+                      },
+                      "licence": {
+                        "type": "string",
+                        "enum": [
+                          "public-domain",
+                          "cc0",
+                          "cc-by-4.0",
+                          "cc-by-3.0",
+                          "cc-by-sa-4.0",
+                          "cc-by-sa-3.0",
+                          "cc-by-nc-4.0",
+                          "cc-by-nc-3.0",
+                          "cc-by-nc-sa-4.0",
+                          "cc-by-nc-sa-3.0",
+                          "cc-by-nd-4.0",
+                          "cc-by-nd-3.0",
+                          "cc-by-nc-nd-4.0",
+                          "cc-by-nc-nd-3.0"
+                        ]
+                      },
+                      "author": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                      },
+                      "source": {
+                        "type": "string",
+                        "maxLength": 2000
+                      },
+                      "kind": {
+                        "type": "string",
+                        "const": "text"
+                      },
+                      "data": {
+                        "type": "object",
+                        "properties": {
+                          "text": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 2000
+                          }
+                        },
+                        "required": [
+                          "text"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "required": [
+                      "start",
+                      "end",
+                      "licence",
+                      "kind",
+                      "data"
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ]
+      }
+    },
+    "/api/documents/{id}/annotations/{annotationId}": {
+      "delete": {
+        "operationId": "deleteApiDocumentsByIdAnnotationsByAnnotationId",
+        "tags": [
+          "Annotations"
+        ],
+        "summary": "Delete an annotation from the user's entry",
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Done; no body"
+          },
+          "400": {
+            "description": "The request doesn't fit its schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such annotation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "annotationId",
+            "schema": {
+              "$ref": "#/components/schemas/AnnotationId"
+            },
+            "required": true
+          }
+        ]
+      }
+    }
+  }
+}

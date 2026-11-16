@@ -44,6 +44,8 @@ import type {
 } from "@skolia/shared/api";
 import type { PageRequest } from "@skolia/shared/page";
 import type { IngestJob } from "@skolia/shared/schema";
+import type * as schemas from "@skolia/shared/schemas";
+import type * as z from "zod";
 
 /** A text, stored once however many users import it, and never deleted. Its state lives in
  * the status blob. */
@@ -190,7 +192,7 @@ export interface UserData {
   readingList(userId: UserId, filter: ReadingFilter, page: PageRequest<ReadingKey>): Promise<Paginated<StoredReading, ReadingKey>>;
 }
 
-export type StoredPosition = Omit<ReadingPosition, "at"> & { at: Timestamp };
+export type StoredPosition = z.output<typeof schemas.StoredPosition>;
 
 export type StoredReading = ReadingEntry & { readonly documentId: DocumentId };
 
@@ -214,4 +216,6 @@ export interface Deps {
   /** git describe of the build */
   version: string;
   now: () => Date;
+  /** For the tests: a response its route's spec doesn't describe is a 500 (openapi.ts). */
+  checkResponses?: boolean;
 }
