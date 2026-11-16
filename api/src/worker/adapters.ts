@@ -473,8 +473,11 @@ function annotateQuery(id: DocumentId, user: UserId, a: Annotation): Sql {
     ON CONFLICT (user_id, document_id, id) DO NOTHING`;
 }
 
-function annotationQuery(id: DocumentId, user: UserId, annotationId: AnnotationId): Query {
-  return SELECT_ANNOTATION.where(eq("annotation.user_id", user), eq("annotation.document_id", id), eq("annotation.id", annotationId));
+/** D1 binds at most 100 parameters to a statement: the user, the document and these ids. */
+const IDS_PER_QUERY = 90;
+
+function annotationsByIdQuery(id: DocumentId, user: UserId, ids: readonly AnnotationId[]): Query {
+  return SELECT_ANNOTATION.where(eq("annotation.user_id", user), eq("annotation.document_id", id), inList("annotation.id", ids));
 }
 
 function unannotateQuery(id: DocumentId, user: UserId, annotationId: AnnotationId): Sql {
@@ -541,7 +544,7 @@ export const DOCUMENT_QUERIES = {
     annotationsQuery(SOME_ENTRY.id, SOMEONE, { from: 100, to: 200 }, { after: [0, SOME_ANNOTATION.id], limit: 500 }),
   ).text,
   annotate: annotateQuery(SOME_ENTRY.id, SOMEONE, SOME_ANNOTATION).text,
-  annotation: compile(annotationQuery(SOME_ENTRY.id, SOMEONE, SOME_ANNOTATION.id)).text,
+  annotationsById: compile(annotationsByIdQuery(SOME_ENTRY.id, SOMEONE, [SOME_ANNOTATION.id, SOME_ANNOTATION.id])).text,
   unannotate: unannotateQuery(SOME_ENTRY.id, SOMEONE, SOME_ANNOTATION.id).text,
 } as const;
 
@@ -644,15 +647,28 @@ export class D1Documents implements DocumentStore {
     );
   }
 
-  async annotate(id: DocumentId, user: UserId, annotation: Annotation): Promise<AnnotateResult> {
-    const [, inserted, stored] = await this.db.batch([
-      prepare(this.db, addAttributionQuery(annotation)),
-      prepare(this.db, annotateQuery(id, user, annotation)),
-      prepare(this.db, annotationQuery(id, user, annotation.id)),
+  async annotate(id: DocumentId, user: UserId, annotations: readonly Annotation[]): Promise<AnnotateResult> {
+    const attributions = [...new Map(annotations.map((a) => [JSON.stringify([a.licence, a.author, a.source]), a])).values()];
+    const ids = [...new Set(annotations.map((a) => a.id))];
+    const chunks = Array.from({ length: Math.ceil(ids.length / IDS_PER_QUERY) }, (_, i) =>
+      ids.slice(i * IDS_PER_QUERY, (i + 1) * IDS_PER_QUERY),
+    );
+    const results = await this.db.batch([
+      ...attributions.map((a) => prepare(this.db, addAttributionQuery(a))),
+      ...annotations.map((a) => prepare(this.db, annotateQuery(id, user, a))),
+      ...chunks.map((chunk) => prepare(this.db, annotationsByIdQuery(id, user, chunk))),
     ]);
-    const row = stored?.results[0];
-    if (row === undefined) return { kind: "full" };
-    return { kind: (inserted?.meta.changes ?? 0) > 0 ? "added" : "exists", annotation: schemas.AnnotationRow.parse(row) };
+    const inserted = results.slice(attributions.length, attributions.length + annotations.length);
+    const stored = new Map(
+      results
+        .slice(attributions.length + annotations.length)
+        .flatMap((r) => r.results.map((row) => schemas.AnnotationRow.parse(row)))
+        .map((a) => [a.id, a]),
+    );
+    const found = annotations.flatMap((a) => stored.get(a.id) ?? []);
+    if (found.length < annotations.length) return { kind: "full" };
+    // changes counts the trigger's update of annotations_count too
+    return { kind: "added", added: inserted.filter((r) => r.meta.changes > 0).length, annotations: found };
   }
 
   async unannotate(id: DocumentId, user: UserId, annotationId: AnnotationId): Promise<boolean> {

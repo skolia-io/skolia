@@ -106,16 +106,18 @@ export interface DocumentStore {
     filter: AnnotationFilter,
     page: PageRequest<AnnotationKey>,
   ): Promise<Paginated<Annotation, AnnotationKey>>;
-  /** Add the annotation to the user's entry, which must exist, unless it has one with its
-   * id already or has MAX_ANNOTATIONS. */
-  annotate(id: DocumentId, user: UserId, annotation: Annotation): Promise<AnnotateResult>;
+  /** Add each annotation the user's entry hasn't one with the id of, in one transaction, until
+   * it has MAX_ANNOTATIONS. At most ANNOTATION_BATCH. */
+  annotate(id: DocumentId, user: UserId, annotations: readonly Annotation[]): Promise<AnnotateResult>;
   /** False if the user's entry has no annotation with the id. */
   unannotate(id: DocumentId, user: UserId, annotationId: AnnotationId): Promise<boolean>;
 }
 
-/** added: the annotation is new. exists: the entry had it, as it's given here. full: the
- * entry has MAX_ANNOTATIONS. */
-export type AnnotateResult = { readonly kind: "added" | "exists"; readonly annotation: Annotation } | { readonly kind: "full" };
+/** added: the entry has them all, as they're given here, added of them new. full: it filled
+ * up before it had them all; those before stay. */
+export type AnnotateResult =
+  | { readonly kind: "added"; readonly added: number; readonly annotations: readonly Annotation[] }
+  | { readonly kind: "full" };
 
 export interface StoredBlob {
   body: Uint8Array<ArrayBuffer>;

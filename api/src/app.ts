@@ -8,7 +8,7 @@ import type { ContentfulStatusCode } from "hono/utils/http-status";
 import type { JSONParsed } from "hono/utils/types";
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import * as z from "zod";
-import { LANGS, MAX_TEXT_LENGTH, type ApiError, type User, type Version } from "@skolia/shared/api";
+import { ANNOTATION_BATCH, LANGS, MAX_TEXT_LENGTH, type ApiError, type User, type Version } from "@skolia/shared/api";
 import * as schemas from "@skolia/shared/schemas";
 import * as annotations from "./controllers/annotations.ts";
 import * as cards from "./controllers/cards.ts";
@@ -40,8 +40,8 @@ const logger = log("api");
 const MAX_BODY_BYTES = MAX_TEXT_LENGTH * 6 + 4 * 1024;
 const DOCUMENT_ID_MESSAGE = "document id must be 64 lowercase hex characters";
 const ANNOTATION_ID_MESSAGE = "annotation id must be 64 lowercase hex characters";
-// An annotation's data is a URL or so; this leaves room for a kind with more
-const MAX_ANNOTATION_BYTES = 16 * 1024;
+// An annotation's data is a URL or so: room for each of a batch to be 2 KiB, or a few to be big
+const MAX_ANNOTATION_BATCH_BYTES = 2 * 1024 * ANNOTATION_BATCH;
 
 export type AppType = ReturnType<typeof createApp>;
 
@@ -73,8 +73,8 @@ export function createApp(deps: Deps) {
   });
 
   const annotationLimit = bodyLimit({
-    maxSize: MAX_ANNOTATION_BYTES,
-    onError: (c) => c.json({ error: `an annotation is at most ${MAX_ANNOTATION_BYTES} bytes` } satisfies ApiError, 413),
+    maxSize: MAX_ANNOTATION_BATCH_BYTES,
+    onError: (c) => c.json({ error: `a batch of annotations is at most ${MAX_ANNOTATION_BATCH_BYTES} bytes` } satisfies ApiError, 413),
   });
 
   /** The controller's result for the signed-in user, or 401. */
@@ -421,17 +421,20 @@ export function createApp(deps: Deps) {
     )
     .post(
       "/api/documents/:id/annotations",
-      mine(TAGS.annotations, "Annotate the user's entry", "Attach a kind and its data to a range of the text."),
+      mine(
+        TAGS.annotations,
+        "Annotate the user's entry",
+        `Attach a kind and its data to ranges of the text, up to ${ANNOTATION_BATCH} at once, in one transaction. Those the entry has already are left as they are.`,
+      ),
       annotationLimit,
-      validator("json", schemas.NewAnnotation, badRequest()),
+      validator("json", schemas.NewAnnotations, badRequest()),
       responds({
-        200: json(schemas.Annotation, "The entry had it already"),
-        201: json(schemas.Annotation, "A new annotation"),
-        400: error("It ends after the text does"),
+        200: json(schemas.Annotated, "The annotations, as the entry has them, and how many are new"),
+        400: error("One ends after the text does"),
         401: NOT_SIGNED_IN,
         404: error("The user hasn't imported the text"),
-        409: error("The entry has as many annotations as it may"),
-        413: error("The annotation is too big"),
+        409: error("The entry filled up before it had them all; those before stay"),
+        413: error("The annotations are too big"),
       }),
       (c) => signedIn(c, (user) => annotations.add(deps, user, c.req.param("id"), c.req.valid("json"))),
     )
