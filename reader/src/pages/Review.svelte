@@ -271,7 +271,9 @@
 
 {#snippet meanings(c: DueCard)}
   {@const senses = glosses(c)}
-  <p class="muted">{UPOS_LABEL[c.entry?.upos ?? "X"]}</p>
+  {#if c.kind === "cloze"}
+    <p class="muted">{UPOS_LABEL[c.entry?.upos ?? "X"]}</p>
+  {/if}
   {#if senses.length > 0}
     <ul class="glosses">
       {#each senses as sense, i (i)}
@@ -353,6 +355,7 @@
             {@render sentence(card, card.data, revealed)}
           {:else if card.kind === "recognition"}
             {@render lemma(card)}
+            <p class="muted">{hintOf(card)}</p>
           {:else}
             {@render prompt(card)}
           {/if}
