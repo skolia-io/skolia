@@ -7,8 +7,9 @@
 // With --check, only lists what it would do, and fails if that's anything.
 // curated/{lang}/{name}.yaml: one text, of a kind (curated-kinds.ts) that has it inline or
 // names where to fetch it.
-// With --concurrency, makes that many changes at once (default CONCURRENCY).
-// usage: SYNC_CURATED_API_KEY=<key> node src/sync-curated.ts <base url> <curated dir> [--check] [--concurrency <n>]
+// With --concurrency, makes that many changes at once (default CONCURRENCY). With --sample,
+// syncs only that many of the texts (sampleCurated), as previews do.
+// usage: SYNC_CURATED_API_KEY=<key> node src/sync-curated.ts <base url> <curated dir> [--check] [--concurrency <n>] [--sample <n>]
 import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
@@ -130,6 +131,23 @@ export async function readCurated(dir: string): Promise<CuratedFile[]> {
     }),
   );
   return files.flat();
+}
+
+/** n of the files, the same each time, spread over their languages, kinds and whether they
+ * have annotations: a file from each of those groups in turn, each group in path order. */
+export function sampleCurated(files: readonly CuratedFile[], n: number): CuratedFile[] {
+  const groups = files
+    .toSorted((a, b) => a.path.localeCompare(b.path))
+    .reduce((byGroup, file) => {
+      const annotated = file.spec.kind === "inline" && Object.keys(file.spec.annotations).length > 0;
+      const group = `${file.lang} ${file.spec.kind} ${annotated}`;
+      return byGroup.set(group, [...(byGroup.get(group) ?? []), file]);
+    }, new Map<string, readonly CuratedFile[]>());
+  const ordered = [...groups].toSorted(([a], [b]) => a.localeCompare(b)).map(([, group]) => group);
+  const rounds = Math.max(0, ...ordered.map((group) => group.length));
+  return Array.from({ length: rounds }, (_, round) => ordered.flatMap((group) => group[round] ?? []))
+    .flat()
+    .slice(0, n);
 }
 
 /** The files' texts, fetching those their kind names a source for. Throws, naming the
@@ -322,7 +340,9 @@ async function made(
 
 async function main(): Promise<void> {
   const usage = (): never => {
-    console.error("usage: SYNC_CURATED_API_KEY=<key> node src/sync-curated.ts <base url> <curated dir> [--check] [--concurrency <n>]");
+    console.error(
+      "usage: SYNC_CURATED_API_KEY=<key> node src/sync-curated.ts <base url> <curated dir> [--check] [--concurrency <n>] [--sample <n>]",
+    );
     process.exit(2);
   };
   let args: ReturnType<typeof parseArguments>;
@@ -331,14 +351,20 @@ async function main(): Promise<void> {
   } catch {
     return usage();
   }
-  const { check, concurrency: given } = args.values;
+  const { check, concurrency: given, sample: sampled } = args.values;
   const [url, dir] = args.positionals;
   const key = process.env["SYNC_CURATED_API_KEY"];
   const concurrency = Number(given ?? CONCURRENCY);
-  if (!url || !dir || !key || args.positionals.length > 2 || !Number.isInteger(concurrency) || concurrency < 1) return usage();
+  const sample = sampled === undefined ? undefined : Number(sampled);
+  const counts = [concurrency, sample ?? 1];
+  if (!url || !dir || !key || args.positionals.length > 2 || !counts.every((n) => Number.isInteger(n) && n >= 1)) return usage();
   const api = hc<AppType>(url.replace(/\/$/u, ""), { headers: { [API_KEY_HEADER]: key } }).api;
   const start = performance.now();
-  const texts = await resolveCurated(await readCurated(dir));
+  const files = await readCurated(dir);
+  const chosen = sample === undefined ? files : sampleCurated(files, sample);
+  if (sample !== undefined)
+    log.info("sampled {texts} of {files} texts", { texts: chosen.length, files: files.length, paths: chosen.map((f) => f.path) });
+  const texts = await resolveCurated(chosen);
   log.info("resolved {texts} texts", { texts: texts.length, ms: since(start) });
   const changes = await sync(api, texts, { check, concurrency });
   log.info(check ? "{changes} changes to make" : "made {changes} changes", {
@@ -353,7 +379,7 @@ async function main(): Promise<void> {
 function parseArguments() {
   return parseArgs({
     allowPositionals: true,
-    options: { check: { type: "boolean", default: false }, concurrency: { type: "string" } },
+    options: { check: { type: "boolean", default: false }, concurrency: { type: "string" }, sample: { type: "string" } },
   });
 }
 
