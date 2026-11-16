@@ -52,6 +52,8 @@ body {
   color: var(--text);
   font-family: var(--ui);
   -webkit-text-size-adjust: 100%;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 #app {

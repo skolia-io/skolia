@@ -713,10 +713,16 @@
 
   .text {
     font-family: var(--reading);
-    font-size: 1.2rem;
-    line-height: 1.75;
+    font-size: 1.125rem;
+    line-height: 1.6;
     white-space: pre-wrap;
     overflow-wrap: break-word;
+  }
+
+  @media (max-width: 639px) {
+    .text {
+      font-size: 1.0625rem;
+    }
   }
 
   /* A gutter for the play buttons, each beside the line its clip starts on */
