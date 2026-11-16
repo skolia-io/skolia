@@ -5,7 +5,8 @@
   "exports": {
     "./checks": "./checks.ts",
     "./sql": "./sql.ts",
-    "./query": "./query.ts"
+    "./query": "./query.ts",
+    "./graph": "./graph.ts"
   },
   "scripts": {
     "test": "node --test \"*.test.ts\""
