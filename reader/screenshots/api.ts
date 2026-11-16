@@ -320,10 +320,7 @@ function deps(signedIn: boolean, annotations: readonly Annotation[]): Deps {
       }),
       makeCloze: async () => ({ kind: "made", cardId: CardId.parse("00000000-0000-4000-8000-000000000009") }),
       cards: async (_userId, listing) => ({
-        items:
-          "documentId" in listing || listing.lang !== "pl"
-            ? []
-            : listedCards.filter((c) => listing.group === undefined || (c.kind === "cloze") === (listing.group === "forms")),
+        items: "documentId" in listing || listing.lang !== "pl" ? [] : listedCards,
         next: null,
       }),
       deleteCard: async () => true,

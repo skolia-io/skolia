@@ -175,15 +175,14 @@ export const NewestCardKey = z.tuple([Timestamp, CardId]).readonly();
 export const TextCardKey = z.tuple([TextOffset]).readonly();
 export const CardKey = z.union([NewestCardKey, TextCardKey]);
 
-/** A page of the user's cards: a language's, newest first, group narrowing them to its
- * cards; or a text's cloze cards, documentId, in the order of the text. The cursor must
- * be one the same kind of list gave. */
+/** A page of the user's cards: a language's, newest first; or a text's cloze cards,
+ * documentId, in the order of the text. The cursor must be one the same kind of list gave. */
 export const CardsQuery = pageQuery(CardKey, CARD_PAGE)
-  .extend({ lang: Lang.optional(), group: z.enum(CARD_GROUPS).optional(), documentId: DocumentId.optional() })
-  .transform(({ lang, group, documentId, after, limit }, context) => {
+  .extend({ lang: Lang.optional(), documentId: DocumentId.optional() })
+  .transform(({ lang, documentId, after, limit }, context) => {
     if (documentId !== undefined) {
-      if (lang !== undefined || group !== undefined) {
-        context.addIssue({ code: "custom", message: "documentId lists a text's cards, without lang or group" });
+      if (lang !== undefined) {
+        context.addIssue({ code: "custom", message: "give lang or documentId, not both" });
         return z.NEVER;
       }
       if (after !== undefined && after.length !== 1) {
@@ -200,7 +199,7 @@ export const CardsQuery = pageQuery(CardKey, CARD_PAGE)
       context.addIssue({ code: "custom", message: "after isn't a cursor this list gave" });
       return z.NEVER;
     }
-    return { lang, group, after, limit };
+    return { lang, after, limit };
   });
 
 /** cloze: a cloze card's sentence, null for a word's cards. */

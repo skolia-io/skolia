@@ -169,7 +169,7 @@ export function createApp(deps: Deps) {
       mine(
         TAGS.cards,
         "A page of the user's cards",
-        "A language's (lang), newest first, group narrowing them to its cards; or a text's cloze cards (documentId), in the order of the text. The cursor must be one the same kind of list gave.",
+        "A language's (lang), newest first; or a text's cloze cards (documentId), in the order of the text. The cursor must be one the same kind of list gave.",
       ),
       validator("query", schemas.CardsQuery, badRequest()),
       responds({

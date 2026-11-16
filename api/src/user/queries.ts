@@ -40,7 +40,7 @@ const LISTED_CARD = {
 };
 
 /** A page of cards, and one more if there is one. A language's, newest first: those
- * before the page's key, which card_listed, or with a group card_group_listed, seeks to.
+ * before the page's key, which card_listed seeks to.
  * A text's: those after the page's key, by cloze's (document_id, blank_start). */
 export function cardsQuery(listing: CardListing): Query {
   if ("documentId" in listing) {
@@ -52,15 +52,11 @@ export function cardsQuery(listing: CardListing): Query {
       .orderBy("cloze.blank_start")
       .limit(limit + 1);
   }
-  const { lang, group, after, limit } = listing;
+  const { lang, after, limit } = listing;
   return select(LISTED_CARD)
     .from("card")
     .leftJoin("cloze", eq("cloze.card_id", col("card.id")))
-    .where(
-      eq("card.lang", lang),
-      group !== undefined && eq("card.card_group", group),
-      after !== undefined && lt(row("card.created_at", "card.id"), after),
-    )
+    .where(eq("card.lang", lang), after !== undefined && lt(row("card.created_at", "card.id"), after))
     .orderBy(desc("card.created_at"), desc("card.id"))
     .limit(limit + 1);
 }

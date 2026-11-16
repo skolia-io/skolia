@@ -191,14 +191,12 @@ test("a page of the reading list seeks to its key in an index, with or without a
   }
 });
 
-test("a page of cards seeks to its key in an index, in a language, a group or a text, and sorts nothing", async () => {
+test("a page of cards seeks to its key in an index, in a language or a text, and sorts nothing", async () => {
   await local.env.USER.getByName("ivan").words(FIRST_PAGE);
   const storage = await storageOf("ivan");
   const newest = schemas.NewestCardKey.parse(["2026-11-07T00:00:00.000Z", "00000000-0000-4000-8000-000000000000"]);
   const listings = [false, true].flatMap((after) => [
-    { index: "card_listed", listing: { lang: "pl" as const, group: undefined, after: after ? newest : undefined, limit: 3 } },
-    { index: "card_group_listed", listing: { lang: "pl" as const, group: "words" as const, after: after ? newest : undefined, limit: 3 } },
-    { index: "card_group_listed", listing: { lang: "pl" as const, group: "forms" as const, after: after ? newest : undefined, limit: 3 } },
+    { index: "card_listed", listing: { lang: "pl" as const, after: after ? newest : undefined, limit: 3 } },
     {
       index: "sqlite_autoindex_cloze_2",
       listing: {
@@ -222,17 +220,14 @@ test("a page of cards seeks to its key in an index, in a language, a group or a 
   }
 });
 
-test("card_list's down drops card_group and its indexes, keeping the cards", async () => {
+test("card_list's down drops its index, keeping the cards", async () => {
   const kim = local.env.USER.getByName("kim");
   await kim.setWord("pl:pies:NOUN", "active", schemas.Timestamp.parse("2026-11-07T00:00:00.000Z"));
   await kim.migrate(8);
   const storage = await storageOf("kim");
-  assert.deepEqual(await storage.exec("select name from pragma_table_xinfo('card') where name = 'card_group'"), []);
+  assert.deepEqual(await storage.exec("select name from sqlite_master where name = 'card_listed'"), []);
   await kim.migrate(LATEST);
-  assert.deepEqual((await kim.cards({ lang: "pl", group: "words", limit: 10 })).items.map((c) => c.kind).sort(), [
-    "production",
-    "recognition",
-  ]);
+  assert.deepEqual((await kim.cards({ lang: "pl", limit: 10 })).items.map((c) => c.kind).sort(), ["production", "recognition"]);
 });
 
 test("an active word's cards are stored with their ts-fsrs state, which gives their due time", async () => {

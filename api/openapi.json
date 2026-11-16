@@ -2079,7 +2079,7 @@
           "Cards"
         ],
         "summary": "A page of the user's cards",
-        "description": "A language's (lang), newest first, group narrowing them to its cards; or a text's cloze cards (documentId), in the order of the text. The cursor must be one the same kind of list gave.",
+        "description": "A language's (lang), newest first; or a text's cloze cards (documentId), in the order of the text. The cursor must be one the same kind of list gave.",
         "security": [
           {
             "session": []
@@ -2160,17 +2160,6 @@
             "name": "lang",
             "schema": {
               "$ref": "#/components/schemas/Lang"
-            }
-          },
-          {
-            "in": "query",
-            "name": "group",
-            "schema": {
-              "type": "string",
-              "enum": [
-                "words",
-                "forms"
-              ]
             }
           },
           {

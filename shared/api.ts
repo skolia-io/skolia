@@ -392,10 +392,10 @@ export type TextCardKey = z.output<typeof schemas.TextCardKey>;
 /** Where a card is in a list of them: newest first in a language's, by its blank in a text's. */
 export type CardKey = NewestCardKey | TextCardKey;
 
-/** A page of cards: a language's, group narrowing them, newest first; or a text's cloze
- * cards, in the order of the text. */
+/** A page of cards: a language's, newest first; or a text's cloze cards, in the order of
+ * the text. */
 export type CardListing =
-  | ({ readonly lang: Lang; readonly group: CardGroup | undefined } & PageRequest<NewestCardKey>)
+  | ({ readonly lang: Lang } & PageRequest<NewestCardKey>)
   | ({ readonly documentId: DocumentId } & PageRequest<TextCardKey>);
 
 /** Where a text is on the user's reading list. A text that isn't on it has none. */

@@ -79,10 +79,10 @@ async function makeCloze(app: App, headers: Headers, lemmaId: LemmaId, n: number
   return body("cloze", client(app, headers).me.cards.$post({ json: { kind: "cloze", ...json } }), 201);
 }
 
-/** Every card of the language, or of one group of its cards, a page of limit at a time. */
-function listCards(app: App, headers: Headers, lang: Lang, group?: CardGroup, limit = CARD_PAGE.max) {
+/** Every card of the language, a page of limit at a time. */
+function listCards(app: App, headers: Headers, lang: Lang, limit = CARD_PAGE.max) {
   return walk(limit, (after?: Cursor<CardKey>) =>
-    body("cards", client(app, headers).me.cards.$get({ query: { lang, group, after, limit: String(limit) } })),
+    body("cards", client(app, headers).me.cards.$get({ query: { lang, after, limit: String(limit) } })),
   );
 }
 
@@ -541,7 +541,7 @@ test("a lexicon lookup gives each language's loaded version, leaving out ids it 
   );
 });
 
-test("a language's cards are listed newest first, a page at a time, all of them or one group's", async () => {
+test("a language's cards, of every kind, are listed newest first, a page at a time", async () => {
   const headers = await signedIn();
   await mark(setup(), headers, "pl:pies:NOUN", "active");
   const later = setup({ at: "2026-11-04T01:00:00Z" });
@@ -549,26 +549,19 @@ test("a language's cards are listed newest first, a page at a time, all of them 
   const { cardId: cloze } = await makeCloze(setup({ at: "2026-11-04T02:00:00Z" }), headers, "pl:pies:NOUN", 0);
   const all = await listCards(later, headers, "pl");
   assert.deepEqual(
-    all.map((c) => [c.createdAt, c.lemmaId]),
+    all.map((c) => [c.createdAt, c.lemmaId, c.kind === "cloze"]),
     [
-      ["2026-11-04T02:00:00.000Z", "pl:pies:NOUN"],
-      ["2026-11-04T01:00:00.000Z", "pl:kot:NOUN"],
-      ["2026-11-04T01:00:00.000Z", "pl:kot:NOUN"],
-      ["2026-11-04T00:00:00.000Z", "pl:pies:NOUN"],
-      ["2026-11-04T00:00:00.000Z", "pl:pies:NOUN"],
+      ["2026-11-04T02:00:00.000Z", "pl:pies:NOUN", true],
+      ["2026-11-04T01:00:00.000Z", "pl:kot:NOUN", false],
+      ["2026-11-04T01:00:00.000Z", "pl:kot:NOUN", false],
+      ["2026-11-04T00:00:00.000Z", "pl:pies:NOUN", false],
+      ["2026-11-04T00:00:00.000Z", "pl:pies:NOUN", false],
     ],
   );
   // Made together, by id, last first
   assert.ok(all[1]!.id > all[2]!.id && all[3]!.id > all[4]!.id);
-  assert.deepEqual(await listCards(later, headers, "pl", undefined, 2), all);
-  assert.deepEqual(
-    (await listCards(later, headers, "pl", "words", 1)).map((c) => c.id),
-    all.filter((c) => c.kind !== "cloze").map((c) => c.id),
-  );
-  assert.deepEqual(
-    (await listCards(later, headers, "pl", "forms")).map((c) => c.id),
-    [cloze],
-  );
+  assert.deepEqual(await listCards(later, headers, "pl", 2), all);
+  assert.deepEqual(await listCards(later, headers, "pl", 1), all);
   assert.deepEqual(await listCards(later, headers, "en"), []);
   const [first] = all;
   assert.deepEqual(first, {
@@ -645,9 +638,7 @@ test("a list of cards needs a session, a language or a text but not both, and a 
   const refused = async (query: Parameters<typeof cards.$get>[0]["query"], error: string) =>
     assert.deepEqual(await body(JSON.stringify(query), cards.$get({ query }), 400), { error });
   await refused({}, "give lang, or documentId");
-  await refused({ group: "words" }, "give lang, or documentId");
-  await refused({ lang: "pl", documentId: "a".repeat(64) }, "documentId lists a text's cards, without lang or group");
-  await refused({ group: "forms", documentId: "a".repeat(64) }, "documentId lists a text's cards, without lang or group");
+  await refused({ lang: "pl", documentId: "a".repeat(64) }, "give lang or documentId, not both");
   assert.equal((await cards.$get({ query: { lang: "zz" as Lang } })).status, 400);
   await refusesBadPages(CARD_PAGE.max, (query) => cards.$get({ query: { lang: "pl", ...query } }));
 
@@ -655,8 +646,7 @@ test("a list of cards needs a session, a language or a text but not both, and a 
   await makeCloze(app, headers, "pl:pies:NOUN", 1);
   const newest = await body("newest", cards.$get({ query: { lang: "pl", limit: "1" } }));
   assert.ok(newest.next);
-  const { items } = await body("forms", cards.$get({ query: { lang: "pl", group: "forms" } }));
-  const documentId = items[0]?.cloze?.documentId;
+  const documentId = (await listCards(app, headers, "pl")).find((c) => c.cloze)?.cloze?.documentId;
   assert.ok(documentId);
   await refused({ documentId, after: newest.next }, "after isn't a cursor this list gave");
 });

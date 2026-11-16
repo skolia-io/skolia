@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createQuery } from "@tanstack/svelte-query";
-  import { CARD_GROUPS, LANGS, LANGUAGE_INFO, blankParts, type Card, type CardGroup, type Lang, type User } from "@skolia/shared/api";
+  import { LANGS, LANGUAGE_INFO, blankParts, type Card, type Lang, type User } from "@skolia/shared/api";
   import { signIn } from "../lib/api.ts";
   import { createCardList, createDeleteCard, type CardPage } from "../lib/cards.ts";
   import { countsQuery } from "../lib/queries.ts";
@@ -8,10 +8,8 @@
   import Button from "../components/Button.svelte";
   import Page from "../components/Page.svelte";
 
-  /** lang: from the route, or the language with the most to review; group: only its cards. */
-  let { user, lang, group }: { user: User | null | undefined; lang: Lang | null; group: CardGroup | null } = $props();
-
-  const GROUP_LABELS: Record<CardGroup, string> = { words: "Words", forms: "Forms" };
+  /** lang: from the route, or the language with the most to review. */
+  let { user, lang }: { user: User | null | undefined; lang: Lang | null } = $props();
 
   const cardCounts = createQuery(() => ({ ...countsQuery, enabled: !!user && lang === null }));
   const busiest = $derived(
@@ -21,20 +19,13 @@
     }, null)?.lang ?? null,
   );
   const selected = $derived(lang ?? (cardCounts.data ? (busiest ?? LANGS[0]) : null));
-  const list = createCardList(
-    () => selected,
-    () => group,
-  );
+  const list = createCardList(() => selected);
   const remove = createDeleteCard();
   const pages = $derived(list.data?.pages ?? []);
   const cards = $derived(pages.flatMap((page) => page.items.map((card) => ({ card, page }))));
   let error = $state<string | null>(null);
   const failure = $derived(error ?? (cardCounts.error ?? list.error)?.message ?? null);
   const now = new Date();
-
-  function hash(l: Lang, g: CardGroup | null): string {
-    return `#/cards/${l}${g ? `/${g}` : ""}`;
-  }
 
   function lemmaOf(card: Card, page: CardPage): string {
     return page.entries.get(card.lemmaId)?.lemma ?? card.lemmaId.split(":")[1] ?? card.lemmaId;
@@ -58,7 +49,7 @@
 <Page title="Manage cards">
   {#snippet actions()}
     {#if user && selected}
-      <select aria-label="Language" value={selected} onchange={(event) => (location.hash = hash(event.currentTarget.value as Lang, group))}>
+      <select aria-label="Language" value={selected} onchange={(event) => (location.hash = `#/cards/${event.currentTarget.value}`)}>
         {#each LANGS as code (code)}
           <option value={code} lang={code}>{LANGUAGE_INFO[code].flag} {LANGUAGE_INFO[code].endonym}</option>
         {/each}
@@ -70,23 +61,14 @@
     <p class="muted">Sign in to see your cards.</p>
     <Button variant="primary" onclick={() => void signIn()}>Sign in</Button>
   {:else if user && selected}
-    <nav class="groups" aria-label="Cards to show">
-      <a href={hash(selected, null)} aria-current={group === null ? "page" : undefined}>All</a>
-      {#each CARD_GROUPS as g (g)}
-        <a href={hash(selected, g)} aria-current={g === group ? "page" : undefined}>{GROUP_LABELS[g]}</a>
-      {/each}
-      <a class="review" href="#/review/{selected}">Review</a>
-    </nav>
+    <p class="back"><a href="#/review/{selected}">Back to review</a></p>
 
     {#if !list.data}
       {#if !failure}
         <p class="muted">Loading…</p>
       {/if}
     {:else if cards.length === 0}
-      <p class="muted">
-        No {group === "forms" ? "cloze cards" : group === "words" ? "word cards" : "cards"} in {LANGUAGE_INFO[selected].name} yet. Words you
-        look up in the reader turn into cards here.
-      </p>
+      <p class="muted"> No cards in {LANGUAGE_INFO[selected].name} yet. Words you look up in the reader turn into cards here. </p>
     {:else}
       <ul class="cards" class:stale={list.isPlaceholderData}>
         {#each cards as { card, page } (card.id)}
@@ -134,32 +116,9 @@
 </Page>
 
 <style>
-  .groups {
-    display: flex;
-    gap: 1.25rem;
-    margin-bottom: 1rem;
-    border-bottom: 1px solid var(--line);
-  }
-
-  .groups a {
-    padding: 0.4rem 0;
-    color: var(--muted);
-    text-decoration: none;
-    border-bottom: 2px solid transparent;
-    margin-bottom: -1px;
-  }
-
-  .groups a:hover {
-    color: var(--text);
-  }
-
-  .groups a[aria-current="page"] {
-    color: var(--text);
-    border-bottom-color: var(--accent);
-  }
-
-  .groups .review {
-    margin-left: auto;
+  .back {
+    margin: 0 0 0.5rem;
+    font-size: 0.9rem;
   }
 
   .cards {

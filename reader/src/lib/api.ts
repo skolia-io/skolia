@@ -260,9 +260,9 @@ export function listTextCards(documentId: DocumentId): Promise<readonly Card[] |
   });
 }
 
-/** A page of a language's cards, or one group's, newest first. */
-export async function listCards(lang: Lang, group: CardGroup | null, after?: Cursor<CardKey>): Promise<Paginated<Card, CardKey>> {
-  const response = await api.me.cards.$get({ query: { lang, after, ...(group ? { group } : {}) } });
+/** A page of a language's cards, newest first. */
+export async function listCards(lang: Lang, after?: Cursor<CardKey>): Promise<Paginated<Card, CardKey>> {
+  const response = await api.me.cards.$get({ query: { lang, after } });
   if (!response.ok) throw await failure(response);
   return response.json();
 }

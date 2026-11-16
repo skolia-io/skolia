@@ -67,9 +67,9 @@ test("cards", async ({ page }) => {
 });
 
 test("cards, one deleted", async ({ page }) => {
-  await open(page, "#/cards/pl/words");
+  await open(page, "#/cards/pl");
   page.once("dialog", (dialog) => void dialog.accept());
-  await page.getByRole("button", { name: "Delete" }).first().click();
+  await page.getByRole("listitem").filter({ hasText: "wojna" }).getByRole("button", { name: "Delete" }).click();
   await expect(page.getByText("New", { exact: true })).toBeHidden();
   await expect(page).toHaveScreenshot("cards-deleted.png", { fullPage: true });
 });
