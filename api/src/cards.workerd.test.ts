@@ -3,12 +3,14 @@ import { test } from "node:test";
 import {
   CARD_PAGE,
   MATURE_DAYS,
+  MAX_CARDS,
   MAX_NEW_PER_DAY,
   type Card,
   type CardCounts,
   type CardGroup,
   type CardKey,
   type CardState,
+  type DocumentId,
   type Due,
   type Lang,
   type LemmaId,
@@ -33,7 +35,7 @@ import {
   walk,
   type App,
 } from "./testing/app.ts";
-import { body } from "./testing/responses.ts";
+import { body, expectStatus } from "./testing/responses.ts";
 
 useLocal();
 
@@ -62,19 +64,24 @@ function none(lang: Lang): CardCounts {
   return { lang, words: { due: 0, new: 0 }, forms: { due: 0, new: 0 } };
 }
 
+/** A sentence n hundred characters into a text. */
+function sentenceAt(n: number) {
+  return { sentence: "Widzę psa.", sentenceStart: n * 100 };
+}
+
+/** A cloze card's data for psa in the sentence n hundred characters into the text. */
+function clozeAt(documentId: DocumentId, n: number): NewClozeInput {
+  return { ...sentenceAt(n), documentId, blankStart: n * 100 + 6, blankEnd: n * 100 + 9, feats: { Case: "Acc" }, why: null };
+}
+
+function postCloze(app: App, headers: Headers, lemmaId: LemmaId, data: NewClozeInput) {
+  return client(app, headers).me.cards.$post({ json: { kind: "cloze", lemmaId, data } });
+}
+
 /** A cloze card for the lemma, n hundred characters into a text the user imports. */
 async function makeCloze(app: App, headers: Headers, lemmaId: LemmaId, n: number) {
-  const at = { sentence: "Widzę psa.", sentenceStart: n * 100 };
-  const json: NewClozeInput = {
-    ...at,
-    lemmaId,
-    documentId: await importSentences(app, headers, [at]),
-    blankStart: n * 100 + 6,
-    blankEnd: n * 100 + 9,
-    feats: { Case: "Acc" },
-    why: null,
-  };
-  return body("cloze", client(app, headers).me.cards.$post({ json: { kind: "cloze", ...json } }), 201);
+  const documentId = await importSentences(app, headers, [sentenceAt(n)]);
+  return body("cloze", postCloze(app, headers, lemmaId, clozeAt(documentId, n)), 201);
 }
 
 function makeCard(app: App, headers: Headers | undefined, lemmaId: LemmaId, kind: "recognition" | "production") {
@@ -412,6 +419,11 @@ test("cards and settings need a session and valid input", async () => {
   assert.equal((await raw(app, "POST", "/api/me/cards", headers, { kind: "known", lemmaId: "pl:pies:NOUN" })).status, 400);
   assert.equal((await raw(app, "POST", "/api/me/cards", headers, { lemmaId: "pl:pies:NOUN" })).status, 400);
   assert.equal((await raw(app, "POST", "/api/me/cards", headers, { kind: "cloze", lemmaId: "pl:pies:NOUN" })).status, 400);
+  assert.equal((await raw(app, "POST", "/api/me/cards", headers, { kind: "cloze", lemmaId: "pl:pies:NOUN", data: {} })).status, 400);
+  assert.equal(
+    (await raw(app, "POST", "/api/me/cards", headers, { kind: "recognition", lemmaId: "pl:pies:NOUN", data: { why: null } })).status,
+    400,
+  );
   assert.equal((await makeCard(app, headers, "pl:i/lub:CCONJ", "recognition")).status, 201);
   assert.equal((await raw(app, "GET", "/api/me/cards/due", headers, undefined)).status, 400);
   assert.equal((await client(app, headers).me.cards.due.$get({ query: { lang: "pl", dayStart: "today" } })).status, 400);
@@ -592,9 +604,10 @@ test("a language's cards, of every kind, are listed newest first, a page at a ti
     dueAt: "2026-11-04T02:00:00.000Z",
     scheduledDays: 0,
     lastReviewedAt: null,
-    cloze: first?.cloze,
+    data: first?.data,
   });
-  assert.equal(first?.cloze?.sentence, "Widzę psa.");
+  assert.ok(first?.kind === "cloze");
+  assert.equal(first.data.sentence, "Widzę psa.");
 });
 
 test("a listed card says whether it's known, where it is in its schedule and when it was last answered", async () => {
@@ -663,7 +676,34 @@ test("a list of cards needs a session, one of a language, a word and a text, and
   await makeCloze(app, headers, "pl:pies:NOUN", 1);
   const newest = await body("newest", cards.$get({ query: { lang: "pl", limit: "1" } }));
   assert.ok(newest.next);
-  const documentId = (await listCards(app, headers, "pl")).find((c) => c.cloze)?.cloze?.documentId;
-  assert.ok(documentId);
+  const cloze = (await listCards(app, headers, "pl")).find((c) => c.kind === "cloze");
+  assert.ok(cloze?.kind === "cloze");
+  const { documentId } = cloze.data;
   await refused({ documentId, after: newest.next }, "after isn't a cursor this list gave");
+});
+
+test("a user has at most MAX_CARDS cards, of every kind", async () => {
+  const app = setup();
+  const { id: user } = await local.signUp(ALICE);
+  const headers = await local.signIn(user);
+  const documentId = await importSentences(app, headers, [sentenceAt(0), sentenceAt(1)]);
+  const { cardId } = await body("word card", makeCard(app, headers, "pl:pies:NOUN", "recognition"), 201);
+  const cloze = await body("cloze card", postCloze(app, headers, "pl:pies:NOUN", clozeAt(documentId, 0)), 201);
+  const storage = await local.server.getWorker().getDurableObjectStorage("User", { name: user });
+  await storage.exec(
+    `WITH RECURSIVE n (i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < ?)
+     INSERT INTO card (id, lemma_id, kind, created_at, active, fsrs)
+     SELECT 'more' || i, 'pl:more' || i || ':NOUN', kind, created_at, active, fsrs FROM card, n WHERE id = ?`,
+    MAX_CARDS - 2,
+    cardId,
+  );
+  const full = await expectStatus("full", makeCard(app, headers, "pl:kot:NOUN", "recognition"), 409);
+  assert.deepEqual(await full.json(), { error: `a user has at most ${MAX_CARDS} cards` });
+  await expectStatus("full, for a cloze card", postCloze(app, headers, "pl:kot:NOUN", clozeAt(documentId, 1)), 409);
+  assert.deepEqual(await wordCards(app, headers, "pl:kot:NOUN"), []);
+  assert.deepEqual(await body("a word card it has", makeCard(app, headers, "pl:pies:NOUN", "recognition")), { cardId });
+  assert.deepEqual(await body("a cloze card it has", postCloze(app, headers, "pl:pies:NOUN", clozeAt(documentId, 0))), cloze);
+  await expectStatus("deletes one", deleteCard(app, headers, cardId), 204);
+  await body("room again", postCloze(app, headers, "pl:kot:NOUN", clozeAt(documentId, 1)), 201);
+  await expectStatus("full again", makeCard(app, headers, "pl:kot:NOUN", "recognition"), 409);
 });

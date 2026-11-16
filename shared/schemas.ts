@@ -2,7 +2,6 @@ import * as z from "zod";
 import {
   ANNOTATION_PAGE,
   CARD_GROUPS,
-  CARD_KINDS,
   CARD_PAGE,
   CARD_STATES,
   DOCUMENT_PAGE,
@@ -118,29 +117,38 @@ export const Cloze = z.object({
   why: z.string().max(MAX_CLOZE_WHY).nullable(),
 });
 
-const ClozeFields = Cloze.extend({ lemmaId: LemmaId });
-
-const BLANK_IN_SENTENCE = [
-  (c: z.output<typeof ClozeFields>) =>
+/** A new cloze card's data: the blank, like the sentence, is offsets in the text, and must
+ * be inside the sentence. */
+export const NewCloze = Cloze.refine(
+  (c) =>
     c.sentenceStart <= c.blankStart &&
     c.blankStart < c.blankEnd &&
     c.blankEnd <= c.sentenceStart + c.sentence.length &&
     c.sentence.slice(c.blankStart - c.sentenceStart, c.blankEnd - c.sentenceStart).trim() !== "",
   { message: "the blank must be a word in the sentence" },
-] as const;
+);
 
-/** A cloze card to make for the word in the sentence: the blank, like the sentence, is
- * offsets in the text, and must be inside the sentence. */
-export const NewCloze = ClozeFields.refine(...BLANK_IN_SENTENCE);
+/** A word's card has no data of its own: its lemma is what it asks. */
+const WordCardData = z.strictObject({});
 
-/** A card to make: a word's recognition or production card, one of each per word, or a
- * cloze card, any number per word, one per blank in a text. */
+/** What a card holds beyond what every card has, by kind. recognition and production:
+ * nothing. cloze: its sentence and blank. The database checks only that data is an object;
+ * a new kind is a variant here. */
+export const CardContent = z.discriminatedUnion("kind", [
+  z.object({ kind: z.enum(WORD_CARD_KINDS), data: WordCardData }),
+  z.object({ kind: z.literal("cloze"), data: Cloze }),
+]);
+
+/** A card to make for the word: a recognition or production card, one of each per word,
+ * data left out; or a cloze card, any number per word, one per blank in a text. */
 export const NewCard = z
-  .discriminatedUnion("kind", [
-    // Strict: a sentence sent with one is a mistake, not something to drop
-    z.strictObject({ kind: z.enum(WORD_CARD_KINDS), lemmaId: LemmaId }),
-    ClozeFields.extend({ kind: z.literal("cloze") }).refine(...BLANK_IN_SENTENCE),
-  ])
+  .intersection(
+    z.object({ lemmaId: LemmaId }),
+    z.discriminatedUnion("kind", [
+      z.object({ kind: z.enum(WORD_CARD_KINDS), data: WordCardData.default({}) }),
+      z.object({ kind: z.literal("cloze"), data: NewCloze }),
+    ]),
+  )
   .meta({ id: "NewCard" });
 
 export const CardState = z.enum(CARD_STATES).meta({ id: "CardState" });
@@ -152,20 +160,21 @@ export const ScheduleStatus = z.enum(SCHEDULE_STATUSES);
 
 /** A card as the list of them has it. state: whether it's reviewed (learning) or known.
  * scheduledDays: the interval its last review gave it. lastReviewedAt: when it was last
- * answered, by the reviewer's clock. cloze: a cloze card's sentence, null for a word's cards. */
+ * answered, by the reviewer's clock. */
 export const Card = z
-  .object({
-    id: CardId,
-    lemmaId: LemmaId,
-    kind: z.enum(CARD_KINDS),
-    createdAt: Timestamp,
-    state: CardState,
-    scheduleStatus: ScheduleStatus,
-    dueAt: Timestamp,
-    scheduledDays: z.number().min(0),
-    lastReviewedAt: Timestamp.nullable(),
-    cloze: Cloze.nullable(),
-  })
+  .intersection(
+    z.object({
+      id: CardId,
+      lemmaId: LemmaId,
+      createdAt: Timestamp,
+      state: CardState,
+      scheduleStatus: ScheduleStatus,
+      dueAt: Timestamp,
+      scheduledDays: z.number().min(0),
+      lastReviewedAt: Timestamp.nullable(),
+    }),
+    CardContent,
+  )
   .meta({ id: "Card" });
 
 /** Where a card is in a language's list: newest first, then by id. */
@@ -193,15 +202,9 @@ export const CardsQuery = pageQuery(CardKey, CARD_PAGE)
     return lemmaId !== undefined ? { lemmaId, after: newest, limit } : { lang: lang!, after: newest, limit };
   });
 
-/** cloze: a cloze card's sentence, null for a word's cards. */
-export const ScheduledCard = z.object({
-  id: CardId,
-  lemmaId: LemmaId,
-  kind: z.enum(CARD_KINDS),
-  isNew: z.boolean(),
-  dueAt: Timestamp,
-  cloze: Cloze.nullable(),
-});
+const ScheduledFields = z.object({ id: CardId, lemmaId: LemmaId, isNew: z.boolean(), dueAt: Timestamp });
+
+export const ScheduledCard = z.intersection(ScheduledFields, CardContent);
 
 export const LookupRequest = z.object({ ids: z.array(LemmaId).min(1).max(MAX_LOOKUP) });
 
@@ -498,7 +501,7 @@ export const LexiconEntry = z
 
 export const Lookup = z.object({ entries: z.array(LexiconEntry), featureSets: z.partialRecord(Lang, FeatureSets) }).meta({ id: "Lookup" });
 
-export const DueCard = ScheduledCard.extend({ entry: LexiconEntry.nullable() }).meta({ id: "DueCard" });
+export const DueCard = z.intersection(ScheduledFields.extend({ entry: LexiconEntry.nullable() }), CardContent).meta({ id: "DueCard" });
 
 const Count = z.number().int().min(0);
 

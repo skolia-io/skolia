@@ -12,11 +12,13 @@ What the user knows of a word is its cards. The `word` table and `/api/me/words`
 
 ```
 GET    /api/me/cards?lang= | ?lemmaId= | ?documentId=   a language's or a word's cards, newest first, or a text's
-POST   /api/me/cards                                     { kind: recognition | production, lemmaId } or a cloze card
+POST   /api/me/cards                                     { lemmaId, kind, data }
 PATCH  /api/me/cards/:cardId                             { state: learning | known }
 DELETE /api/me/cards/:cardId                             with its reviews
 ```
 
+- A card is `{ kind, data }`, as an annotation is: what every card has is columns, and what its kind adds is `data`, `{}` for recognition and production cards and the sentence and blank for a cloze card. Code that differs by kind matches on `kind`.
+- A user has at most `MAX_CARDS` (100,000) cards of every kind, in place of the cap on cloze cards alone.
 - A card is learning, so reviewed, or known, so not. A word is new with no cards, learning while one of its cards is, and known when all of them are.
 - A word has at most one recognition and one production card; making one again returns it (200). Nothing makes a card as a side effect: the word sheet's + makes the word's two cards and its cloze card.
 - Known is per card. Review's Known marks all the word's cards, cloze cards too, as the word status did. The word sheet's tick deletes the word's cards, asking first if any has been reviewed.
@@ -27,8 +29,10 @@ DELETE /api/me/cards/:cardId                             with its reviews
 
 `card.active` is the card's state, 1 learning and 0 known, so the review queries keep their partial indexes. User migration 10 (`cards_own_words`) gives every word known or ignored that has no cards a known recognition card, new, with the word's `updated_at` for its time, so the mark survives; an ignored word's cards are known. Then it drops `word`, and `card_lemma` gains `created_at` for a word's cards newest first. Down makes a word for each lemma with cards, active if one is learning and known otherwise.
 
+Migration 11 (`count_cards`) counts cards of every kind in `row_count`, for `MAX_CARDS`. Migration 12 (`card_data`) adds `card.data`, a JSON object, moves each `cloze` row into its card's data and drops `cloze`. The unique index `card_blank (data ->> '$.documentId', data ->> '$.blankStart') WHERE kind = 'cloze'` keeps one cloze card per blank and lists a text's cloze cards in order; a query seeks it only if it spells the expressions the same (`BLANK_DOCUMENT`, `BLANK_START` in user/queries.ts). The database checks only that data is an object; the schemas check the rest, so a new kind needs no table.
+
 ## Consequences
 
-- An old reader breaks: `/api/me/words` is gone, and `POST /api/me/cards` with a cloze card no longer makes the word's cards.
+- An old reader breaks: `/api/me/words` is gone, a card's kind's fields are in `data` rather than `cloze`, and `POST /api/me/cards` with a cloze card no longer makes the word's cards.
 - Marking a word known is one request per card, not one per word, so a failure part way leaves some cards known.
 - A word known without studying has a card it was never shown.

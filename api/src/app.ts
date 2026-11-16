@@ -169,7 +169,7 @@ export function createApp(deps: Deps) {
         201: json(schemas.CardMade, "A new card"),
         401: NOT_SIGNED_IN,
         404: error("No such document"),
-        409: error("The user has as many cloze cards as they may"),
+        409: error("The user has as many cards as they may"),
       }),
       (c) => signedIn(c, (user) => cards.makeCard(deps, user, c.req.valid("json"))),
     )

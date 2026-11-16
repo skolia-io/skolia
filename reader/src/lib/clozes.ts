@@ -12,7 +12,7 @@ function clozesQuery(documentId: DocumentId) {
     queryKey: [...CLOZES_KEY, documentId],
     queryFn: async (): Promise<ClozesByStart | null> => {
       const list = await listTextCards(documentId);
-      return list && new Map(list.flatMap((c) => (c.cloze ? [[c.cloze.blankStart, c.id] as const] : [])));
+      return list && new Map(list.flatMap((c) => (c.kind === "cloze" ? [[c.data.blankStart, c.id] as const] : [])));
     },
   });
 }
@@ -27,8 +27,8 @@ const keyOf = (documentId: DocumentId) => clozesQuery(documentId).queryKey;
 
 /** The card's id comes from the API, so it's added once made. */
 const addMutation = mutationOptions({
-  mutationFn: (cloze: NewClozeInput & { readonly lemmaId: LemmaId; readonly documentId: DocumentId }) =>
-    makeCard({ kind: "cloze", ...cloze }),
+  mutationFn: ({ lemmaId, ...data }: NewClozeInput & { readonly lemmaId: LemmaId; readonly documentId: DocumentId }) =>
+    makeCard({ kind: "cloze", lemmaId, data }),
   onMutate: async (cloze, { client }) => {
     await client.cancelQueries({ queryKey: keyOf(cloze.documentId) });
   },

@@ -248,8 +248,8 @@ export type CardState = (typeof CARD_STATES)[number];
 export const MAX_CLOZE_SENTENCE = 2000;
 /** Longest explanation of the blanked word's form a cloze card keeps. */
 export const MAX_CLOZE_WHY = 500;
-/** Most cloze cards a user has: far past what reading makes, to bound what one user stores. */
-export const MAX_CLOZES = 100_000;
+/** Most cards a user has, of every kind: far past what reading makes, to bound what one user stores. */
+export const MAX_CARDS = 100_000;
 
 /** ts-fsrs's grades: Again, Hard, Good, Easy. */
 export const RATINGS = [1, 2, 3, 4] as const;

@@ -146,8 +146,8 @@
   /** Deletes a cloze card, made from a sentence the parser got wrong or one not worth
    * practising, with its reviews. */
   async function removeCloze(): Promise<void> {
-    if (!card?.cloze || busy || !confirm("Delete this card and its reviews?")) return;
-    const { id, cloze } = card;
+    if (card?.kind !== "cloze" || busy || !confirm("Delete this card and its reviews?")) return;
+    const { id, data: cloze } = card;
     busy = true;
     error = null;
     try {
@@ -187,8 +187,8 @@
     const sets = due.featureSets;
     const language = LANGUAGES[lang];
     const featsOf = (id: number) => sets[String(id)];
-    return c.cloze
-      ? formTables(featsOf, c.entry, { text: blankOf(c.cloze), feats: c.cloze.feats }, language.paradigm, language.mergeLabels)
+    return c.kind === "cloze"
+      ? formTables(featsOf, c.entry, { text: blankOf(c.data), feats: c.data.feats }, language.paradigm, language.mergeLabels)
       : lemmaTables(featsOf, c.entry, language.paradigm, language.mergeLabels);
   }
 
@@ -343,14 +343,14 @@
       {#if card}
         <section class="flashcard" aria-live="polite" aria-atomic="true">
           <div class="known">
-            {#if card.cloze}
+            {#if card.kind === "cloze"}
               <Button variant="quiet" small disabled={busy} title="Delete this card and its reviews" onclick={removeCloze}>Delete</Button>
             {:else}
               <Button variant="quiet" small disabled={busy} title="You know this word: stop reviewing it" onclick={markKnown}>Known</Button>
             {/if}
           </div>
-          {#if card.cloze}
-            {@render sentence(card, card.cloze, revealed)}
+          {#if card.kind === "cloze"}
+            {@render sentence(card, card.data, revealed)}
           {:else if card.kind === "recognition"}
             {@render lemma(card)}
           {:else}
@@ -358,8 +358,8 @@
           {/if}
           {#if revealed}
             <hr>
-            {#if card.cloze}
-              {@render why(card.cloze)}
+            {#if card.kind === "cloze"}
+              {@render why(card.data)}
             {:else if card.kind === "production"}
               {@render lemma(card)}
             {/if}

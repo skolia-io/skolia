@@ -241,7 +241,7 @@ const cards: readonly ScheduledCard[] = [
     kind: "recognition",
     isNew: false,
     dueAt: Timestamp.parse("2026-11-09T08:00:00.000Z"),
-    cloze: null,
+    data: {},
   },
   {
     id: CardId.parse("00000000-0000-4000-8000-000000000002"),
@@ -249,7 +249,7 @@ const cards: readonly ScheduledCard[] = [
     kind: "production",
     isNew: true,
     dueAt: Timestamp.parse("2026-11-09T08:00:00.000Z"),
-    cloze: null,
+    data: {},
   },
   // kolację, in "schodzą się na kolację": na takes the accusative for where to
   {
@@ -258,7 +258,7 @@ const cards: readonly ScheduledCard[] = [
     kind: "cloze",
     isNew: true,
     dueAt: Timestamp.parse("2026-11-09T08:00:00.000Z"),
-    cloze: clozeOf(1, 14),
+    data: clozeOf(1, 14),
   },
 ];
 
@@ -269,7 +269,7 @@ const listedCards: readonly Card[] = [
   listed(cards[1]!, "2026-11-07T08:00:00.000Z", { scheduleStatus: "new", dueAt: "2026-11-09T08:00:00.000Z", scheduledDays: 0 }),
   listed(cards[0]!, "2026-11-06T08:00:00.000Z", { scheduleStatus: "review", dueAt: "2026-11-13T08:00:00.000Z", scheduledDays: 4 }),
   listed(
-    { ...cards[0]!, id: CardId.parse("00000000-0000-4000-8000-000000000004"), kind: "production" },
+    { ...cards[0]!, id: CardId.parse("00000000-0000-4000-8000-000000000004"), kind: "production", data: {} },
     "2026-11-06T08:00:00.000Z",
     { scheduleStatus: "review", dueAt: "2026-12-01T08:00:00.000Z", scheduledDays: 25 },
     "known",

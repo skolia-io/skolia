@@ -2,7 +2,7 @@ import { DurableObject } from "cloudflare:workers";
 import {
   CARD_GROUPS,
   LANGS,
-  MAX_CLOZES,
+  MAX_CARDS,
   timestamp,
   type CardCounts,
   type CardGroup,
@@ -52,7 +52,7 @@ import { sql, type Sql } from "@skolia/util/sql";
 import type { CardOutcome, DueCards, ReviewOutcome, StoredPosition, StoredReading } from "../ports.ts";
 import { fromJson, fsrs, newCard, review, toJson } from "./scheduler.ts";
 import { MIGRATIONS } from "../user/migrations/index.ts";
-import { READING_ENTRY, cardsQuery, readingListQuery } from "../user/queries.ts";
+import { BLANK_DOCUMENT, BLANK_START, READING_ENTRY, cardsQuery, readingListQuery } from "../user/queries.ts";
 import {
   LogEntry,
   MigrationError,
@@ -73,16 +73,22 @@ export interface MigrationStatus {
 
 let checksummed: Promise<Checksummed[]> | undefined;
 
-/** The cloze's columns of a card's row, null for a word's card, for its schema to parse. */
-function clozeOf(row: Record<string, SqlStorageValue>): Record<string, unknown> | null {
-  const { documentId, sentence, sentenceStart, blankStart, blankEnd, feats, why } = row;
-  return documentId === null ? null : { documentId, sentence, sentenceStart, blankStart, blankEnd, feats: JSON.parse(String(feats)), why };
+/** A row of due()'s query. */
+function scheduled(row: Record<string, SqlStorageValue>): ScheduledCard {
+  const { id, lemmaId, kind, dueAt, data } = row;
+  return schemas.ScheduledCard.parse({ id, lemmaId, kind, dueAt, isNew: row["isNew"] === 1, data: JSON.parse(String(data)) });
 }
 
-/** A row of due()'s query: a card, with its cloze's columns if it's a cloze card. */
-function scheduled(row: Record<string, SqlStorageValue>): ScheduledCard {
-  const { id, lemmaId, kind, dueAt } = row;
-  return schemas.ScheduledCard.parse({ id, lemmaId, kind, dueAt, isNew: row["isNew"] === 1, cloze: clozeOf(row) });
+/** The card a new one would repeat: the word's of its kind (card_word seeks it), or the text's
+ * cloze card at the blank (card_blank). */
+function existingCard(card: NewCard): Sql {
+  switch (card.kind) {
+    case "recognition":
+    case "production":
+      return sql`SELECT id FROM card WHERE lemma_id = ${card.lemmaId} AND kind = ${card.kind} AND kind != 'cloze'`;
+    case "cloze":
+      return sql`SELECT id FROM card WHERE kind = 'cloze' AND ${BLANK_DOCUMENT} = ${card.data.documentId} AND ${BLANK_START} = ${card.data.blankStart}`;
+  }
 }
 
 /** A row of cardsQuery. */
@@ -98,7 +104,7 @@ function listed(row: Record<string, SqlStorageValue>): Card {
     dueAt,
     scheduledDays,
     lastReviewedAt,
-    cloze: clozeOf(row),
+    data: JSON.parse(String(row["data"])),
   });
 }
 
@@ -159,23 +165,15 @@ function freshCards(group: CardGroup, lang: Lang, newLeft: NewLeft): { where: Sq
   }
 }
 
-/** A card, with its cloze's columns if it's a cloze card, for scheduled(). */
+/** A card, for scheduled(). */
 const SCHEDULED = select({
   id: "card.id",
   lemmaId: "card.lemma_id",
   kind: "card.kind",
   isNew: eq("card.schedule_status", lit("new")),
   dueAt: "card.due_at",
-  documentId: "cloze.document_id",
-  sentence: "cloze.sentence",
-  sentenceStart: "cloze.sentence_start",
-  blankStart: "cloze.blank_start",
-  blankEnd: "cloze.blank_end",
-  feats: "cloze.feats",
-  why: "cloze.why",
-})
-  .from("card")
-  .leftJoin("cloze", eq("cloze.card_id", col("card.id")));
+  data: "card.data",
+}).from("card");
 
 export interface UserEnv {
   /** "true" on previews and locally. For this object's migrations (user/migrations) only, not D1's: an edited
@@ -211,32 +209,19 @@ export class User extends DurableObject<UserEnv> {
     }
   }
 
-  /** A new card, or the one there was: the word's of its kind, or the text's at the blank.
-   * A cloze card past MAX_CLOZES is refused. A new card is learning. */
+  /** A new card, or the one there was (existingCard). Past MAX_CARDS, a new card is refused.
+   * A new card is learning. */
   async makeCard(card: NewCard, now: Timestamp): Promise<CardOutcome> {
     const s = await fsrs();
     const id = CardId.parse(crypto.randomUUID());
     const fresh = toJson(newCard(s, id, new Date(now)));
     return this.ctx.storage.transactionSync((): CardOutcome => {
-      if (card.kind !== "cloze") {
-        const had = this.#exec(sql`SELECT id FROM card WHERE lemma_id = ${card.lemmaId} AND kind = ${card.kind}`).toArray()[0];
-        if (had !== undefined) return { kind: "had", cardId: CardId.parse(had["id"]) };
-        this.#exec(
-          sql`INSERT INTO card (id, lemma_id, kind, created_at, active, fsrs) VALUES ${sql.tuple([id, card.lemmaId, card.kind, now, 1, fresh])}`,
-        );
-        return { kind: "made", cardId: id };
-      }
-      const had = this.#exec(
-        sql`SELECT card_id FROM cloze WHERE document_id = ${card.documentId} AND blank_start = ${card.blankStart}`,
-      ).toArray()[0];
-      if (had !== undefined) return { kind: "had", cardId: CardId.parse(had["card_id"]) };
-      if (Number(this.#exec(sql`SELECT n FROM row_count WHERE name = 'cloze'`).one()["n"]) >= MAX_CLOZES) return { kind: "full" };
+      const had = this.#exec(existingCard(card)).toArray()[0];
+      if (had !== undefined) return { kind: "had", cardId: CardId.parse(had["id"]) };
+      if (Number(this.#exec(sql`SELECT n FROM row_count WHERE name = 'card'`).one()["n"]) >= MAX_CARDS) return { kind: "full" };
       this.#exec(
-        sql`INSERT INTO card (id, lemma_id, kind, created_at, active, fsrs) VALUES ${sql.tuple([id, card.lemmaId, "cloze", now, 1, fresh])}`,
-      );
-      this.#exec(
-        sql`INSERT INTO cloze (card_id, document_id, sentence, sentence_start, blank_start, blank_end, feats, why)
-         VALUES ${sql.tuple([id, card.documentId, card.sentence, card.sentenceStart, card.blankStart, card.blankEnd, JSON.stringify(card.feats), card.why])}`,
+        sql`INSERT INTO card (id, lemma_id, kind, created_at, active, fsrs, data)
+         VALUES ${sql.tuple([id, card.lemmaId, card.kind, now, 1, fresh, JSON.stringify(card.data)])}`,
       );
       return { kind: "made", cardId: id };
     });
@@ -253,7 +238,7 @@ export class User extends DurableObject<UserEnv> {
     const cards = this.#exec(cardsQuery(listing)).toArray().map(listed);
     const keyed = cards.map((item) => ({
       item,
-      key: "documentId" in listing ? ([item.cloze?.blankStart ?? 0] as const) : ([item.createdAt, item.id] as const),
+      key: "documentId" in listing ? ([item.kind === "cloze" ? item.data.blankStart : 0] as const) : ([item.createdAt, item.id] as const),
     }));
     return paginate<Card, CardKey>(keyed, listing.limit);
   }

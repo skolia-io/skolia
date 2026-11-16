@@ -2,7 +2,7 @@
 
 import type { CardListing, ReadingFilter, ReadingKey } from "@skolia/shared/api";
 import type { PageRequest } from "@skolia/shared/page";
-import { col, desc, eq, gt, lt, row, select, type Query } from "@skolia/util/query";
+import { desc, eq, gt, lit, lt, row, select, type Query } from "@skolia/util/query";
 import { sql } from "@skolia/util/sql";
 
 /** A reading_list row's columns, as a ReadingEntry. */
@@ -19,7 +19,12 @@ export function readingListQuery({ status, lang }: ReadingFilter, { after, limit
     .limit(limit + 1);
 }
 
-/** A card's columns, and its cloze's if it's a cloze card, as a Card once parsed. */
+/** A cloze card's text, and where its blank starts, as card_blank indexes them: a query
+ * seeks it only if it spells them the same. */
+export const BLANK_DOCUMENT = sql`card.data ->> '$.documentId'`;
+export const BLANK_START = sql`card.data ->> '$.blankStart'`;
+
+/** A card's columns, as a Card once parsed. */
 const LISTED_CARD = {
   id: "card.id",
   lemmaId: "card.lemma_id",
@@ -30,13 +35,7 @@ const LISTED_CARD = {
   dueAt: "card.due_at",
   scheduledDays: "card.scheduled_days",
   lastReviewedAt: sql`card.fsrs ->> '$.lastReviewAt'`,
-  documentId: "cloze.document_id",
-  sentence: "cloze.sentence",
-  sentenceStart: "cloze.sentence_start",
-  blankStart: "cloze.blank_start",
-  blankEnd: "cloze.blank_end",
-  feats: "cloze.feats",
-  why: "cloze.why",
+  data: "card.data",
 };
 
 /** A page of cards, and one more if there is one. A language's or a word's, newest first:
@@ -46,16 +45,14 @@ export function cardsQuery(listing: CardListing): Query {
   if ("documentId" in listing) {
     const { documentId, after, limit } = listing;
     return select(LISTED_CARD)
-      .from("cloze")
-      .join("card", eq("card.id", col("cloze.card_id")))
-      .where(eq("cloze.document_id", documentId), after !== undefined && gt("cloze.blank_start", after[0]))
-      .orderBy("cloze.blank_start")
+      .from("card")
+      .where(eq("card.kind", lit("cloze")), eq(BLANK_DOCUMENT, documentId), after !== undefined && gt(BLANK_START, after[0]))
+      .orderBy(BLANK_START)
       .limit(limit + 1);
   }
   const { after, limit } = listing;
   return select(LISTED_CARD)
     .from("card")
-    .leftJoin("cloze", eq("cloze.card_id", col("card.id")))
     .where(
       "lemmaId" in listing ? eq("card.lemma_id", listing.lemmaId) : eq("card.lang", listing.lang),
       after !== undefined && lt(row("card.created_at", "card.id"), after),

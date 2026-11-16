@@ -151,8 +151,8 @@ export interface DueCards {
  * id-reused: the review id is another card's. */
 export type ReviewOutcome = ({ kind: "reviewed" } & Reviewed) | { kind: "no-card" } | { kind: "out-of-order" } | { kind: "id-reused" };
 
-/** made: the card is new. had: the word had one of its kind, or the text's sentence and
- * word had it. full: it's a cloze card and the user has MAX_CLOZES. */
+/** made: the card is new. had: the word had one of its kind, or the text had one at the
+ * blank. full: the user has MAX_CARDS. */
 export type CardOutcome = { readonly kind: "made" | "had"; readonly cardId: CardId } | { readonly kind: "full" };
 
 /** A user's cards and settings, in their own Durable Object. now: the request's
@@ -163,8 +163,8 @@ export interface UserData {
   due(userId: UserId, lang: Lang, now: Timestamp, dayStart: Timestamp, limit: number, group: CardGroup | undefined): Promise<DueCards>;
   counts(userId: UserId, now: Timestamp, dayStart: Timestamp): Promise<CardCounts[]>;
   review(userId: UserId, request: ReviewRequest, now: Timestamp): Promise<ReviewOutcome>;
-  /** A new card, unless the word had one of its kind, or the text's sentence and word had
-   * one, or it's a cloze card and the user has MAX_CLOZES. */
+  /** A new card, unless the word had one of its kind, or the text had one at the blank, or
+   * the user has MAX_CARDS. */
   makeCard(userId: UserId, card: NewCard, now: Timestamp): Promise<CardOutcome>;
   /** A page of a language's or a word's cards, newest first, or of a text's, by where their blanks start. */
   cards(userId: UserId, listing: CardListing): Promise<Paginated<Card, CardKey>>;

@@ -74,12 +74,12 @@
         {#each cards as { card, page } (card.id)}
           <li>
             <div class="front">
-              {#if card.cloze}
-                {@const parts = blankParts(card.cloze)}
+              {#if card.kind === "cloze"}
+                {@const parts = blankParts(card.data)}
                 <p class="sentence" lang={selected}>{parts.before}<mark>{parts.blank}</mark>{parts.after}</p>
                 <p class="muted">
                   <span lang={selected}>{lemmaOf(card, page)}</span>
-                  · <a href="#/doc/{card.cloze.documentId}">Open the text</a>
+                  · <a href="#/doc/{card.data.documentId}">Open the text</a>
                 </p>
               {:else}
                 <p

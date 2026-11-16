@@ -1,7 +1,7 @@
 // Flashcards, reviews and settings, which live in each user's Durable Object, and
 // the lexicon entries the cards show.
 import {
-  MAX_CLOZES,
+  MAX_CARDS,
   MAX_LOOKUP,
   timestamp,
   type CardCounts,
@@ -62,10 +62,22 @@ export async function review(deps: Deps, user: User, request: ReviewRequest): Pr
   }
 }
 
-/** 201 for a new card, 200 when the word had one of its kind, or the sentence and word
- * had one. A cloze card's text is one the user sees. */
+/** Whether the card's data refers only to what the user sees: a cloze card's text is one
+ * they see. */
+async function seesData(deps: Deps, user: User, card: NewCard): Promise<boolean> {
+  switch (card.kind) {
+    case "recognition":
+    case "production":
+      return true;
+    case "cloze":
+      return (await deps.documents.visible(card.data.documentId, user.id)) !== null;
+  }
+}
+
+/** 201 for a new card, 200 when the word had one of its kind, or the text had one at the
+ * blank. */
 export async function makeCard(deps: Deps, user: User, card: NewCard): Promise<Json<CardMade, 201> | Ok<CardMade> | Failed<404 | 409>> {
-  if (card.kind === "cloze" && !(await deps.documents.visible(card.documentId, user.id))) return noSuchDocument();
+  if (!(await seesData(deps, user, card))) return noSuchDocument();
   const made = await deps.users.makeCard(user.id, card, timestamp(deps.now()));
   switch (made.kind) {
     case "made":
@@ -73,7 +85,7 @@ export async function makeCard(deps: Deps, user: User, card: NewCard): Promise<J
     case "had":
       return ok({ cardId: made.cardId });
     case "full":
-      return fail(409, `a user has at most ${MAX_CLOZES} cloze cards`);
+      return fail(409, `a user has at most ${MAX_CARDS} cards`);
   }
 }
 

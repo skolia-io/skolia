@@ -229,31 +229,86 @@
         "additionalProperties": false
       },
       "DueCard": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "$ref": "#/components/schemas/CardId"
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "$ref": "#/components/schemas/CardId"
+              },
+              "lemmaId": {
+                "$ref": "#/components/schemas/LemmaId"
+              },
+              "isNew": {
+                "type": "boolean"
+              },
+              "dueAt": {
+                "$ref": "#/components/schemas/Timestamp"
+              },
+              "entry": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/LexiconEntry"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "recognition",
+                  "production"
+                ]
+              },
+              "data": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "id",
+              "lemmaId",
+              "isNew",
+              "dueAt",
+              "entry",
+              "kind",
+              "data"
+            ],
+            "additionalProperties": false
           },
-          "lemmaId": {
-            "$ref": "#/components/schemas/LemmaId"
-          },
-          "kind": {
-            "type": "string",
-            "enum": [
-              "recognition",
-              "production",
-              "cloze"
-            ]
-          },
-          "isNew": {
-            "type": "boolean"
-          },
-          "dueAt": {
-            "$ref": "#/components/schemas/Timestamp"
-          },
-          "cloze": {
-            "anyOf": [
-              {
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "$ref": "#/components/schemas/CardId"
+              },
+              "lemmaId": {
+                "$ref": "#/components/schemas/LemmaId"
+              },
+              "isNew": {
+                "type": "boolean"
+              },
+              "dueAt": {
+                "$ref": "#/components/schemas/Timestamp"
+              },
+              "entry": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/LexiconEntry"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "kind": {
+                "type": "string",
+                "const": "cloze"
+              },
+              "data": {
                 "type": "object",
                 "properties": {
                   "documentId": {
@@ -310,33 +365,20 @@
                   "why"
                 ],
                 "additionalProperties": false
-              },
-              {
-                "type": "null"
               }
-            ]
-          },
-          "entry": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/LexiconEntry"
-              },
-              {
-                "type": "null"
-              }
-            ]
+            },
+            "required": [
+              "id",
+              "lemmaId",
+              "isNew",
+              "dueAt",
+              "entry",
+              "kind",
+              "data"
+            ],
+            "additionalProperties": false
           }
-        },
-        "required": [
-          "id",
-          "lemmaId",
-          "kind",
-          "isNew",
-          "dueAt",
-          "cloze",
-          "entry"
-        ],
-        "additionalProperties": false
+        ]
       },
       "Timestamp": {
         "type": "string",
@@ -938,56 +980,119 @@
         "pattern": "^[0-9a-f]{64}$"
       },
       "Card": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "$ref": "#/components/schemas/CardId"
-          },
-          "lemmaId": {
-            "$ref": "#/components/schemas/LemmaId"
-          },
-          "kind": {
-            "type": "string",
-            "enum": [
-              "recognition",
-              "production",
-              "cloze"
-            ]
-          },
-          "createdAt": {
-            "$ref": "#/components/schemas/Timestamp"
-          },
-          "state": {
-            "$ref": "#/components/schemas/CardState"
-          },
-          "scheduleStatus": {
-            "type": "string",
-            "enum": [
-              "new",
-              "learning",
-              "review"
-            ]
-          },
-          "dueAt": {
-            "$ref": "#/components/schemas/Timestamp"
-          },
-          "scheduledDays": {
-            "type": "number",
-            "minimum": 0
-          },
-          "lastReviewedAt": {
-            "anyOf": [
-              {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "$ref": "#/components/schemas/CardId"
+              },
+              "lemmaId": {
+                "$ref": "#/components/schemas/LemmaId"
+              },
+              "createdAt": {
                 "$ref": "#/components/schemas/Timestamp"
               },
-              {
-                "type": "null"
+              "state": {
+                "$ref": "#/components/schemas/CardState"
+              },
+              "scheduleStatus": {
+                "type": "string",
+                "enum": [
+                  "new",
+                  "learning",
+                  "review"
+                ]
+              },
+              "dueAt": {
+                "$ref": "#/components/schemas/Timestamp"
+              },
+              "scheduledDays": {
+                "type": "number",
+                "minimum": 0
+              },
+              "lastReviewedAt": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/Timestamp"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "recognition",
+                  "production"
+                ]
+              },
+              "data": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
               }
-            ]
+            },
+            "required": [
+              "id",
+              "lemmaId",
+              "createdAt",
+              "state",
+              "scheduleStatus",
+              "dueAt",
+              "scheduledDays",
+              "lastReviewedAt",
+              "kind",
+              "data"
+            ],
+            "additionalProperties": false
           },
-          "cloze": {
-            "anyOf": [
-              {
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "$ref": "#/components/schemas/CardId"
+              },
+              "lemmaId": {
+                "$ref": "#/components/schemas/LemmaId"
+              },
+              "createdAt": {
+                "$ref": "#/components/schemas/Timestamp"
+              },
+              "state": {
+                "$ref": "#/components/schemas/CardState"
+              },
+              "scheduleStatus": {
+                "type": "string",
+                "enum": [
+                  "new",
+                  "learning",
+                  "review"
+                ]
+              },
+              "dueAt": {
+                "$ref": "#/components/schemas/Timestamp"
+              },
+              "scheduledDays": {
+                "type": "number",
+                "minimum": 0
+              },
+              "lastReviewedAt": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/Timestamp"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "kind": {
+                "type": "string",
+                "const": "cloze"
+              },
+              "data": {
                 "type": "object",
                 "properties": {
                   "documentId": {
@@ -1044,32 +1149,32 @@
                   "why"
                 ],
                 "additionalProperties": false
-              },
-              {
-                "type": "null"
               }
-            ]
+            },
+            "required": [
+              "id",
+              "lemmaId",
+              "createdAt",
+              "state",
+              "scheduleStatus",
+              "dueAt",
+              "scheduledDays",
+              "lastReviewedAt",
+              "kind",
+              "data"
+            ],
+            "additionalProperties": false
           }
-        },
-        "required": [
-          "id",
-          "lemmaId",
-          "kind",
-          "createdAt",
-          "state",
-          "scheduleStatus",
-          "dueAt",
-          "scheduledDays",
-          "lastReviewedAt",
-          "cloze"
-        ],
-        "additionalProperties": false
+        ]
       },
       "NewCard": {
         "oneOf": [
           {
             "type": "object",
             "properties": {
+              "lemmaId": {
+                "$ref": "#/components/schemas/LemmaId"
+              },
               "kind": {
                 "type": "string",
                 "enum": [
@@ -1077,80 +1182,90 @@
                   "production"
                 ]
               },
-              "lemmaId": {
-                "$ref": "#/components/schemas/LemmaId"
+              "data": {
+                "default": {},
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
               }
             },
             "required": [
-              "kind",
-              "lemmaId"
-            ],
-            "additionalProperties": false
+              "lemmaId",
+              "kind"
+            ]
           },
           {
             "type": "object",
             "properties": {
-              "documentId": {
-                "$ref": "#/components/schemas/DocumentId"
-              },
-              "sentence": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 2000
-              },
-              "sentenceStart": {
-                "type": "integer",
-                "minimum": 0,
-                "maximum": 20000
-              },
-              "blankStart": {
-                "type": "integer",
-                "minimum": 0,
-                "maximum": 20000
-              },
-              "blankEnd": {
-                "type": "integer",
-                "minimum": 0,
-                "maximum": 20000
-              },
-              "feats": {
-                "type": "object",
-                "propertyNames": {
-                  "type": "string"
-                },
-                "additionalProperties": {
-                  "type": "string"
-                }
-              },
-              "why": {
-                "anyOf": [
-                  {
-                    "type": "string",
-                    "maxLength": 500
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              },
               "lemmaId": {
                 "$ref": "#/components/schemas/LemmaId"
               },
               "kind": {
                 "type": "string",
                 "const": "cloze"
+              },
+              "data": {
+                "type": "object",
+                "properties": {
+                  "documentId": {
+                    "$ref": "#/components/schemas/DocumentId"
+                  },
+                  "sentence": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2000
+                  },
+                  "sentenceStart": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 20000
+                  },
+                  "blankStart": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 20000
+                  },
+                  "blankEnd": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 20000
+                  },
+                  "feats": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  },
+                  "why": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "documentId",
+                  "sentence",
+                  "sentenceStart",
+                  "blankStart",
+                  "blankEnd",
+                  "feats",
+                  "why"
+                ]
               }
             },
             "required": [
-              "documentId",
-              "sentence",
-              "sentenceStart",
-              "blankStart",
-              "blankEnd",
-              "feats",
-              "why",
               "lemmaId",
-              "kind"
+              "kind",
+              "data"
             ]
           }
         ]
@@ -2107,7 +2222,7 @@
             }
           },
           "409": {
-            "description": "The user has as many cloze cards as they may",
+            "description": "The user has as many cards as they may",
             "content": {
               "application/json": {
                 "schema": {
