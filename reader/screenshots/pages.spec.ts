@@ -48,6 +48,19 @@ test("account menu", async ({ page }) => {
   await expect(page).toHaveScreenshot("account-menu.png");
 });
 
+test("nav drawer", async ({ page, isMobile }) => {
+  test.skip(!isMobile, "On a desktop the links are in the bar");
+  await open(page, "#/list");
+  await page.getByRole("button", { name: "Menu" }).click();
+  await expect(page.getByRole("link", { name: "Review" })).toBeVisible();
+  await expect(page).toHaveScreenshot("nav-drawer.png");
+});
+
+test("about", async ({ page }) => {
+  await open(page, "#/about");
+  await expect(page).toHaveScreenshot("about.png");
+});
+
 test("upload", async ({ page }) => {
   await open(page, "#/upload");
   await page.getByLabel("Licence", { exact: true }).selectOption("all-rights-reserved");

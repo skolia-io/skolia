@@ -147,7 +147,7 @@ deploy-infra env: (apply env) && (migrate env)
 deploy-web env:
     #!/usr/bin/env bash
     set -euo pipefail
-    # The version /api/version and the reader's footer show
+    # The version /api/version and the reader's About page show
     export VITE_VERSION=$(git describe --tags --always --dirty)
     pnpm --filter @skolia/reader build
     dir=$(mktemp -d)

@@ -470,6 +470,13 @@
     text-align: center;
   }
 
+  /* No keyboard to press them on */
+  @media (pointer: coarse), (max-width: 639px) {
+    .hint {
+      display: none;
+    }
+  }
+
   .flashcard {
     display: flex;
     flex-direction: column;
