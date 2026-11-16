@@ -5,7 +5,6 @@
   import Cards from "./pages/Cards.svelte";
   import Explore from "./pages/Explore.svelte";
   import { userQuery } from "./lib/queries.ts";
-  import { createWords } from "./lib/words.ts";
   import Button from "./components/Button.svelte";
   import Nav from "./components/Nav.svelte";
   import Reader from "./pages/reader/Reader.svelte";
@@ -47,12 +46,10 @@
   const signedIn = createQuery(() => userQuery);
   /** undefined while loading, null when signed out. */
   const user = $derived(signedIn.data);
-  // The word sheet's statuses, loaded once someone signs in
-  const words = createWords();
   let error = $state<string | null>(null);
 
   $effect(() => {
-    const failed = signedIn.error ?? words.error;
+    const failed = signedIn.error;
     if (failed) error = failed.message;
   });
 </script>

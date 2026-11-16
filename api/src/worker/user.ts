@@ -2,8 +2,6 @@ import { DurableObject } from "cloudflare:workers";
 import {
   CARD_GROUPS,
   LANGS,
-  WORD_CARD_KINDS,
-  MATURE_DAYS,
   MAX_CLOZES,
   timestamp,
   type CardCounts,
@@ -12,6 +10,7 @@ import {
   type Tally,
   type CardId as CardIdType,
   type Card,
+  type CardState,
   type CardKey,
   type CardListing,
   type DocumentId,
@@ -20,16 +19,12 @@ import {
   type ReadingFilter,
   type ReadingKey,
   type ReadingStatus,
-  type WordKey,
-  type NewCloze,
+  type NewCard,
   type Timestamp,
   type Lang,
-  type LemmaId,
   type ReviewRequest,
   type ScheduledCard,
   type Settings,
-  type Word,
-  type WordStatus,
 } from "@skolia/shared/api";
 import { paginate, type PageRequest } from "@skolia/shared/page";
 import * as schemas from "@skolia/shared/schemas";
@@ -54,8 +49,7 @@ import {
   type Query,
 } from "@skolia/util/query";
 import { sql, type Sql } from "@skolia/util/sql";
-import type { ClozeOutcome, DueCards, ReviewOutcome, StoredPosition, StoredReading } from "../ports.ts";
-import type { DefaultScheduler } from "ts-fsrs";
+import type { CardOutcome, DueCards, ReviewOutcome, StoredPosition, StoredReading } from "../ports.ts";
 import { fromJson, fsrs, newCard, review, toJson } from "./scheduler.ts";
 import { MIGRATIONS } from "../user/migrations/index.ts";
 import { READING_ENTRY, cardsQuery, readingListQuery } from "../user/queries.ts";
@@ -99,7 +93,7 @@ function listed(row: Record<string, SqlStorageValue>): Card {
     lemmaId,
     kind,
     createdAt,
-    active: row["active"] === 1,
+    state: row["active"] === 1 ? "learning" : "known",
     scheduleStatus,
     dueAt,
     scheduledDays,
@@ -111,7 +105,7 @@ function listed(row: Record<string, SqlStorageValue>): Card {
 /** A group's cards, as a condition on card. */
 const IN_GROUP: Readonly<Record<CardGroup, Sql>> = { words: ne("card.kind", lit("cloze")), forms: eq("card.kind", lit("cloze")) };
 
-/** A language's active cards due by now. */
+/** A language's learning cards due by now. */
 const due = (lang: Lang, now: Timestamp) =>
   and(eq("card.lang", lang), eq("card.active", lit(1)), ne("card.schedule_status", lit("new")), le("card.due_at", now));
 
@@ -123,6 +117,14 @@ const started = (alias: "card" | "u") =>
       .where(eq("w.lemma_id", col(`${alias}.lemma_id`)), ne("w.kind", lit("cloze")), isNotNull("w.first_reviewed_at")),
   );
 
+/** Whether the lemma of the card under alias has word cards being learnt. */
+const learningWord = (alias: "card" | "u") =>
+  exists(
+    select({})
+      .from("card", "w")
+      .where(eq("w.lemma_id", col(`${alias}.lemma_id`)), ne("w.kind", lit("cloze")), eq("w.active", lit(1))),
+  );
+
 /** The card under alias is a language's new card. */
 const isNew = (alias: "card" | "u", lang: Lang) =>
   and(eq(`${alias}.lang`, lang), eq(`${alias}.active`, lit(1)), eq(`${alias}.schedule_status`, lit("new")));
@@ -130,8 +132,9 @@ const isNew = (alias: "card" | "u", lang: Lang) =>
 /** A group's new cards that today's allowance leaves to show, as a condition on card, and
  * at most how many. Words: every new word card of a started lemma, and all those of the
  * first lemmas not yet started, as many as are left, in the order their cards were made.
- * Forms: cloze cards whose lemmas are started, as many as are left. count: how to count
- * them in the allowance's terms, words by lemma and forms by card. */
+ * Forms: cloze cards whose lemmas are started, or have no word cards being learnt (none,
+ * or all known), as many as are left. count: how to count them in the allowance's terms,
+ * words by lemma and forms by card. */
 function freshCards(group: CardGroup, lang: Lang, newLeft: NewLeft): { where: Sql; cap: number; count: Sql } {
   switch (group) {
     case "words": {
@@ -148,7 +151,11 @@ function freshCards(group: CardGroup, lang: Lang, newLeft: NewLeft): { where: Sq
       };
     }
     case "forms":
-      return { where: and(isNew("card", lang), eq("card.kind", lit("cloze")), started("card")), cap: newLeft.forms, count: fn.count() };
+      return {
+        where: and(isNew("card", lang), eq("card.kind", lit("cloze")), or(started("card"), not(learningWord("card")))),
+        cap: newLeft.forms,
+        count: fn.count(),
+      };
   }
 }
 
@@ -204,84 +211,44 @@ export class User extends DurableObject<UserEnv> {
     }
   }
 
-  /** A page of the words, by lemma id: those after the page's key, which word's primary key seeks to. */
-  words({ after, limit }: PageRequest<WordKey>): Paginated<Word, WordKey> {
-    const rows = this.#exec(
-      sql`SELECT word.lemma_id AS "lemmaId", word.status, word.updated_at AS "updatedAt",
-           coalesce(card.scheduled_days >= ${MATURE_DAYS}, 0) AS mature
-         FROM word LEFT JOIN card ON card.lemma_id = word.lemma_id AND card.kind = 'recognition'
-         WHERE word.lemma_id > ${after?.[0] ?? ""}
-         ORDER BY word.lemma_id LIMIT ${limit + 1}`,
-    )
-      .toArray()
-      .map((row) => schemas.Word.parse({ ...row, mature: row["mature"] === 1 }));
-    return paginate(
-      rows.map((item) => ({ item, key: [item.lemmaId] as const })),
-      limit,
-    );
-  }
-
-  /** Active gives the word its cards, if it hasn't any; the cards, its cloze cards too, are
-   * reviewed while their word is active (card.active, so the review queries need only card's indexes). */
-  async setWord(lemmaId: LemmaId, status: WordStatus, now: Timestamp): Promise<void> {
+  /** A new card, or the one there was: the word's of its kind, or the text's at the blank.
+   * A cloze card past MAX_CLOZES is refused. A new card is learning. */
+  async makeCard(card: NewCard, now: Timestamp): Promise<CardOutcome> {
     const s = await fsrs();
-    this.ctx.storage.transactionSync(() => this.#setWord(s, lemmaId, status, now));
-  }
-
-  #setWord(s: DefaultScheduler, lemmaId: LemmaId, status: WordStatus, now: Timestamp): void {
-    this.#exec(
-      sql`INSERT INTO word (lemma_id, status, updated_at) VALUES (${lemmaId}, ${status}, ${now})
-       ON CONFLICT (lemma_id) DO UPDATE SET status = excluded.status, updated_at = excluded.updated_at`,
-    );
-    const active = status === "active" ? 1 : 0;
-    this.#exec(sql`UPDATE card SET active = ${active} WHERE lemma_id = ${lemmaId}`);
-    if (!active) return;
-    for (const kind of WORD_CARD_KINDS) {
-      const id = CardId.parse(crypto.randomUUID());
-      this.#exec(
-        sql`INSERT INTO card (id, lemma_id, kind, created_at, active, fsrs) VALUES (${id}, ${lemmaId}, ${kind}, ${now}, 1, ${toJson(newCard(s, id, new Date(now)))})
-         ON CONFLICT (lemma_id, kind) WHERE kind != 'cloze' DO NOTHING`,
-      );
-    }
-  }
-
-  /** Clears the word's status and takes its cards, cloze cards too, out of reviews. Deletes
-   * no card or review: setWord active brings them back. */
-  clearWordStatus(lemmaId: LemmaId): void {
-    this.ctx.storage.transactionSync(() => {
-      this.#exec(sql`DELETE FROM word WHERE lemma_id = ${lemmaId}`);
-      this.#exec(sql`UPDATE card SET active = 0 WHERE lemma_id = ${lemmaId}`);
-    });
-  }
-
-  /** A new cloze card for the word in the sentence, or the one it already has: the same
-   * text, sentence and blank; none past MAX_CLOZES. A word with no status is added, as setWord
-   * active does; the card is reviewed while its word is active, like the word's own cards. */
-  async makeCloze(cloze: NewCloze, now: Timestamp): Promise<ClozeOutcome> {
-    const s = await fsrs();
-    return this.ctx.storage.transactionSync((): ClozeOutcome => {
+    const id = CardId.parse(crypto.randomUUID());
+    const fresh = toJson(newCard(s, id, new Date(now)));
+    return this.ctx.storage.transactionSync((): CardOutcome => {
+      if (card.kind !== "cloze") {
+        const had = this.#exec(sql`SELECT id FROM card WHERE lemma_id = ${card.lemmaId} AND kind = ${card.kind}`).toArray()[0];
+        if (had !== undefined) return { kind: "had", cardId: CardId.parse(had["id"]) };
+        this.#exec(
+          sql`INSERT INTO card (id, lemma_id, kind, created_at, active, fsrs) VALUES ${sql.tuple([id, card.lemmaId, card.kind, now, 1, fresh])}`,
+        );
+        return { kind: "made", cardId: id };
+      }
       const had = this.#exec(
-        sql`SELECT card_id FROM cloze WHERE document_id = ${cloze.documentId} AND blank_start = ${cloze.blankStart}`,
+        sql`SELECT card_id FROM cloze WHERE document_id = ${card.documentId} AND blank_start = ${card.blankStart}`,
       ).toArray()[0];
-      if (had === undefined && Number(this.#exec(sql`SELECT n FROM row_count WHERE name = 'cloze'`).one()["n"]) >= MAX_CLOZES)
-        return { kind: "full" };
-      const hasStatus = this.#exec(sql`SELECT 1 FROM word WHERE lemma_id = ${cloze.lemmaId}`).toArray().length > 0;
-      if (!hasStatus) this.#setWord(s, cloze.lemmaId, "active", now);
       if (had !== undefined) return { kind: "had", cardId: CardId.parse(had["card_id"]) };
-      const id = CardId.parse(crypto.randomUUID());
+      if (Number(this.#exec(sql`SELECT n FROM row_count WHERE name = 'cloze'`).one()["n"]) >= MAX_CLOZES) return { kind: "full" };
       this.#exec(
-        sql`INSERT INTO card (id, lemma_id, kind, created_at, active, fsrs)
-         VALUES (${id}, ${cloze.lemmaId}, 'cloze', ${now}, (SELECT status = 'active' FROM word WHERE lemma_id = ${cloze.lemmaId}), ${toJson(newCard(s, id, new Date(now)))})`,
+        sql`INSERT INTO card (id, lemma_id, kind, created_at, active, fsrs) VALUES ${sql.tuple([id, card.lemmaId, "cloze", now, 1, fresh])}`,
       );
       this.#exec(
         sql`INSERT INTO cloze (card_id, document_id, sentence, sentence_start, blank_start, blank_end, feats, why)
-         VALUES ${sql.tuple([id, cloze.documentId, cloze.sentence, cloze.sentenceStart, cloze.blankStart, cloze.blankEnd, JSON.stringify(cloze.feats), cloze.why])}`,
+         VALUES ${sql.tuple([id, card.documentId, card.sentence, card.sentenceStart, card.blankStart, card.blankEnd, JSON.stringify(card.feats), card.why])}`,
       );
       return { kind: "made", cardId: id };
     });
   }
 
-  /** A page of a language's cards, newest first, or of a text's, by where their blanks start in it. */
+  /** Learning puts the card in reviews, where it is in its schedule; known takes it out.
+   * Whether there was one. */
+  setCardState(cardId: CardIdType, state: CardState): boolean {
+    return this.#exec(sql`UPDATE card SET active = ${state === "learning" ? 1 : 0} WHERE id = ${cardId}`).rowsWritten > 0;
+  }
+
+  /** A page of a language's or a word's cards, newest first, or of a text's, by where their blanks start in it. */
   cards(listing: CardListing): Paginated<Card, CardKey> {
     const cards = this.#exec(cardsQuery(listing)).toArray().map(listed);
     const keyed = cards.map((item) => ({
@@ -291,8 +258,7 @@ export class User extends DurableObject<UserEnv> {
     return paginate<Card, CardKey>(keyed, listing.limit);
   }
 
-  /** Deletes a card of any kind, and by the foreign keys its cloze row and reviews. A word
-   * card's word keeps its status, and setWord active makes the card again, new. Whether
+  /** Deletes a card of any kind, and by the foreign keys its cloze row and reviews. Whether
    * there was one. */
   deleteCard(cardId: CardIdType): boolean {
     return this.#exec(sql`DELETE FROM card WHERE id = ${cardId}`).rowsWritten > 0;
@@ -314,7 +280,7 @@ export class User extends DurableObject<UserEnv> {
     return { words: Math.max(0, newLemmasPerDay - Number(lemmas)), forms: Math.max(0, newFormsPerDay - Number(forms)) };
   }
 
-  /** A language's active cards due by now, soonest first, then its new cards up to what's
+  /** A language's learning cards due by now, soonest first, then its new cards up to what's
    * left of the day's allowances: words' in the order their words were added, then forms'
    * in the order they were made. group: only its cards. */
   due(lang: Lang, now: Timestamp, dayStart: Timestamp, limit: number, group: CardGroup | undefined): DueCards {

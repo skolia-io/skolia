@@ -11,9 +11,7 @@ export type { Paginated } from "./page.ts";
 /** A page of documents reads each one's status from R2, so it stays small. */
 export const DOCUMENT_PAGE: PageSize = { fallback: 24, max: 50 };
 export const TAG_PAGE: PageSize = { fallback: 100, max: 500 };
-/** The reader follows these lists to the end, so their pages are big. */
-export const WORD_PAGE: PageSize = { fallback: 500, max: 1000 };
-/** The reader follows a text's cards to the end; a language's it shows a page at a time. */
+/** The reader follows a text's or a word's cards to the end; a language's it shows a page at a time. */
 export const CARD_PAGE: PageSize = { fallback: 50, max: 1000 };
 /** Like a page of documents, a page of the reading list reads each text's status from R2. */
 export const READING_PAGE: PageSize = { fallback: 24, max: 50 };
@@ -231,22 +229,20 @@ export type DocumentFilter = {
  * that every filter has an index in; an order for people to browse is to come. */
 export type DocumentKey = z.output<typeof schemas.DocumentKey>;
 export type TagKey = z.output<typeof schemas.TagKey>;
-export type WordKey = z.output<typeof schemas.WordKey>;
 
-/** A word the user is learning (active), or has marked as known or ignored (names,
- * typos), which takes its cards out of reviews. A word with no status is new. */
-export const WORD_STATUSES = ["active", "known", "ignored"] as const;
-export type WordStatus = (typeof WORD_STATUSES)[number];
-
-/** A word's cards, one of each. recognition: the lemma on the front, its glosses on the
- * back. production: the other way round. */
+/** A word's cards, at most one of each. recognition: the lemma on the front, its glosses
+ * on the back. production: the other way round. */
 export const WORD_CARD_KINDS = ["recognition", "production"] as const;
 
 /** cloze: a sentence from a text with a word blanked out, its lemma the hint. Made from the
- * reader, any number per lemma. Like the word's own cards, they're reviewed while the word
- * is active or has no status. */
+ * reader, any number per lemma. */
 export const CARD_KINDS = [...WORD_CARD_KINDS, "cloze"] as const;
 export type CardKind = (typeof CARD_KINDS)[number];
+
+/** learning: the card is reviewed. known: the user knows what it asks, so it isn't. What
+ * the user knows of a word is its cards': there is no other record of it. */
+export const CARD_STATES = ["learning", "known"] as const;
+export type CardState = (typeof CARD_STATES)[number];
 
 /** Longest sentence a cloze card keeps, in characters. */
 export const MAX_CLOZE_SENTENCE = 2000;
@@ -312,9 +308,6 @@ export function langOf(id: LemmaId): Lang {
   return id.slice(0, id.indexOf(":")) as Lang;
 }
 
-/** mature: its recognition card is mature, so the reader shows it as known. */
-export type Word = z.output<typeof schemas.Word>;
-
 export type Settings = z.output<typeof schemas.Settings>;
 
 export type ReadingPosition = z.output<typeof schemas.ReadingPosition>;
@@ -374,12 +367,13 @@ export function blankParts(cloze: Pick<Cloze, "sentence" | "sentenceStart" | "bl
   return { before: cloze.sentence.slice(0, start), blank: cloze.sentence.slice(start, end), after: cloze.sentence.slice(end) };
 }
 
-/** A card to make: a cloze card for the word in the sentence. */
+/** A card to make: a word's recognition or production card, or a cloze card for the word
+ * in the sentence. */
 export type NewCard = z.output<typeof schemas.NewCard>;
 /** What the reader sends: the same, before the API's validation brands its ids. */
 export type NewCardInput = z.input<typeof schemas.NewCard>;
 
-/** The card made, or the one the sentence and word already had. */
+/** The card made, or the one the word, or the sentence and word, already had. */
 export type CardMade = Readonly<z.output<typeof schemas.CardMade>>;
 
 /** Where a card is in its ts-fsrs schedule. */
@@ -389,13 +383,15 @@ export type ScheduleStatus = (typeof SCHEDULE_STATUSES)[number];
 export type Card = z.output<typeof schemas.Card>;
 export type NewestCardKey = z.output<typeof schemas.NewestCardKey>;
 export type TextCardKey = z.output<typeof schemas.TextCardKey>;
-/** Where a card is in a list of them: newest first in a language's, by its blank in a text's. */
+/** Where a card is in a list of them: newest first in a language's or a word's, by its
+ * blank in a text's. */
 export type CardKey = NewestCardKey | TextCardKey;
 
-/** A page of cards: a language's, newest first; or a text's cloze cards, in the order of
- * the text. */
+/** A page of cards: a language's or a word's, newest first; or a text's cloze cards, in
+ * the order of the text. */
 export type CardListing =
   | ({ readonly lang: Lang } & PageRequest<NewestCardKey>)
+  | ({ readonly lemmaId: LemmaId } & PageRequest<NewestCardKey>)
   | ({ readonly documentId: DocumentId } & PageRequest<TextCardKey>);
 
 /** Where a text is on the user's reading list. A text that isn't on it has none. */

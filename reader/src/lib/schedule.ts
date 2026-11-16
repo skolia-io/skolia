@@ -4,10 +4,10 @@ import type { Card } from "@skolia/shared/api";
 const DAY_MS = 24 * 60 * 60 * 1000;
 const HOUR_MS = 60 * 60 * 1000;
 
-/** Where a card is in its schedule, as of now: paused while its word isn't active, new
- * until it's first answered, then when it's due. */
-export function scheduleLabel(card: Pick<Card, "active" | "scheduleStatus" | "dueAt">, now: Date): string {
-  if (!card.active) return "Paused";
+/** Where a card is in its schedule, as of now: known, so not reviewed; new until it's
+ * first answered; then when it's due. */
+export function scheduleLabel(card: Pick<Card, "state" | "scheduleStatus" | "dueAt">, now: Date): string {
+  if (card.state === "known") return "Known";
   if (card.scheduleStatus === "new") return "New";
   const ms = Date.parse(card.dueAt) - now.getTime();
   if (ms <= 0) return "Due now";

@@ -22,12 +22,11 @@
     type Positions,
   } from "../../lib/position.ts";
   import type { ReaderMode } from "../../lib/mode.ts";
-  import { createWords } from "../../lib/words.ts";
   import { createClozes } from "../../lib/clozes.ts";
   import { createReadingEntry } from "../../lib/reading-list.ts";
   import ReadingStatusMenu from "../../components/ReadingStatusMenu.svelte";
   import { createQuery } from "@tanstack/svelte-query";
-  import { audioQuery } from "../../lib/queries.ts";
+  import { audioQuery, userQuery } from "../../lib/queries.ts";
   import { type AudioAnnotation, inRange, placeAudio } from "../../lib/annotations.ts";
 
   let { id }: { id: DocumentId } = $props();
@@ -71,7 +70,7 @@
     return reading && found ? { start: found.start, text: reading.text.slice(found.start, found.end) } : null;
   }
 
-  const known = createWords();
+  const signedIn = createQuery(() => userQuery);
   const readingEntry = createReadingEntry(() => id);
   // The cloze cards from this text, loaded with it, for the word sheet
   createClozes(() => id);
@@ -369,7 +368,7 @@
           {#if readingEntry.data !== undefined}
             <ReadingStatusMenu {id} status={readingEntry.data?.status ?? null} />
           {/if}
-          {#if known.data}
+          {#if signedIn.data}
             <div class="mode">
               <Button
                 variant="quiet"

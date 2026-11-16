@@ -27,7 +27,7 @@
   import { createRemoveCloze } from "../lib/clozes.ts";
   import { countsQuery, dueQuery, settingsQuery } from "../lib/queries.ts";
   import { clue, keyTarget, shortcut } from "../lib/review.ts";
-  import { createSetStatus } from "../lib/words.ts";
+  import { createMarkKnown } from "../lib/words.ts";
 
   /** lang and group are the URL's (#/review/pl/forms); without a language, the one with the
    * most to review. group only counts when the settings review forms on their own: without
@@ -51,7 +51,7 @@
   let error = $state<string | null>(null);
   let showButton = $state<HTMLButtonElement | null>(null);
   let goodButton = $state<HTMLButtonElement | null>(null);
-  const setStatus = createSetStatus();
+  const markWordKnown = createMarkKnown();
   const deleteCloze = createRemoveCloze();
 
   /** Cards to review in one group, or with none in both. */
@@ -125,14 +125,14 @@
     showButton?.focus();
   }
 
-  /** Known takes the word out of reviews, all its cards, and skips them in this session. */
+  /** Known marks all the word's cards known, which takes them out of reviews, and skips them in this session. */
   async function markKnown(): Promise<void> {
     if (!card || busy) return;
     const { lemmaId } = card;
     busy = true;
     error = null;
     try {
-      await setStatus.mutateAsync({ lemmaId, status: "known" });
+      await markWordKnown.mutateAsync(lemmaId);
       drop((c) => c.lemmaId !== lemmaId);
     } catch (e: unknown) {
       error = message(e);

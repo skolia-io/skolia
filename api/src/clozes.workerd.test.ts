@@ -3,14 +3,13 @@ import { test } from "node:test";
 import {
   CARD_PAGE,
   MAX_CLOZES,
-  lemmaParam,
   type CardGroup,
+  type CardState,
   type CardKey,
   type Due,
   type LemmaId,
   type NewClozeInput,
   type Rating,
-  type WordStatus,
 } from "@skolia/shared/api";
 import type { Cursor } from "@skolia/shared/page";
 import {
@@ -82,25 +81,33 @@ async function listed(app: App, headers: Headers, documentId: string) {
   return { items: items.map((c) => ({ cardId: c.id, start: c.cloze?.blankStart })), next };
 }
 
-function mark(app: App, headers: Headers, lemmaId: LemmaId, status: WordStatus) {
-  return expectStatus(
-    "mark",
-    client(app, headers).me.words[":lemmaId"].$put({ param: { lemmaId: lemmaParam(lemmaId) }, json: { status } }),
-    204,
-  );
+/** Makes the word's recognition and production cards, or keeps those it has. */
+async function learn(app: App, headers: Headers, lemmaId: LemmaId): Promise<void> {
+  for (const kind of ["recognition", "production"] as const) {
+    assert.ok((await client(app, headers).me.cards.$post({ json: { kind, lemmaId } })).ok, `${lemmaId} ${kind}`);
+  }
 }
 
-async function words(app: App, headers: Headers) {
-  return (await body("words", client(app, headers).me.words.$get({ query: {} }))).items;
+/** The word's cards, newest first. */
+async function wordCards(app: App, headers: Headers, lemmaId: LemmaId) {
+  return (await body("word's cards", client(app, headers).me.cards.$get({ query: { lemmaId } }))).items;
+}
+
+/** Sets the state of the word's cards, its cloze cards too unless words is set. */
+async function mark(app: App, headers: Headers, lemmaId: LemmaId, state: CardState, words = false): Promise<void> {
+  for (const card of await wordCards(app, headers, lemmaId)) {
+    if (words && card.kind === "cloze") continue;
+    await expectStatus("mark", client(app, headers).me.cards[":cardId"].$patch({ param: { cardId: card.id }, json: { state } }), 204);
+  }
 }
 
 function review(app: App, headers: Headers, cardId: string, rating: Rating) {
   return client(app, headers).me.reviews.$post({ json: { id: crypto.randomUUID(), cardId, rating, at: NOW } });
 }
 
-/** Makes the word active and reviews its recognition card, so its new cloze cards come up. */
+/** Makes the word's cards and reviews its recognition card, so its new cloze cards come up. */
 async function start(app: App, headers: Headers, lemmaId: LemmaId): Promise<void> {
-  await mark(app, headers, lemmaId, "active");
+  await learn(app, headers, lemmaId);
   const recognition = (await due(app, headers, "words")).cards.find((c) => c.lemmaId === lemmaId && c.kind === "recognition");
   if (!recognition) throw new Error(`${lemmaId} has no new recognition card`);
   await body("review", review(app, headers, recognition.id, 3));
@@ -117,6 +124,7 @@ test("a cloze card keeps its sentence and blank, is due with its lemma's entry, 
   assert.deepEqual(await body("split elsewhere", make(app, headers, { ...json, sentence: "pracy od roku.", sentenceStart: 47 }), 200), {
     cardId,
   });
+  await learn(app, headers, "pl:praca:NOUN");
   assert.deepEqual((await due(app, headers, "forms")).cards, []);
   await start(app, headers, "pl:praca:NOUN");
   const { cards } = await due(app, headers, "forms");
@@ -132,10 +140,10 @@ test("a cloze card keeps its sentence and blank, is due with its lemma's entry, 
   assert.equal((await review(app, headers, cardId, 3)).status, 200);
 });
 
-test("a lemma can have many cloze cards, and its word's status takes them out of reviews and back with its own", async () => {
+test("a lemma can have many cloze cards; known, they leave reviews, and learning brings them back", async () => {
   const app = setup();
   const headers = await signedIn();
-  await mark(app, headers, "pl:praca:NOUN", "active");
+  await learn(app, headers, "pl:praca:NOUN");
   const documentId = await importSentences(app, headers, [PRACY, MAM]);
   await body("first", make(app, headers, { ...PRACY, documentId }), 201);
   await body("second", make(app, headers, { ...MAM, documentId }), 201);
@@ -145,80 +153,41 @@ test("a lemma can have many cloze cards, and its word's status takes them out of
   assert.deepEqual(await kinds(), ["cloze", "cloze", "production"]);
   await mark(app, headers, "pl:praca:NOUN", "known");
   assert.deepEqual(await kinds(), []);
-  await mark(app, headers, "pl:praca:NOUN", "active");
+  await mark(app, headers, "pl:praca:NOUN", "learning");
   assert.deepEqual(await kinds(), ["cloze", "cloze", "production"]);
 });
 
-test("a cloze card adds its word if it has no status, and is reviewed while its word is active, not known or ignored", async () => {
+test("a cloze card makes no other card, and waits only for its word's cards being learnt to be started", async () => {
   const app = setup();
   const headers = await signedIn();
-  const documentId = await importSentences(app, headers, [PRACY, DOM, OLA]);
-  const noStatus = await body("no status", make(app, headers, { ...PRACY, documentId }), 201);
+  const documentId = await importSentences(app, headers, [PRACY, DOM]);
+  const alone = await body("no word cards", make(app, headers, { ...PRACY, documentId }), 201);
   assert.deepEqual(
-    (await words(app, headers)).map((w) => [w.lemmaId, w.status]),
-    [["pl:praca:NOUN", "active"]],
+    (await wordCards(app, headers, "pl:praca:NOUN")).map((c) => [c.id, c.kind]),
+    [[alone.cardId, "cloze"]],
   );
-  await mark(app, headers, "pl:dom:NOUN", "known");
-  const known = await body("known", make(app, headers, { ...DOM, documentId }), 201);
-  await mark(app, headers, "pl:Ola:NOUN", "ignored");
-  const ignored = await body("ignored", make(app, headers, { ...OLA, documentId }), 201);
-  assert.deepEqual(
-    (await words(app, headers)).map((w) => [w.lemmaId, w.status]),
-    [
-      ["pl:Ola:NOUN", "ignored"],
-      ["pl:dom:NOUN", "known"],
-      ["pl:praca:NOUN", "active"],
-    ],
-  );
-  // New, the cloze cards wait for their words to be started
-  assert.deepEqual((await due(app, headers)).cards.map((c) => [c.lemmaId, c.kind]).sort(), [
-    ["pl:praca:NOUN", "production"],
-    ["pl:praca:NOUN", "recognition"],
-  ]);
-  // Again makes them due within minutes
-  for (const { cardId } of [noStatus, known, ignored]) await expectStatus("review", review(app, headers, cardId, 1), 200);
-  const later = setup({ at: "2026-11-04T00:30:00Z" });
-  const kinds = async () => (await due(later, headers)).cards.map((c) => [c.lemmaId, c.kind]).sort();
+  await learn(app, headers, "pl:dom:NOUN");
+  const dom = await body("word cards", make(app, headers, { ...DOM, documentId }), 201);
+  const kinds = async () => (await due(app, headers)).cards.map((c) => [c.lemmaId, c.kind]).sort();
   assert.deepEqual(await kinds(), [
-    ["pl:praca:NOUN", "cloze"],
-    ["pl:praca:NOUN", "production"],
-    ["pl:praca:NOUN", "recognition"],
-  ]);
-  await mark(app, headers, "pl:dom:NOUN", "active");
-  assert.deepEqual(await kinds(), [
-    ["pl:dom:NOUN", "cloze"],
     ["pl:dom:NOUN", "production"],
     ["pl:dom:NOUN", "recognition"],
     ["pl:praca:NOUN", "cloze"],
-    ["pl:praca:NOUN", "production"],
-    ["pl:praca:NOUN", "recognition"],
   ]);
-});
-
-test("a cloze card made after its word's status was taken away adds the word back, with its other cloze cards", async () => {
-  const app = setup();
-  const headers = await signedIn();
-  const documentId = await importSentences(app, headers, [PRACY, MAM]);
-  const first = await body("first", make(app, headers, { ...PRACY, documentId }), 201);
-  await expectStatus("forget", client(app, headers).me.words[":lemmaId"].$delete({ param: { lemmaId: lemmaParam("pl:praca:NOUN") } }), 204);
-  assert.deepEqual(await words(app, headers), []);
-  assert.deepEqual((await due(app, headers)).cards, []);
-  const second = await body("second", make(app, headers, { ...MAM, documentId }), 201);
-  assert.deepEqual(
-    (await words(app, headers)).map((w) => [w.lemmaId, w.status]),
-    [["pl:praca:NOUN", "active"]],
-  );
-  const recognition = (await due(app, headers, "words")).cards.find((c) => c.kind === "recognition");
-  assert.ok(recognition);
-  await body("review", review(app, headers, recognition.id, 3));
-  assert.deepEqual((await due(app, headers, "forms")).cards.map((c) => c.id).sort(), [first.cardId, second.cardId].sort());
+  // Known, the word's cards no longer hold its cloze card back
+  await mark(app, headers, "pl:dom:NOUN", "known", true);
+  assert.deepEqual(await kinds(), [
+    ["pl:dom:NOUN", "cloze"],
+    ["pl:praca:NOUN", "cloze"],
+  ]);
+  assert.ok((await due(app, headers, "forms")).cards.some((c) => c.id === dom.cardId));
 });
 
 test("a new cloze card comes up once one of its word's cards has been reviewed, and not for another word's", async () => {
   const app = setup();
   const headers = await signedIn();
-  await mark(app, headers, "pl:dom:NOUN", "active");
-  await mark(app, headers, "pl:praca:NOUN", "active");
+  await learn(app, headers, "pl:dom:NOUN");
+  await learn(app, headers, "pl:praca:NOUN");
   const { cardId } = await body("made", make(app, headers, await pracy(app, headers)), 201);
   assert.deepEqual(await due(app, headers, "forms"), { cards: [], newLeft: { words: 20, forms: 20 }, featureSets: {} });
   await start(app, headers, "pl:dom:NOUN");
@@ -327,11 +296,8 @@ test("a user has at most MAX_CLOZES cloze cards", async () => {
   );
   const full = await expectStatus("full", make(app, headers, { ...MAM, documentId }), 409);
   assert.deepEqual(await full.json(), { error: `a user has at most ${MAX_CLOZES} cloze cards` });
-  await expectStatus("full, for a word with no status", make(app, headers, { ...DOM, documentId }), 409);
-  assert.deepEqual(
-    (await words(app, headers)).map((w) => w.lemmaId),
-    ["pl:praca:NOUN"],
-  );
+  await expectStatus("full, for another word", make(app, headers, { ...DOM, documentId }), 409);
+  assert.deepEqual(await wordCards(app, headers, "pl:dom:NOUN"), []);
   assert.deepEqual(await body("one it has", make(app, headers, { ...PRACY, documentId }), 200), { cardId });
   await expectStatus("deletes one", client(app, headers).me.cards[":cardId"].$delete({ param: { cardId } }), 204);
   await body("room again", make(app, headers, { ...MAM, documentId }), 201);

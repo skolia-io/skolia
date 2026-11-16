@@ -8,8 +8,8 @@
   import { entryFor, entryIdFor, mainPronunciations, pronunciationsOf, rankSenses, recordingsOf } from "@skolia/shared/lexicon";
   import type { Recording } from "@skolia/shared/schema";
   import { LemmaId as LemmaIdSchema } from "@skolia/shared/schemas";
-  import { createSetStatus, createWords } from "../../lib/words.ts";
-  import { createAddCloze, createClozes, createRemoveCloze } from "../../lib/clozes.ts";
+  import { createForgetCards, createLearnWord, createWordCards, wordState } from "../../lib/words.ts";
+  import { createAddCloze, createClozes } from "../../lib/clozes.ts";
   import { MAX_CLOZE_SENTENCE, MAX_CLOZE_WHY, blankOut } from "@skolia/shared/api";
   import type { ReaderMode } from "../../lib/mode.ts";
   import { paradigmTables } from "@skolia/shared/paradigm";
@@ -192,11 +192,11 @@
     return w.lemmaId !== null && w.partOfWord === null && !UNLEARNABLE.has(w.ref.token.upos);
   }
 
-  const known = createWords();
+  const known = createWordCards(() => words.flatMap((w) => (learnable(w) ? [w.lemmaId] : [])));
   const clozes = createClozes(() => documentId);
-  const setStatus = createSetStatus();
+  const learnWord = createLearnWord();
+  const forgetCards = createForgetCards();
   const addCloze = createAddCloze();
-  const removeCloze = createRemoveCloze();
 
   /** The last failure to add a word, by lemma id. */
   let statusError = $state<{ lemmaId: LemmaId; message: string } | null>(null);
@@ -209,9 +209,9 @@
   const tried = new Set<LemmaId>();
   const triedClozes = new Set<number>();
 
-  /** In learning mode a word you tap goes into your cards if you've never marked it, and
-   * so does its form in this sentence; Known while reviewing takes them out. In reading
-   * mode the word's + adds them. */
+  /** In learning mode a word you tap goes into your cards if it has none, and so does its
+   * form in this sentence; Known while reviewing marks its cards known. In reading mode the
+   * word's + adds them. */
   $effect(() => {
     if (!known.data || mode !== "learning") return;
     const fresh = words.flatMap((w): Addition[] => {
@@ -236,7 +236,7 @@
   /** Whether it was added. */
   async function learn(lemmaId: LemmaId): Promise<boolean> {
     try {
-      await setStatus.mutateAsync({ lemmaId, status: "active" });
+      await learnWord.mutateAsync(lemmaId);
       return true;
     } catch (e: unknown) {
       statusError = { lemmaId, message: `Couldn't add it to your cards: ${e instanceof Error ? e.message : String(e)}` };
@@ -246,9 +246,8 @@
 
   /** A cloze card practises a form: offered for a word that isn't its lemma (pracy, not
    * praca), or that is but has a reason for a case other than the nominative (widzę dom),
-   * in a sentence short enough to keep, unless the word is known or ignored, which takes
-   * its cloze cards out of reviews too, or is part of a fused word (du is de + le), whose
-   * parts share its span. */
+   * in a sentence short enough to keep, unless the word's cards are all known, or it's part
+   * of a fused word (du is de + le), whose parts share its span. */
   function clozeOf(w: (typeof words)[number]) {
     if (!learnable(w) || w.ref.token.mwt !== undefined) return null;
     const isLemma = sameWord(w.entry?.lemma ?? w.ref.token.lemma ?? w.ref.token.text, w.ref.token.text);
@@ -266,8 +265,8 @@
 
   type ClozeRequest = NonNullable<ReturnType<typeof clozeOf>>;
 
-  /** What a word's + adds: the word, if it has no status, and a cloze card of its form in
-   * this sentence, if it can have one and hasn't. No cloze card until the text's have
+  /** What a word's + adds: the word's cards, if it has none, and a cloze card of its form
+   * in this sentence, if it can have one and hasn't. No cloze card until the text's have
    * loaded, so one it has isn't offered again. */
   interface Addition {
     readonly lemmaId: LemmaId | null;
@@ -276,27 +275,28 @@
 
   function additionOf(w: (typeof words)[number]): Addition {
     if (!known.data || !learnable(w)) return { lemmaId: null, cloze: null };
-    const status = known.data[w.lemmaId]?.status;
+    const state = wordState(known.data.get(w.lemmaId));
     const cards = clozes.data ?? null;
-    const request = status === "known" || status === "ignored" || cards === null ? null : clozeOf(w);
+    const request = state === "known" || cards === null ? null : clozeOf(w);
     return {
-      lemmaId: status === undefined ? w.lemmaId : null,
+      lemmaId: state === "new" ? w.lemmaId : null,
       cloze: request && !cards?.has(w.ref.token.start) ? request : null,
     };
   }
 
-  /** Unticking a word takes away what its + added: this sentence's cloze card, then the
-   * word's status, which takes its other cards out of reviews. */
+  /** Unticking a word deletes its cards, cloze cards from other sentences too, after asking
+   * if any has been reviewed. */
   async function removeFromCards(w: (typeof words)[number]): Promise<void> {
     if (!learnable(w)) return;
+    const cards = known.data?.get(w.lemmaId) ?? [];
+    if (cards.some((c) => c.lastReviewedAt !== null) && !confirm(`Delete the ${cards.length} cards of this word and their reviews?`))
+      return;
     const { start } = w.ref.token;
-    const cardId = clozes.data?.get(start);
     adding = start;
     statusError = null;
     clozeError = null;
     try {
-      if (cardId) await removeCloze.mutateAsync({ documentId, start, cardId });
-      await setStatus.mutateAsync({ lemmaId: w.lemmaId, status: null });
+      await forgetCards.mutateAsync(cards);
     } catch (e: unknown) {
       statusError = { lemmaId: w.lemmaId, message: `Couldn't take it out of your cards: ${e instanceof Error ? e.message : String(e)}` };
     }
@@ -315,10 +315,10 @@
     }
   }
 
-  /** A cloze card adds its word too, in the one request. */
+  /** The word's cards first, so its cloze card waits for them to be started. */
   async function add({ lemmaId, cloze: request }: Addition): Promise<void> {
+    if (lemmaId && !(await learn(lemmaId))) return;
     if (request) await cloze(request);
-    else if (lemmaId) await learn(lemmaId);
   }
 
   async function addFromButton(start: number, addition: Addition): Promise<void> {
@@ -450,7 +450,7 @@
               onclick={() => void addFromButton(token.start, addition)}
               ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10" /></svg></button
             >
-          {:else if known.data[word.lemmaId]?.status === "active"}
+          {:else if wordState(known.data.get(word.lemmaId)) === "learning"}
             {@const label = clozeOf(word) ? `${lemma} is in your cards, with this sentence` : `${lemma} is in your cards`}
             <button
               type="button"

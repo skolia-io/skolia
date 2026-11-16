@@ -21,12 +21,8 @@
       "description": "Who's signed in, and what's deployed"
     },
     {
-      "name": "Words",
-      "description": "The words a user is learning, knows or ignores"
-    },
-    {
       "name": "Cards",
-      "description": "Review cards, their schedule and the user's review settings"
+      "description": "Review cards, which are what the user is learning and knows, their schedule and the user's review settings"
     },
     {
       "name": "Documents",
@@ -123,49 +119,6 @@
           "error"
         ],
         "additionalProperties": false
-      },
-      "Word": {
-        "type": "object",
-        "properties": {
-          "lemmaId": {
-            "$ref": "#/components/schemas/LemmaId"
-          },
-          "status": {
-            "$ref": "#/components/schemas/WordStatus"
-          },
-          "updatedAt": {
-            "$ref": "#/components/schemas/Timestamp"
-          },
-          "mature": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "lemmaId",
-          "status",
-          "updatedAt",
-          "mature"
-        ],
-        "additionalProperties": false,
-        "description": "mature: its recognition card is mature, so the reader shows it as known."
-      },
-      "Timestamp": {
-        "type": "string",
-        "format": "date-time",
-        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d\\.\\d{3}(?:Z))$"
-      },
-      "LemmaId": {
-        "type": "string",
-        "pattern": "^(en|fr|pl):[\\s\\S]{1,100}:(ADJ|ADP|ADV|AUX|CCONJ|DET|INTJ|NOUN|NUM|PART|PRON|PROPN|PUNCT|SCONJ|SYM|VERB|X)$",
-        "description": "{lang}:{lemma}:{upos}, pl:pies:NOUN"
-      },
-      "WordStatus": {
-        "type": "string",
-        "enum": [
-          "active",
-          "known",
-          "ignored"
-        ]
       },
       "IsoTime": {
         "type": "string",
@@ -384,6 +337,11 @@
           "entry"
         ],
         "additionalProperties": false
+      },
+      "Timestamp": {
+        "type": "string",
+        "format": "date-time",
+        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d\\.\\d{3}(?:Z))$"
       },
       "LexiconEntry": {
         "type": "object",
@@ -970,6 +928,11 @@
         "format": "uuid",
         "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
       },
+      "LemmaId": {
+        "type": "string",
+        "pattern": "^(en|fr|pl):[\\s\\S]{1,100}:(ADJ|ADP|ADV|AUX|CCONJ|DET|INTJ|NOUN|NUM|PART|PRON|PROPN|PUNCT|SCONJ|SYM|VERB|X)$",
+        "description": "{lang}:{lemma}:{upos}, pl:pies:NOUN"
+      },
       "DocumentId": {
         "type": "string",
         "pattern": "^[0-9a-f]{64}$"
@@ -994,8 +957,8 @@
           "createdAt": {
             "$ref": "#/components/schemas/Timestamp"
           },
-          "active": {
-            "type": "boolean"
+          "state": {
+            "$ref": "#/components/schemas/CardState"
           },
           "scheduleStatus": {
             "type": "string",
@@ -1093,7 +1056,7 @@
           "lemmaId",
           "kind",
           "createdAt",
-          "active",
+          "state",
           "scheduleStatus",
           "dueAt",
           "scheduledDays",
@@ -1101,6 +1064,96 @@
           "cloze"
         ],
         "additionalProperties": false
+      },
+      "NewCard": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "recognition",
+                  "production"
+                ]
+              },
+              "lemmaId": {
+                "$ref": "#/components/schemas/LemmaId"
+              }
+            },
+            "required": [
+              "kind",
+              "lemmaId"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "documentId": {
+                "$ref": "#/components/schemas/DocumentId"
+              },
+              "sentence": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2000
+              },
+              "sentenceStart": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 20000
+              },
+              "blankStart": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 20000
+              },
+              "blankEnd": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 20000
+              },
+              "feats": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              "why": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 500
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "lemmaId": {
+                "$ref": "#/components/schemas/LemmaId"
+              },
+              "kind": {
+                "type": "string",
+                "const": "cloze"
+              }
+            },
+            "required": [
+              "documentId",
+              "sentence",
+              "sentenceStart",
+              "blankStart",
+              "blankEnd",
+              "feats",
+              "why",
+              "lemmaId",
+              "kind"
+            ]
+          }
+        ]
       },
       "CardMade": {
         "type": "object",
@@ -1113,6 +1166,24 @@
           "cardId"
         ],
         "additionalProperties": false
+      },
+      "CardChange": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "$ref": "#/components/schemas/CardState"
+          }
+        },
+        "required": [
+          "state"
+        ]
+      },
+      "CardState": {
+        "type": "string",
+        "enum": [
+          "learning",
+          "known"
+        ]
       },
       "ReadingStatus": {
         "type": "string",
@@ -1586,216 +1657,6 @@
         }
       }
     },
-    "/api/me/words": {
-      "get": {
-        "operationId": "getApiMeWords",
-        "tags": [
-          "Words"
-        ],
-        "summary": "A page of the user's words",
-        "description": "Every word the user has given a status, by lemma id.",
-        "security": [
-          {
-            "session": []
-          },
-          {
-            "apiKey": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "A page of words",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "items": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/Word"
-                      }
-                    },
-                    "next": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "items",
-                    "next"
-                  ],
-                  "additionalProperties": false
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "The request doesn't fit its schema",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Not signed in",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        },
-        "parameters": [
-          {
-            "in": "query",
-            "name": "after",
-            "schema": {}
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "schema": {
-              "default": 500,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 1000
-            }
-          }
-        ]
-      }
-    },
-    "/api/me/words/{lemmaId}": {
-      "put": {
-        "operationId": "putApiMeWordsByLemmaId",
-        "tags": [
-          "Words"
-        ],
-        "summary": "Set a word's status",
-        "description": "active: the user is learning it; known and ignored take its cards out of reviews.",
-        "security": [
-          {
-            "session": []
-          },
-          {
-            "apiKey": []
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Done; no body"
-          },
-          "400": {
-            "description": "The request doesn't fit its schema",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Not signed in",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        },
-        "parameters": [
-          {
-            "in": "path",
-            "name": "lemmaId",
-            "schema": {
-              "$ref": "#/components/schemas/LemmaId"
-            },
-            "required": true,
-            "description": "{lang}:{lemma}:{upos}, pl:pies:NOUN"
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "status": {
-                    "$ref": "#/components/schemas/WordStatus"
-                  }
-                },
-                "required": [
-                  "status"
-                ]
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "operationId": "deleteApiMeWordsByLemmaId",
-        "tags": [
-          "Words"
-        ],
-        "summary": "Clear a word's status",
-        "description": "The word is new again, and its cards are reviewed; nothing is deleted.",
-        "security": [
-          {
-            "session": []
-          },
-          {
-            "apiKey": []
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Done; no body"
-          },
-          "400": {
-            "description": "The request doesn't fit its schema",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Not signed in",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        },
-        "parameters": [
-          {
-            "in": "path",
-            "name": "lemmaId",
-            "schema": {
-              "$ref": "#/components/schemas/LemmaId"
-            },
-            "required": true,
-            "description": "{lang}:{lemma}:{upos}, pl:pies:NOUN"
-          }
-        ]
-      }
-    },
     "/api/me/cards/counts": {
       "get": {
         "operationId": "getApiMeCardsCounts",
@@ -2079,7 +1940,7 @@
           "Cards"
         ],
         "summary": "A page of the user's cards",
-        "description": "A language's (lang), newest first; or a text's cloze cards (documentId), in the order of the text. The cursor must be one the same kind of list gave.",
+        "description": "A language's (lang) or a word's (lemmaId), newest first; or a text's cloze cards (documentId), in the order of the text. One of the three, and a cursor the same kind of list gave. What the user knows of a word is its cards' states.",
         "security": [
           {
             "session": []
@@ -2119,7 +1980,7 @@
             }
           },
           "400": {
-            "description": "Neither lang nor documentId, or both, or another list's cursor",
+            "description": "Not one of lang, lemmaId and documentId, or another list's cursor",
             "content": {
               "application/json": {
                 "schema": {
@@ -2164,6 +2025,14 @@
           },
           {
             "in": "query",
+            "name": "lemmaId",
+            "schema": {
+              "$ref": "#/components/schemas/LemmaId"
+            },
+            "description": "{lang}:{lemma}:{upos}, pl:pies:NOUN"
+          },
+          {
+            "in": "query",
             "name": "documentId",
             "schema": {
               "$ref": "#/components/schemas/DocumentId"
@@ -2177,7 +2046,7 @@
           "Cards"
         ],
         "summary": "Make a card",
-        "description": "Only cloze cards are made this way: a sentence from a text the user sees, with a word blanked out. A word's cards come with its status.",
+        "description": "A word's recognition or production card, one of each per word; or a cloze card, a sentence from a text the user sees with the word blanked out, one per blank. A new card is learning.",
         "security": [
           {
             "session": []
@@ -2188,7 +2057,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The sentence and word already had a card",
+            "description": "The word had a card of the kind, or the sentence and word had one",
             "content": {
               "application/json": {
                 "schema": {
@@ -2253,70 +2122,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "properties": {
-                  "documentId": {
-                    "$ref": "#/components/schemas/DocumentId"
-                  },
-                  "sentence": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 2000
-                  },
-                  "sentenceStart": {
-                    "type": "integer",
-                    "minimum": 0,
-                    "maximum": 20000
-                  },
-                  "blankStart": {
-                    "type": "integer",
-                    "minimum": 0,
-                    "maximum": 20000
-                  },
-                  "blankEnd": {
-                    "type": "integer",
-                    "minimum": 0,
-                    "maximum": 20000
-                  },
-                  "feats": {
-                    "type": "object",
-                    "propertyNames": {
-                      "type": "string"
-                    },
-                    "additionalProperties": {
-                      "type": "string"
-                    }
-                  },
-                  "why": {
-                    "anyOf": [
-                      {
-                        "type": "string",
-                        "maxLength": 500
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  },
-                  "lemmaId": {
-                    "$ref": "#/components/schemas/LemmaId"
-                  },
-                  "kind": {
-                    "type": "string",
-                    "const": "cloze"
-                  }
-                },
-                "required": [
-                  "documentId",
-                  "sentence",
-                  "sentenceStart",
-                  "blankStart",
-                  "blankEnd",
-                  "feats",
-                  "why",
-                  "lemmaId",
-                  "kind"
-                ]
+                "$ref": "#/components/schemas/NewCard"
               }
             }
           }
@@ -2324,13 +2130,84 @@
       }
     },
     "/api/me/cards/{cardId}": {
+      "patch": {
+        "operationId": "patchApiMeCardsByCardId",
+        "tags": [
+          "Cards"
+        ],
+        "summary": "Change a card's state",
+        "description": "known takes it out of reviews; learning puts it back where it was in its schedule.",
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Done; no body"
+          },
+          "400": {
+            "description": "The request doesn't fit its schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such card",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "cardId",
+            "schema": {
+              "$ref": "#/components/schemas/CardId"
+            },
+            "required": true
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CardChange"
+              }
+            }
+          }
+        }
+      },
       "delete": {
         "operationId": "deleteApiMeCardsByCardId",
         "tags": [
           "Cards"
         ],
         "summary": "Delete a card",
-        "description": "A card of any kind, with its reviews. A word card's word keeps its status.",
+        "description": "A card of any kind, with its reviews.",
         "security": [
           {
             "session": []

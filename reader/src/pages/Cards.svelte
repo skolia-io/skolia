@@ -92,7 +92,7 @@
               {/if}
             </div>
             <div class="side">
-              <span class="schedule" class:paused={!card.active}>{scheduleLabel(card, now)}</span>
+              <span class="schedule" class:paused={card.state === "known"}>{scheduleLabel(card, now)}</span>
               <Button
                 variant="quiet"
                 small

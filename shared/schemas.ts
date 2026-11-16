@@ -4,9 +4,9 @@ import {
   CARD_GROUPS,
   CARD_KINDS,
   CARD_PAGE,
+  CARD_STATES,
   DOCUMENT_PAGE,
   TAG_PAGE,
-  WORD_PAGE,
   LANGS,
   LICENCES,
   MAX_ANNOTATION_TEXT,
@@ -30,7 +30,7 @@ import {
   UPOS,
   USER_TYPES,
   VISIBILITIES,
-  WORD_STATUSES,
+  WORD_CARD_KINDS,
   isShareable,
   parseTag,
   tagFilter,
@@ -66,14 +66,6 @@ export const UserType = z.enum(USER_TYPES);
 export const LemmaId = z
   .templateLiteral([Lang, ":", z.string().min(1).max(MAX_LEMMA_LENGTH), ":", z.enum(UPOS)])
   .meta({ id: "LemmaId", description: "{lang}:{lemma}:{upos}, pl:pies:NOUN" });
-
-export const WordStatus = z.enum(WORD_STATUSES).meta({ id: "WordStatus" });
-
-export const Word = z
-  .object({ lemmaId: LemmaId, status: WordStatus, updatedAt: Timestamp, mature: z.boolean() })
-  .meta({ id: "Word", description: "mature: its recognition card is mature, so the reader shows it as known." });
-
-export const SetWord = z.object({ status: WordStatus });
 
 const PerDay = z.number().int().min(0).max(MAX_NEW_PER_DAY);
 
@@ -141,17 +133,24 @@ const BLANK_IN_SENTENCE = [
  * offsets in the text, and must be inside the sentence. */
 export const NewCloze = ClozeFields.refine(...BLANK_IN_SENTENCE);
 
-/** A card to make. Only cloze cards are made one by one: a word's cards come with its
- * status (SetWord). */
-export const NewCard = ClozeFields.extend({ kind: z.literal("cloze") }).refine(...BLANK_IN_SENTENCE);
+/** A card to make: a word's recognition or production card, one of each per word, or a
+ * cloze card, any number per word, one per blank in a text. */
+export const NewCard = z
+  .discriminatedUnion("kind", [
+    // Strict: a sentence sent with one is a mistake, not something to drop
+    z.strictObject({ kind: z.enum(WORD_CARD_KINDS), lemmaId: LemmaId }),
+    ClozeFields.extend({ kind: z.literal("cloze") }).refine(...BLANK_IN_SENTENCE),
+  ])
+  .meta({ id: "NewCard" });
 
-/** Where a word is in the list of a user's words: by lemma id. */
-export const WordKey = z.tuple([LemmaId]).readonly();
-export const WordsQuery = pageQuery(WordKey, WORD_PAGE);
+export const CardState = z.enum(CARD_STATES).meta({ id: "CardState" });
+
+/** What changes in a card: its state. */
+export const CardChange = z.object({ state: CardState }).meta({ id: "CardChange" });
 
 export const ScheduleStatus = z.enum(SCHEDULE_STATUSES);
 
-/** A card as the list of them has it. active: reviewed, as its word is active.
+/** A card as the list of them has it. state: whether it's reviewed (learning) or known.
  * scheduledDays: the interval its last review gave it. lastReviewedAt: when it was last
  * answered, by the reviewer's clock. cloze: a cloze card's sentence, null for a word's cards. */
 export const Card = z
@@ -160,7 +159,7 @@ export const Card = z
     lemmaId: LemmaId,
     kind: z.enum(CARD_KINDS),
     createdAt: Timestamp,
-    active: z.boolean(),
+    state: CardState,
     scheduleStatus: ScheduleStatus,
     dueAt: Timestamp,
     scheduledDays: z.number().min(0),
@@ -175,31 +174,23 @@ export const NewestCardKey = z.tuple([Timestamp, CardId]).readonly();
 export const TextCardKey = z.tuple([TextOffset]).readonly();
 export const CardKey = z.union([NewestCardKey, TextCardKey]);
 
-/** A page of the user's cards: a language's, newest first; or a text's cloze cards,
- * documentId, in the order of the text. The cursor must be one the same kind of list gave. */
+/** A page of the user's cards: a language's (lang) or a word's (lemmaId), newest first; or
+ * a text's cloze cards (documentId), in the order of the text. One of the three, and a
+ * cursor the same kind of list gave. */
 export const CardsQuery = pageQuery(CardKey, CARD_PAGE)
-  .extend({ lang: Lang.optional(), documentId: DocumentId.optional() })
-  .transform(({ lang, documentId, after, limit }, context) => {
-    if (documentId !== undefined) {
-      if (lang !== undefined) {
-        context.addIssue({ code: "custom", message: "give lang or documentId, not both" });
-        return z.NEVER;
-      }
-      if (after !== undefined && after.length !== 1) {
-        context.addIssue({ code: "custom", message: "after isn't a cursor this list gave" });
-        return z.NEVER;
-      }
-      return { documentId, after, limit };
-    }
-    if (lang === undefined) {
-      context.addIssue({ code: "custom", message: "give lang, or documentId" });
+  .extend({ lang: Lang.optional(), lemmaId: LemmaId.optional(), documentId: DocumentId.optional() })
+  .transform(({ lang, lemmaId, documentId, after, limit }, context) => {
+    if ([lang, lemmaId, documentId].filter((given) => given !== undefined).length !== 1) {
+      context.addIssue({ code: "custom", message: "give one of lang, lemmaId and documentId" });
       return z.NEVER;
     }
-    if (after !== undefined && after.length !== 2) {
+    if (after !== undefined && after.length !== (documentId === undefined ? 2 : 1)) {
       context.addIssue({ code: "custom", message: "after isn't a cursor this list gave" });
       return z.NEVER;
     }
-    return { lang, after, limit };
+    if (documentId !== undefined) return { documentId, after: after as z.output<typeof TextCardKey> | undefined, limit };
+    const newest = after as z.output<typeof NewestCardKey> | undefined;
+    return lemmaId !== undefined ? { lemmaId, after: newest, limit } : { lang: lang!, after: newest, limit };
   });
 
 /** cloze: a cloze card's sentence, null for a word's cards. */

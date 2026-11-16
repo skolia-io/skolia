@@ -13,8 +13,7 @@ import {
 import type { Card, CardId, CardKey, Lang, LemmaId, LexiconEntry, Paginated } from "@skolia/shared/api";
 import type { Cursor } from "@skolia/shared/page";
 import { deleteCard, listCards, lookUp } from "./api.ts";
-import { CLOZES_KEY } from "./clozes.ts";
-import { countsQuery, userQuery } from "./queries.ts";
+import { cardsChanged, userQuery } from "./queries.ts";
 
 const LISTS_KEY = ["me", "cards", "list"] as const;
 
@@ -52,8 +51,7 @@ const deleteMutation = mutationOptions({
       { queryKey: LISTS_KEY },
       (data) => data && { ...data, pages: data.pages.map((page) => ({ ...page, items: page.items.filter((c) => c.id !== cardId) })) },
     );
-    void client.invalidateQueries({ queryKey: CLOZES_KEY });
-    void client.invalidateQueries({ queryKey: countsQuery.queryKey });
+    cardsChanged(client);
   },
 });
 

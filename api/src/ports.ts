@@ -19,14 +19,13 @@ import type {
   Paginated,
   Tag,
   TagKey,
-  WordKey,
   Timestamp,
   UserId,
   Lang,
   LemmaId,
   Lookup,
   Licence,
-  NewCloze,
+  NewCard,
   NewLeft,
   ReadingEntry,
   ReadingFilter,
@@ -40,8 +39,7 @@ import type {
   User,
   Visibility,
   Tags,
-  Word,
-  WordStatus,
+  CardState,
 } from "@skolia/shared/api";
 import type { PageRequest } from "@skolia/shared/page";
 import type { IngestJob } from "@skolia/shared/schema";
@@ -153,31 +151,26 @@ export interface DueCards {
  * id-reused: the review id is another card's. */
 export type ReviewOutcome = ({ kind: "reviewed" } & Reviewed) | { kind: "no-card" } | { kind: "out-of-order" } | { kind: "id-reused" };
 
-/** made: the card is new. had: the text's sentence and word had it. full: the user has
- * MAX_CLOZES. */
-export type ClozeOutcome = { readonly kind: "made" | "had"; readonly cardId: CardId } | { readonly kind: "full" };
+/** made: the card is new. had: the word had one of its kind, or the text's sentence and
+ * word had it. full: it's a cloze card and the user has MAX_CLOZES. */
+export type CardOutcome = { readonly kind: "made" | "had"; readonly cardId: CardId } | { readonly kind: "full" };
 
-/** A user's words, cards and settings, in their own Durable Object. now: the request's
+/** A user's cards and settings, in their own Durable Object. now: the request's
  * time by the API's clock (Deps.now), which the tests set. dayStart: when the user's
  * day started in their time zone; today's new cards count from it. */
 export interface UserData {
-  /** A page of the words the user has given a status, by lemma id. */
-  words(userId: UserId, page: PageRequest<WordKey>): Promise<Paginated<Word, WordKey>>;
-  setWord(userId: UserId, lemmaId: LemmaId, status: WordStatus, now: Timestamp): Promise<void>;
-  /** Clears the word's status and takes its cards, cloze cards too, out of reviews. Deletes
-   * nothing: the cards and their reviews come back when the word is made active again. */
-  clearWordStatus(userId: UserId, lemmaId: LemmaId): Promise<void>;
   /** group: only its cards; undefined, both groups'. */
   due(userId: UserId, lang: Lang, now: Timestamp, dayStart: Timestamp, limit: number, group: CardGroup | undefined): Promise<DueCards>;
   counts(userId: UserId, now: Timestamp, dayStart: Timestamp): Promise<CardCounts[]>;
   review(userId: UserId, request: ReviewRequest, now: Timestamp): Promise<ReviewOutcome>;
-  /** A new cloze card, unless the text's sentence and word already had one or the user has
-   * MAX_CLOZES. */
-  makeCloze(userId: UserId, cloze: NewCloze, now: Timestamp): Promise<ClozeOutcome>;
-  /** A page of a language's cards, newest first, or of a text's, by where their blanks start. */
+  /** A new card, unless the word had one of its kind, or the text's sentence and word had
+   * one, or it's a cloze card and the user has MAX_CLOZES. */
+  makeCard(userId: UserId, card: NewCard, now: Timestamp): Promise<CardOutcome>;
+  /** A page of a language's or a word's cards, newest first, or of a text's, by where their blanks start. */
   cards(userId: UserId, listing: CardListing): Promise<Paginated<Card, CardKey>>;
-  /** Deletes the card and its reviews; a word card's word keeps its status. False if the
-   * user has no such card. */
+  /** False if the user has no such card. */
+  setCardState(userId: UserId, cardId: CardId, state: CardState): Promise<boolean>;
+  /** Deletes the card and its reviews. False if the user has no such card. */
   deleteCard(userId: UserId, cardId: CardId): Promise<boolean>;
   settings(userId: UserId): Promise<Settings>;
   setSettings(userId: UserId, settings: Settings): Promise<void>;

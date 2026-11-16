@@ -272,7 +272,7 @@ const listedCards: readonly Card[] = [
     { ...cards[0]!, id: CardId.parse("00000000-0000-4000-8000-000000000004"), kind: "production" },
     "2026-11-06T08:00:00.000Z",
     { scheduleStatus: "review", dueAt: "2026-12-01T08:00:00.000Z", scheduledDays: 25 },
-    false,
+    "known",
   ),
 ];
 
@@ -281,11 +281,11 @@ function listed(
   { isNew: _, ...card }: ScheduledCard,
   createdAt: string,
   { scheduleStatus, dueAt, scheduledDays }: { scheduleStatus: Card["scheduleStatus"]; dueAt: string; scheduledDays: number },
-  active = true,
+  state: Card["state"] = "learning",
 ): Card {
   return {
     ...card,
-    active,
+    state,
     createdAt: Timestamp.parse(createdAt),
     scheduleStatus,
     dueAt: Timestamp.parse(dueAt),
@@ -299,15 +299,13 @@ function listed(
 function deps(signedIn: boolean, annotations: readonly Annotation[]): Deps {
   const visible = (viewer: UserIdType | null) => documents.filter((d) => d.visibility === "public" || d.user === viewer);
   let settings: Settings = { newLemmasPerDay: 10, newFormsPerDay: 5, formsWithWords: true };
+  let kept = listedCards;
   return {
     auth: {
       handle: async () => new Response(null, { status: 404 }),
       user: async () => (signedIn ? user : null),
     },
     users: {
-      words: async () => ({ items: [], next: null }),
-      setWord: async () => {},
-      clearWordStatus: async () => {},
       due: async (_userId, lang: Lang, _now, _dayStart, _limit, group) => ({
         cards: lang === "pl" ? cards.filter((c) => group === undefined || (c.kind === "cloze") === (group === "forms")) : [],
         newLeft: { words: 4, forms: 3 },
@@ -318,12 +316,24 @@ function deps(signedIn: boolean, annotations: readonly Annotation[]): Deps {
         cardId: request.cardId,
         dueAt: Timestamp.parse("2026-11-10T10:00:00.000Z"),
       }),
-      makeCloze: async () => ({ kind: "made", cardId: CardId.parse("00000000-0000-4000-8000-000000000009") }),
+      makeCard: async () => ({ kind: "made", cardId: CardId.parse("00000000-0000-4000-8000-000000000009") }),
       cards: async (_userId, listing) => ({
-        items: "documentId" in listing || listing.lang !== "pl" ? [] : listedCards,
+        items:
+          "documentId" in listing
+            ? []
+            : "lemmaId" in listing
+              ? kept.filter((c) => c.lemmaId === listing.lemmaId)
+              : listing.lang === "pl"
+                ? kept
+                : [],
         next: null,
       }),
-      deleteCard: async () => true,
+      setCardState: async () => true,
+      deleteCard: async (_userId, cardId) => {
+        const had = kept.some((c) => c.id === cardId);
+        kept = kept.filter((c) => c.id !== cardId);
+        return had;
+      },
       settings: async () => settings,
       setSettings: async (_userId, next) => {
         settings = next;

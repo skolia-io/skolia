@@ -2,12 +2,13 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   CARD_PAGE,
+  MATURE_DAYS,
   MAX_NEW_PER_DAY,
-  WORD_PAGE,
-  lemmaParam,
+  type Card,
   type CardCounts,
   type CardGroup,
   type CardKey,
+  type CardState,
   type Due,
   type Lang,
   type LemmaId,
@@ -16,9 +17,6 @@ import {
   type Reviewed,
   type ReviewRequestInput,
   type Settings,
-  type Word,
-  type WordKey,
-  type WordStatus,
 } from "@skolia/shared/api";
 import { allPages, type Cursor } from "@skolia/shared/page";
 import {
@@ -79,6 +77,15 @@ async function makeCloze(app: App, headers: Headers, lemmaId: LemmaId, n: number
   return body("cloze", client(app, headers).me.cards.$post({ json: { kind: "cloze", ...json } }), 201);
 }
 
+function makeCard(app: App, headers: Headers | undefined, lemmaId: LemmaId, kind: "recognition" | "production") {
+  return client(app, headers).me.cards.$post({ json: { kind, lemmaId } });
+}
+
+/** Makes the word's recognition and production cards, as the reader's + does. */
+async function learn(app: App, headers: Headers, lemmaId: LemmaId): Promise<void> {
+  for (const kind of ["recognition", "production"] as const) await body(`${lemmaId} ${kind}`, makeCard(app, headers, lemmaId, kind), 201);
+}
+
 /** Every card of the language, a page of limit at a time. */
 function listCards(app: App, headers: Headers, lang: Lang, limit = CARD_PAGE.max) {
   return walk(limit, (after?: Cursor<CardKey>) =>
@@ -86,16 +93,22 @@ function listCards(app: App, headers: Headers, lang: Lang, limit = CARD_PAGE.max
   );
 }
 
+/** Every card of the word, newest first. */
+function wordCards(app: App, headers: Headers, lemmaId: LemmaId): Promise<readonly Card[]> {
+  return allPages((after?: Cursor<CardKey>) => body("word's cards", client(app, headers).me.cards.$get({ query: { lemmaId, after } })));
+}
+
+function setState(app: App, headers: Headers | undefined, cardId: string, state: CardState) {
+  return client(app, headers).me.cards[":cardId"].$patch({ param: { cardId }, json: { state } });
+}
+
+/** Marks each of the word's cards, as Review's Known does. */
+async function markWord(app: App, headers: Headers, lemmaId: LemmaId, state: CardState): Promise<void> {
+  for (const card of await wordCards(app, headers, lemmaId)) assert.equal((await setState(app, headers, card.id, state)).status, 204);
+}
+
 function deleteCard(app: App, headers: Headers | undefined, cardId: string) {
   return client(app, headers).me.cards[":cardId"].$delete({ param: { cardId } });
-}
-
-function words(app: App, headers: Headers): Promise<readonly Word[]> {
-  return allPages(async (after?: Cursor<WordKey>) => body("words", client(app, headers).me.words.$get({ query: { after } })));
-}
-
-function mark(app: App, headers: Headers | undefined, lemmaId: LemmaId, status: WordStatus) {
-  return client(app, headers).me.words[":lemmaId"].$put({ param: { lemmaId: lemmaParam(lemmaId) }, json: { status } });
 }
 
 function review(app: App, headers: Headers | undefined, json: ReviewRequestInput) {
@@ -116,7 +129,7 @@ function answer(cardId: string, rating: Rating, at = NOW): ReviewRequestInput {
   return { id: crypto.randomUUID(), cardId, rating, at };
 }
 
-test("an active word gets a recognition and a production card, new and due now, with its lexicon entry", async () => {
+test("a word's recognition and production cards are new and due now, with its lexicon entry, and one of each is made", async () => {
   const app = setup();
   const headers = await signedIn();
   await loadLexicon(
@@ -125,9 +138,9 @@ test("an active word gets a recognition and a production card, new and due now, 
     [{ lemmaId: "pl:pies:NOUN", lemma: "pies", upos: "NOUN", gloss: "dog", paradigms: [{ homonym: "", forms: [["psa", [1]]] }] }],
     [{ Case: "Nom" }, { Case: "Gen" }],
   );
-  assert.equal((await mark(app, headers, "pl:pies:NOUN", "active")).status, 204);
-  assert.equal((await mark(app, headers, "pl:pies:NOUN", "active")).status, 204);
-  assert.equal((await mark(app, headers, "pl:kot:NOUN", "active")).status, 204);
+  await learn(app, headers, "pl:pies:NOUN");
+  const { cardId } = await body("again", makeCard(app, headers, "pl:pies:NOUN", "recognition"), 200);
+  await learn(app, headers, "pl:kot:NOUN");
   const { cards, newLeft, featureSets } = await due(app, headers, "pl");
   assert.deepEqual(newLeft, { words: 20, forms: 20 });
   assert.deepEqual(featureSets, { "1": { Case: "Gen" } });
@@ -140,34 +153,36 @@ test("an active word gets a recognition and a production card, new and due now, 
       ["pl:pies:NOUN", "production", true, "dog"],
     ],
   );
-  assert.deepEqual(await words(app, headers), [
-    { lemmaId: "pl:kot:NOUN", status: "active", updatedAt: "2026-11-04T00:00:00.000Z", mature: false },
-    { lemmaId: "pl:pies:NOUN", status: "active", updatedAt: "2026-11-04T00:00:00.000Z", mature: false },
+  assert.equal(cards[2]?.id, cardId);
+  assert.deepEqual((await wordCards(app, headers, "pl:pies:NOUN")).map((c) => [c.kind, c.state]).sort(), [
+    ["production", "learning"],
+    ["recognition", "learning"],
   ]);
 });
 
-test("known and ignored words have no cards to review, and active brings their cards back", async () => {
+test("a known card isn't reviewed, and learning puts it back where it was in its schedule", async () => {
   const app = setup();
   const headers = await signedIn();
-  await mark(app, headers, "pl:pies:NOUN", "active");
-  await mark(app, headers, "pl:kot:NOUN", "known");
-  await mark(app, headers, "pl:Ola:PROPN", "ignored");
+  await learn(app, headers, "pl:pies:NOUN");
+  await learn(app, headers, "pl:kot:NOUN");
+  await markWord(app, headers, "pl:kot:NOUN", "known");
   assert.equal((await due(app, headers, "pl")).cards.length, 2);
-  await mark(app, headers, "pl:pies:NOUN", "known");
-  assert.equal((await due(app, headers, "pl")).cards.length, 0);
-  await mark(app, headers, "pl:pies:NOUN", "active");
+  const [recognition] = (await due(app, headers, "pl")).cards;
+  assert.ok(recognition);
+  await body("review", review(app, headers, answer(recognition.id, 1)));
+  const later = setup({ at: "2026-11-04T00:30:00Z" });
+  const pies = async () => (await due(later, headers, "pl")).cards.map((c) => [c.id, c.kind, c.isNew]);
+  const before = await pies();
+  assert.equal(before.length, 2);
+  await markWord(app, headers, "pl:pies:NOUN", "known");
+  assert.deepEqual(await pies(), []);
+  assert.deepEqual((await counts(later, headers))[2], none("pl"));
   assert.deepEqual(
-    (await due(app, headers, "pl")).cards.map((c) => c.lemmaId),
-    ["pl:pies:NOUN", "pl:pies:NOUN"],
+    (await wordCards(app, headers, "pl:pies:NOUN")).map((c) => c.state),
+    ["known", "known"],
   );
-  assert.deepEqual(
-    (await words(app, headers)).map((w) => [w.lemmaId, w.status]),
-    [
-      ["pl:Ola:PROPN", "ignored"],
-      ["pl:kot:NOUN", "known"],
-      ["pl:pies:NOUN", "active"],
-    ],
-  );
+  await markWord(app, headers, "pl:pies:NOUN", "learning");
+  assert.deepEqual(await pies(), before);
 });
 
 test("a review schedules the card, a retried review is counted once, and the day's new words are limited by the setting", async () => {
@@ -175,8 +190,8 @@ test("a review schedules the card, a retried review is counted once, and the day
   const headers = await signedIn();
   assert.deepEqual(await body("settings", client(app, headers).me.settings.$get()), DEFAULT_SETTINGS);
   assert.equal((await saveSettings(app, headers, { newLemmasPerDay: 1 })).status, 204);
-  await mark(app, headers, "pl:pies:NOUN", "active");
-  await mark(app, headers, "pl:kot:NOUN", "active");
+  await learn(app, headers, "pl:pies:NOUN");
+  await learn(app, headers, "pl:kot:NOUN");
   const before = (await due(app, headers, "pl")).cards;
   assert.deepEqual(
     before.map((c) => [c.lemmaId, c.kind]),
@@ -215,7 +230,7 @@ test("a word uses one place in the day's allowance, however many of its cards ar
   const app = setup();
   const headers = await signedIn();
   await saveSettings(app, headers, { newLemmasPerDay: 2 });
-  for (const lemmaId of ["pl:a:NOUN", "pl:b:NOUN", "pl:c:NOUN", "pl:d:NOUN"] as const) await mark(app, headers, lemmaId, "active");
+  for (const lemmaId of ["pl:a:NOUN", "pl:b:NOUN", "pl:c:NOUN", "pl:d:NOUN"] as const) await learn(app, headers, lemmaId);
   const first = await due(app, headers, "pl");
   assert.deepEqual(
     first.cards.map((c) => c.lemmaId),
@@ -252,11 +267,11 @@ test("a word uses one place in the day's allowance, however many of its cards ar
   );
 });
 
-test("cloze cards have their own daily allowance, and a new one waits for its word to be started", async () => {
+test("cloze cards have their own daily allowance, and a new one waits for its word's cards to be started", async () => {
   const app = setup();
   const headers = await signedIn();
   await saveSettings(app, headers, { newLemmasPerDay: 1, newFormsPerDay: 1 });
-  await mark(app, headers, "pl:pies:NOUN", "active");
+  await learn(app, headers, "pl:pies:NOUN");
   const clozes = [await makeCloze(app, headers, "pl:pies:NOUN", 0), await makeCloze(app, headers, "pl:pies:NOUN", 1)];
   const kinds = async (group?: CardGroup) => (await due(app, headers, "pl", { group })).cards.map((c) => c.kind);
   assert.deepEqual(await kinds(), ["recognition", "production"]);
@@ -300,14 +315,36 @@ test("cloze cards have their own daily allowance, and a new one waits for its wo
   assert.deepEqual((await counts(later, headers))[2], { lang: "pl", words: { due: 0, new: 1 }, forms: { due: 1, new: 0 } });
 });
 
+test("a cloze card of a word with no cards being learnt, none or all known, doesn't wait for them", async () => {
+  const app = setup();
+  const headers = await signedIn();
+  const { cardId: alone } = await makeCloze(app, headers, "pl:pies:NOUN", 0);
+  assert.deepEqual(
+    (await due(app, headers, "pl", { group: "forms" })).cards.map((c) => c.id),
+    [alone],
+  );
+  assert.deepEqual(
+    (await wordCards(app, headers, "pl:pies:NOUN")).map((c) => c.kind),
+    ["cloze"],
+  );
+  await learn(app, headers, "pl:kot:NOUN");
+  const { cardId: known } = await makeCloze(app, headers, "pl:kot:NOUN", 1);
+  assert.deepEqual(
+    (await due(app, headers, "pl", { group: "forms" })).cards.map((c) => c.id),
+    [alone],
+  );
+  for (const card of await wordCards(app, headers, "pl:kot:NOUN"))
+    if (card.kind !== "cloze") await setState(app, headers, card.id, "known");
+  assert.deepEqual((await due(app, headers, "pl", { group: "forms" })).cards.map((c) => c.id).sort(), [alone, known].sort());
+});
+
 test("each language is reviewed on its own, with its own daily allowance of new words", async () => {
   const app = setup();
   const headers = await signedIn();
   await saveSettings(app, headers, { newLemmasPerDay: 1 });
-  await mark(app, headers, "pl:pies:NOUN", "active");
-  await mark(app, headers, "en:dog:NOUN", "active");
-  await mark(app, headers, "en:cat:NOUN", "active");
-  await mark(app, headers, "en:bird:NOUN", "known");
+  await learn(app, headers, "pl:pies:NOUN");
+  await learn(app, headers, "en:dog:NOUN");
+  await learn(app, headers, "en:cat:NOUN");
   const words = (due: number, fresh: number) => ({ due, new: fresh });
   assert.deepEqual(await counts(app, headers), [{ ...none("en"), words: words(0, 1) }, none("fr"), { ...none("pl"), words: words(0, 1) }]);
   const [polish] = (await due(app, headers, "pl")).cards;
@@ -326,24 +363,22 @@ test("each language is reviewed on its own, with its own daily allowance of new 
   );
 });
 
-test("Easy on a new card makes it mature, and its word shows as such", async () => {
+test("Easy on a new card makes it mature", async () => {
   const app = setup();
   const headers = await signedIn();
-  await mark(app, headers, "pl:pies:NOUN", "active");
+  await learn(app, headers, "pl:pies:NOUN");
   const recognition = (await due(app, headers, "pl")).cards.find((c) => c.kind === "recognition");
   assert.ok(recognition);
   assert.equal((await review(app, headers, answer(recognition.id, 4))).status, 200);
-  assert.deepEqual(
-    (await words(app, headers)).map((w) => w.mature),
-    [true],
-  );
+  const [card] = (await wordCards(app, headers, "pl:pies:NOUN")).filter((c) => c.id === recognition.id);
+  assert.ok(card && card.scheduledDays >= MATURE_DAYS);
 });
 
 test("a review needs a session, the user's card, a grade, and a time that isn't ahead or before the last review", async () => {
   const app = setup();
   assert.equal((await review(app, undefined, answer(crypto.randomUUID(), 3))).status, 401);
   const headers = await signedIn();
-  await mark(app, headers, "pl:pies:NOUN", "active");
+  await learn(app, headers, "pl:pies:NOUN");
   const [card] = (await due(app, headers, "pl")).cards;
   assert.ok(card);
   assert.equal((await review(app, headers, answer(crypto.randomUUID(), 3))).status, 404);
@@ -362,22 +397,22 @@ test("a review needs a session, the user's card, a grade, and a time that isn't 
   assert.equal((await review(app, bob, answer(card.id, 3))).status, 404);
 });
 
-test("words, cards and settings need a session and valid input", async () => {
+test("cards and settings need a session and valid input", async () => {
   const app = setup();
   const anonymous = client(app);
-  assert.equal((await anonymous.me.words.$get({ query: {} })).status, 401);
   assert.equal((await anonymous.me.cards.due.$get({ query: { lang: "pl", dayStart: DAY_START } })).status, 401);
   assert.equal((await anonymous.me.cards.counts.$get({ query: { dayStart: DAY_START } })).status, 401);
   assert.equal((await anonymous.me.settings.$get()).status, 401);
-  assert.equal((await mark(app, undefined, "pl:pies:NOUN", "known")).status, 401);
+  assert.equal((await makeCard(app, undefined, "pl:pies:NOUN", "recognition")).status, 401);
   const headers = await signedIn();
   // Invalid input, which the typed client won't send
-  assert.equal((await raw(app, "PUT", "/api/me/words/pies", headers, { status: "known" })).status, 400);
-  assert.equal((await raw(app, "PUT", "/api/me/words/zz:pies:NOUN", headers, { status: "known" })).status, 400);
-  assert.equal((await raw(app, "PUT", "/api/me/words/pl:pies:NOPE", headers, { status: "known" })).status, 400);
-  assert.equal((await mark(app, headers, "pl:i/lub:CCONJ", "known")).status, 204);
-  assert.equal((await raw(app, "PUT", "/api/me/words/pl:pies:NOUN", headers, { status: "learning" })).status, 400);
-  assert.equal((await raw(app, "PUT", "/api/me/words/pl:pies:NOUN", headers, null)).status, 400);
+  assert.equal((await raw(app, "POST", "/api/me/cards", headers, { kind: "recognition", lemmaId: "pies" })).status, 400);
+  assert.equal((await raw(app, "POST", "/api/me/cards", headers, { kind: "recognition", lemmaId: "zz:pies:NOUN" })).status, 400);
+  assert.equal((await raw(app, "POST", "/api/me/cards", headers, { kind: "recognition", lemmaId: "pl:pies:NOPE" })).status, 400);
+  assert.equal((await raw(app, "POST", "/api/me/cards", headers, { kind: "known", lemmaId: "pl:pies:NOUN" })).status, 400);
+  assert.equal((await raw(app, "POST", "/api/me/cards", headers, { lemmaId: "pl:pies:NOUN" })).status, 400);
+  assert.equal((await raw(app, "POST", "/api/me/cards", headers, { kind: "cloze", lemmaId: "pl:pies:NOUN" })).status, 400);
+  assert.equal((await makeCard(app, headers, "pl:i/lub:CCONJ", "recognition")).status, 201);
   assert.equal((await raw(app, "GET", "/api/me/cards/due", headers, undefined)).status, 400);
   assert.equal((await client(app, headers).me.cards.due.$get({ query: { lang: "pl", dayStart: "today" } })).status, 400);
   assert.equal((await raw(app, "GET", `/api/me/cards/due?dayStart=${DAY_START}`, headers, undefined)).status, 400);
@@ -397,64 +432,47 @@ test("words, cards and settings need a session and valid input", async () => {
   assert.deepEqual(await body("settings", client(app, headers).me.settings.$get()), DEFAULT_SETTINGS);
 });
 
-test("the words come a page at a time, by lemma id", async () => {
+test("a word's cards come a page at a time, newest first, and no other word's", async () => {
   const app = setup();
   const headers = await signedIn();
-  const lemmas: readonly LemmaId[] = ["pl:pies:NOUN", "pl:dom:NOUN", "pl:kot:NOUN", "pl:być:VERB", "pl:ale:CCONJ"];
-  for (const lemmaId of lemmas) assert.equal((await mark(app, headers, lemmaId, "known")).status, 204);
-  const listed = await walk(2, (after?: Cursor<WordKey>) =>
-    body("words", client(app, headers).me.words.$get({ query: { after, limit: "2" } })),
+  await learn(app, headers, "pl:pies:NOUN");
+  await learn(app, headers, "pl:piesek:NOUN");
+  const { cardId: cloze } = await makeCloze(setup({ at: "2026-11-04T01:00:00Z" }), headers, "pl:pies:NOUN", 0);
+  const listed = await walk(1, (after?: Cursor<CardKey>) =>
+    body("cards", client(app, headers).me.cards.$get({ query: { lemmaId: "pl:pies:NOUN", after, limit: "1" } })),
   );
   assert.deepEqual(
-    listed.map((w) => w.lemmaId),
-    [...lemmas].sort(),
+    listed.map((c) => c.lemmaId),
+    ["pl:pies:NOUN", "pl:pies:NOUN", "pl:pies:NOUN"],
   );
-  await refusesBadPages(WORD_PAGE.max, (query) => client(app, headers).me.words.$get({ query }));
-});
-
-function forget(app: App, headers: Headers | undefined, lemmaId: LemmaId) {
-  return client(app, headers).me.words[":lemmaId"].$delete({ param: { lemmaId: lemmaParam(lemmaId) } });
-}
-
-test("taking a word's status away takes its cards out of reviews, and adding it again brings them back with their reviews", async () => {
-  const app = setup();
-  const headers = await signedIn();
-  await mark(app, headers, "pl:pies:NOUN", "active");
-  await mark(app, headers, "pl:kot:NOUN", "active");
-  const recognition = (await due(app, headers, "pl")).cards.find((c) => c.lemmaId === "pl:pies:NOUN" && c.kind === "recognition");
-  assert.ok(recognition);
-  await body("review", review(app, headers, answer(recognition.id, 1)));
-  const { cardId } = await makeCloze(app, headers, "pl:pies:NOUN", 0);
-  await body("cloze review", review(app, headers, answer(cardId, 1)));
-  const later = setup({ at: "2026-11-04T00:30:00Z" });
-  const pies = async () =>
-    (await due(later, headers, "pl")).cards.filter((c) => c.lemmaId === "pl:pies:NOUN").map((c) => [c.id, c.kind, c.isNew]);
-  const before = await pies();
-  assert.equal(before.length, 3);
-
-  assert.equal((await forget(app, headers, "pl:pies:NOUN")).status, 204);
+  assert.equal(listed[0]?.id, cloze);
   assert.deepEqual(
-    (await words(app, headers)).map((w) => w.lemmaId),
-    ["pl:kot:NOUN"],
+    listed
+      .slice(1)
+      .map((c) => c.kind)
+      .sort(),
+    ["production", "recognition"],
   );
-  assert.deepEqual(await pies(), []);
-  assert.deepEqual((await counts(later, headers))[2], { lang: "pl", words: { due: 0, new: 1 }, forms: { due: 0, new: 0 } });
-  assert.equal((await forget(app, headers, "pl:pies:NOUN")).status, 204);
-  assert.equal((await forget(app, headers, "pl:pies:NOUN")).status, 204);
-  assert.equal((await forget(app, headers, "pl:nic:NOUN")).status, 204);
-
-  await mark(app, headers, "pl:pies:NOUN", "active");
-  assert.deepEqual(await pies(), before);
-  assert.deepEqual((await counts(later, headers))[2], { lang: "pl", words: { due: 1, new: 2 }, forms: { due: 1, new: 0 } });
+  assert.deepEqual(await wordCards(app, headers, "pl:kot:NOUN"), []);
+  await refusesBadPages(CARD_PAGE.max, (query) => client(app, headers).me.cards.$get({ query: { lemmaId: "pl:pies:NOUN", ...query } }));
 });
 
-test("taking a word's status away needs a session and a lemma id", async () => {
+test("changing a card's state needs a session, the user's card and a state", async () => {
   const app = setup();
-  assert.equal((await forget(app, undefined, "pl:pies:NOUN")).status, 401);
   const headers = await signedIn();
-  assert.equal((await raw(app, "DELETE", "/api/me/words/pies", headers, undefined)).status, 400);
-  assert.equal((await raw(app, "DELETE", "/api/me/words/zz:pies:NOUN", headers, undefined)).status, 400);
-  assert.equal((await forget(app, headers, "pl:i/lub:CCONJ")).status, 204);
+  await learn(app, headers, "pl:pies:NOUN");
+  const [card] = await wordCards(app, headers, "pl:pies:NOUN");
+  assert.ok(card);
+  assert.equal((await setState(app, undefined, card.id, "known")).status, 401);
+  const bob = await local.signIn((await local.signUp({ name: "Bob", email: "bob@example.com" })).id);
+  assert.equal((await setState(app, bob, card.id, "known")).status, 404);
+  assert.equal((await setState(app, headers, crypto.randomUUID(), "known")).status, 404);
+  assert.equal((await raw(app, "PATCH", `/api/me/cards/${card.id}`, headers, { state: "ignored" })).status, 400);
+  assert.equal((await raw(app, "PATCH", `/api/me/cards/${card.id}`, headers, {})).status, 400);
+  assert.equal((await raw(app, "PATCH", "/api/me/cards/1", headers, { state: "known" })).status, 400);
+  assert.equal((await setState(app, headers, card.id, "known")).status, 204);
+  assert.equal((await setState(app, headers, card.id, "known")).status, 204);
+  assert.deepEqual((await wordCards(app, headers, "pl:pies:NOUN")).find((c) => c.id === card.id)?.state, "known");
 });
 
 test("settings are saved whole, and kept", async () => {
@@ -543,9 +561,9 @@ test("a lexicon lookup gives each language's loaded version, leaving out ids it 
 
 test("a language's cards, of every kind, are listed newest first, a page at a time", async () => {
   const headers = await signedIn();
-  await mark(setup(), headers, "pl:pies:NOUN", "active");
+  await learn(setup(), headers, "pl:pies:NOUN");
   const later = setup({ at: "2026-11-04T01:00:00Z" });
-  await mark(later, headers, "pl:kot:NOUN", "active");
+  await learn(later, headers, "pl:kot:NOUN");
   const { cardId: cloze } = await makeCloze(setup({ at: "2026-11-04T02:00:00Z" }), headers, "pl:pies:NOUN", 0);
   const all = await listCards(later, headers, "pl");
   assert.deepEqual(
@@ -569,7 +587,7 @@ test("a language's cards, of every kind, are listed newest first, a page at a ti
     lemmaId: "pl:pies:NOUN",
     kind: "cloze",
     createdAt: "2026-11-04T02:00:00.000Z",
-    active: true,
+    state: "learning",
     scheduleStatus: "new",
     dueAt: "2026-11-04T02:00:00.000Z",
     scheduledDays: 0,
@@ -579,10 +597,10 @@ test("a language's cards, of every kind, are listed newest first, a page at a ti
   assert.equal(first?.cloze?.sentence, "Widzę psa.");
 });
 
-test("a listed card says whether it's reviewed, where it is in its schedule and when it was last answered", async () => {
+test("a listed card says whether it's known, where it is in its schedule and when it was last answered", async () => {
   const app = setup();
   const headers = await signedIn();
-  await mark(app, headers, "pl:pies:NOUN", "active");
+  await learn(app, headers, "pl:pies:NOUN");
   const recognition = (await listCards(app, headers, "pl")).find((c) => c.kind === "recognition");
   assert.ok(recognition);
   await body("review", review(app, headers, answer(recognition.id, 3)));
@@ -590,17 +608,17 @@ test("a listed card says whether it's reviewed, where it is in its schedule and 
   assert.equal(card?.scheduleStatus, "review");
   assert.equal(card.lastReviewedAt, "2026-11-04T00:00:00.000Z");
   assert.ok(card.dueAt > card.createdAt);
-  assert.equal((await mark(app, headers, "pl:pies:NOUN", "known")).status, 204);
-  assert.deepEqual(
-    (await listCards(app, headers, "pl")).map((c) => c.active),
-    [false, false],
-  );
+  assert.equal((await setState(app, headers, recognition.id, "known")).status, 204);
+  assert.deepEqual((await listCards(app, headers, "pl")).map((c) => [c.kind, c.state]).sort(), [
+    ["production", "learning"],
+    ["recognition", "known"],
+  ]);
 });
 
-test("deleting a word card takes it and its reviews away; its word keeps its status, and becoming active again makes it anew", async () => {
+test("deleting a card takes it and its reviews away, and making it again makes it anew", async () => {
   const app = setup();
   const headers = await signedIn();
-  await mark(app, headers, "pl:pies:NOUN", "active");
+  await learn(app, headers, "pl:pies:NOUN");
   const recognition = (await listCards(app, headers, "pl")).find((c) => c.kind === "recognition");
   assert.ok(recognition);
   await body("review", review(app, headers, answer(recognition.id, 3)));
@@ -615,30 +633,29 @@ test("deleting a word card takes it and its reviews away; its word keeps its sta
     ["production"],
   );
   assert.deepEqual(
-    (await words(app, headers)).map((w) => [w.lemmaId, w.status]),
-    [["pl:pies:NOUN", "active"]],
-  );
-  assert.deepEqual(
     (await due(app, headers, "pl")).cards.map((c) => c.kind),
     ["production"],
   );
-  await mark(app, headers, "pl:pies:NOUN", "known");
-  await mark(app, headers, "pl:pies:NOUN", "active");
+  const { cardId } = await body("again", makeCard(app, headers, "pl:pies:NOUN", "recognition"), 201);
+  assert.notEqual(cardId, recognition.id);
   const again = (await listCards(app, headers, "pl")).find((c) => c.kind === "recognition");
-  assert.ok(again);
-  assert.notEqual(again.id, recognition.id);
+  assert.equal(again?.id, cardId);
   assert.equal(again.scheduleStatus, "new");
 });
 
-test("a list of cards needs a session, a language or a text but not both, and a cursor from the same kind of list", async () => {
+test("a list of cards needs a session, one of a language, a word and a text, and a cursor from the same kind of list", async () => {
   const app = setup();
   assert.equal((await client(app).me.cards.$get({ query: { lang: "pl" } })).status, 401);
   const headers = await signedIn();
   const cards = client(app, headers).me.cards;
   const refused = async (query: Parameters<typeof cards.$get>[0]["query"], error: string) =>
     assert.deepEqual(await body(JSON.stringify(query), cards.$get({ query }), 400), { error });
-  await refused({}, "give lang, or documentId");
-  await refused({ lang: "pl", documentId: "a".repeat(64) }, "give lang or documentId, not both");
+  const one = "give one of lang, lemmaId and documentId";
+  await refused({}, one);
+  await refused({ lang: "pl", documentId: "a".repeat(64) }, one);
+  await refused({ lang: "pl", lemmaId: "pl:pies:NOUN" }, one);
+  await refused({ lemmaId: "pl:pies:NOUN", documentId: "a".repeat(64) }, one);
+  assert.equal((await cards.$get({ query: { lemmaId: "pies" as LemmaId } })).status, 400);
   assert.equal((await cards.$get({ query: { lang: "zz" as Lang } })).status, 400);
   await refusesBadPages(CARD_PAGE.max, (query) => cards.$get({ query: { lang: "pl", ...query } }));
 
