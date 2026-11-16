@@ -24,8 +24,10 @@ on:
   merge_group:
   workflow_dispatch:
 
+# actions: read is for actions-timeline (deploy.yml), which lists the run's jobs
 permissions:
   contents: read
+  actions: read
 
 env:
   CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
@@ -344,30 +346,3 @@ jobs:
     with:
       env: production
     secrets: inherit
-
-  # A Gantt chart of the run's jobs and steps, in its summary, once every other job is done
-  timeline:
-    if: always()
-    needs:
-      - changes
-      - mirror-providers
-      - check
-      - check-curated
-      - screenshots
-      - build-ingest-image
-      - plan-infra
-      - deploy-preview
-      - comment-preview
-      - mergeable
-      - sync-curated-preview
-      - teardown-preview
-      - deploy-staging
-      - deploy-oauth-proxy
-      - sync-curated-staging
-      - check-tag-on-main
-      - deploy-production
-    runs-on: ubuntu-24.04
-    permissions:
-      actions: read
-    steps:
-      - uses: Kesin11/actions-timeline@v3.2.1
