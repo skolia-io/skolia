@@ -1,6 +1,6 @@
-// skolia-oauth-proxy on Cloudflare Workers (api/wrangler.oauth-proxy.jsonc): the previews'
-// Google sign-in (../oauth-proxy.ts). Deployed from main by just deploy-oauth-proxy.
-import { oauthProxyHandler } from "../oauth-proxy.ts";
+// skolia-oauth-proxy on Cloudflare Workers (wrangler.jsonc): the previews' Google sign-in
+// (handler.ts). Deployed from main by just deploy-oauth-proxy.
+import { oauthProxyHandler } from "./handler.ts";
 
 interface Env {
   /** wrangler vars */

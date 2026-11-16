@@ -13,7 +13,7 @@ export interface AuthConfig {
   secret: string;
   /** Without it there's no Google sign-in, but API keys still work. */
   google: { clientId: string; clientSecret: string } | undefined;
-  /** Previews: Google sends their sign-in to the OAuth proxy at url (oauth-proxy.ts), whose
+  /** Previews: Google sends their sign-in to the OAuth proxy at url (oauth-proxy/), whose
    * redirect URI it has, and the proxy hands the profile back encrypted with secret. */
   oauthProxy: { url: string; secret: string } | undefined;
 }

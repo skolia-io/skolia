@@ -91,8 +91,8 @@ def config(env: str) -> None:
     web = promote("wrangler.jsonc", env)
     web["workers_dev"] = True
     web["preview_urls"] = False
-    # Google sign-in goes through the OAuth proxy (api/src/oauth-proxy.ts)
-    proxy = as_string(as_object(read("wrangler.oauth-proxy.jsonc").get("vars"), "oauth-proxy vars").get("BASE_URL"), "oauth-proxy BASE_URL")
+    # Google sign-in goes through the OAuth proxy (oauth-proxy/)
+    proxy = as_string(as_object(read("../oauth-proxy/wrangler.jsonc").get("vars"), "oauth-proxy vars").get("BASE_URL"), "oauth-proxy BASE_URL")
     web["vars"] = {
         **as_object(web.get("vars"), "vars"),
         "BASE_URL": url(env),

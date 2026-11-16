@@ -4,7 +4,7 @@ import { oAuthProxy } from "better-auth/plugins/oauth-proxy";
 export type OAuthProxyConfig = {
   /** Its own URL, whose /api/auth/callback/google is the Google client's redirect URI */
   readonly baseURL: string;
-  /** Shared with the previews (auth.ts, AuthConfig.oauthProxy) */
+  /** Shared with the previews (api/src/auth.ts, AuthConfig.oauthProxy) */
   readonly secret: string;
   readonly google: { readonly clientId: string; readonly clientSecret: string };
   /** The origins it hands a profile to */

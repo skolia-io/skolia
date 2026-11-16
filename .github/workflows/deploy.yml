@@ -97,7 +97,7 @@ jobs:
       # The environment's Google OAuth client (infra/README.md); the previews' is skolia-preview
       GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
       GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
-      # The preview environment's only: its sign-in goes through the OAuth proxy (api/src/oauth-proxy.ts)
+      # The preview environment's only: its sign-in goes through the OAuth proxy (oauth-proxy/)
       OAUTH_PROXY_SECRET: ${{ secrets.OAUTH_PROXY_SECRET }}
     steps:
       # The tags, for git describe (justfile deploy-web and e2e)

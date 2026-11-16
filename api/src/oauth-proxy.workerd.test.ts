@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test, type TestContext } from "node:test";
 import { createAuth } from "./auth.ts";
-import { CALLBACK_PATH, oauthProxyHandler } from "./oauth-proxy.ts";
+import { CALLBACK_PATH, oauthProxyHandler } from "@skolia/oauth-proxy";
 import { local, useLocal } from "./testing/app.ts";
 import { authConfig } from "./testing/harness.ts";
 

@@ -299,7 +299,7 @@ jobs:
       env: staging
     secrets: inherit
 
-  # The previews' Google sign-in (api/wrangler.oauth-proxy.jsonc): one for all of them, from main
+  # The previews' Google sign-in (oauth-proxy/): one for all of them, from main
   deploy-oauth-proxy:
     if: needs.changes.outputs.deploy == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: [changes, check]

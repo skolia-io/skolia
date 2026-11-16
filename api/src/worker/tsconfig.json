@@ -7,7 +7,6 @@
     ".",
     "../app.ts",
     "../auth.ts",
-    "../oauth-proxy.ts",
     "../ports.ts",
     "../user/migrator.ts",
     "../user/migrations/0*.ts",

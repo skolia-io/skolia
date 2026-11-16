@@ -28,7 +28,7 @@ interface Env extends LexiconBindings {
   BETTER_AUTH_SECRET?: string;
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
-  /** A preview's (infra/preview.py): the OAuth proxy's URL (worker/oauth-proxy.ts), where its Google sign-in goes */
+  /** A preview's (infra/preview.py): the OAuth proxy's URL (oauth-proxy/), where its Google sign-in goes */
   OAUTH_PROXY_URL?: string;
   OAUTH_PROXY_SECRET?: string;
 }

@@ -1,10 +1,10 @@
-// skolia-oauth-proxy: the previews' Google sign-in (src/worker/oauth-proxy.ts). One for
-// all previews, deployed from main (just deploy-oauth-proxy); its secrets are the
-// oauth-proxy GitHub environment's. infra/preview.py gives previews its URL.
+// skolia-oauth-proxy: the previews' Google sign-in (src/handler.ts). One for all previews,
+// deployed from main (just deploy-oauth-proxy); its secrets are the oauth-proxy GitHub
+// environment's. infra/preview.py gives previews its URL.
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "skolia-oauth-proxy",
-  "main": "src/worker/oauth-proxy.ts",
+  "main": "src/index.ts",
   "compatibility_date": "2026-10-19",
   "minify": true,
   "workers_dev": false,

@@ -157,7 +157,7 @@ deploy-web env:
       + ({GOOGLE_CLIENT_ID: env.GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET: env.GOOGLE_CLIENT_SECRET, OAUTH_PROXY_SECRET: env.OAUTH_PROXY_SECRET} | with_entries(select((.value // "") != "")))' > "$dir/secrets.json"
     infra/wrangler.sh {{ env }} deploy --define "VERSION:\"$VITE_VERSION\"" --secrets-file "$dir/secrets.json"
 
-# The previews' Google sign-in (api/wrangler.oauth-proxy.jsonc), with GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
+# The previews' Google sign-in (oauth-proxy/), with GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
 # and OAUTH_PROXY_SECRET from the environment (the oauth-proxy GitHub environment's, in CI) as its secrets
 deploy-oauth-proxy:
     #!/usr/bin/env bash
@@ -166,7 +166,7 @@ deploy-oauth-proxy:
     trap 'rm -rf "$dir"' EXIT
     jq -n '{GOOGLE_CLIENT_ID: env.GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET: env.GOOGLE_CLIENT_SECRET, OAUTH_PROXY_SECRET: env.OAUTH_PROXY_SECRET}
       | if any(.[]; (. // "") == "") then error("GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and OAUTH_PROXY_SECRET must be set") end' > "$dir/secrets.json"
-    cd api && pnpm exec wrangler deploy -c wrangler.oauth-proxy.jsonc --secrets-file "$dir/secrets.json"
+    cd oauth-proxy && pnpm exec wrangler deploy --secrets-file "$dir/secrets.json"
 
 # Build, push and deploy the ingest container
 deploy-ingest env:
