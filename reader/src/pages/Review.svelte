@@ -339,10 +339,7 @@
         <p class="muted">Loading…</p>
       {/if}
     {:else if user && due}
-      <p class="counts muted">
-        {left}
-        to go · {newLeft(due.newLeft)} · <a href="#/cards/{selected}">All cards</a> · <a href="#/settings">Settings</a>
-      </p>
+      <p class="counts muted">{left} to go · {newLeft(due.newLeft)} · <a href="#/settings">Settings</a></p>
       {#if card}
         <section class="flashcard" aria-live="polite" aria-atomic="true">
           <div class="known">
@@ -403,6 +400,9 @@
     {#if failure}
       <p class="error" role="alert">{failure}</p>
     {/if}
+    {#if user && selected}
+      <p class="manage"><a href="#/cards/{selected}">Manage cards</a></p>
+    {/if}
   </div>
 </Page>
 
@@ -447,6 +447,16 @@
   }
 
   .muted {
+    color: var(--muted);
+  }
+
+  .manage {
+    margin: 2rem 0 0;
+    font-size: 0.85rem;
+    text-align: center;
+  }
+
+  .manage a {
     color: var(--muted);
   }
 

@@ -55,7 +55,7 @@
   }
 </script>
 
-<Page title="Cards">
+<Page title="Manage cards">
   {#snippet actions()}
     {#if user && selected}
       <select aria-label="Language" value={selected} onchange={(event) => (location.hash = hash(event.currentTarget.value as Lang, group))}>
