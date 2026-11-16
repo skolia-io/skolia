@@ -1,16 +1,28 @@
 """Generate TypeScript types from the Python schemas, so the API and reader can't drift.
 
 usage: uv run python scripts/gen_ts_types.py > ../shared/schema.gen.ts
+       uv run python scripts/gen_ts_types.py zod > ../shared/schema.zod.gen.ts
 
 tests/test_ts_types.py fails when the checked-in file is out of date.
 """
 
 import keyword
 import re
+import sys
 import types
 import typing
-from collections.abc import Iterator
-from typing import Any, Literal, TypeAliasType, get_args, get_origin, get_type_hints
+from abc import ABC, abstractmethod
+from collections.abc import Iterator, Mapping
+from typing import (
+    Any,
+    ClassVar,
+    Literal,
+    NamedTuple,
+    TypeAliasType,
+    get_args,
+    get_origin,
+    get_type_hints,
+)
 
 from skolia_analysis import blob, schema
 from skolia_analysis.ingest import schema as ingest_schema
@@ -37,81 +49,201 @@ HEADER = """\
 """
 
 IDENTIFIER = re.compile(r"^[A-Za-z_$][A-Za-z0-9_$]*$")
-PRIMITIVES: dict[object, str] = {
-    str: "string",
-    int: "number",
-    float: "number",
-    bool: "boolean",
-    type(None): "null",
-    object: "unknown",
-}
 
 
-class Generator:
+class Field(NamedTuple):
+    key: str
+    required: bool
+    type: str
+
+
+class Emitter(ABC):
+    """Walks the types from the roots, each named one defined once, after those it refers to.
+
+    A subclass says how each kind of type is written in its language.
+    """
+
+    header: str
+    primitives: ClassVar[Mapping[object, str]]
+
     def __init__(self) -> None:
-        self.done: set[str] = set()
         self.sources: dict[str, object] = {}
-        self.order: list[str] = []
+        # In the order they're finished; a type is in sources but not here while it's defined
         self.definitions: dict[str, str] = {}
 
-    def name_of(self, tp: Any) -> str:
-        return str(tp.__name__)
-
     def ref(self, tp: Any) -> str:
-        """The TypeScript for a type used inside another, queueing named types."""
+        """The code for a type used inside another, defining named types."""
         if isinstance(tp, typing.NewType):
-            # Lemma = NewType("Lemma", str): a distinct type in Python, a string in TS
+            # Lemma = NewType("Lemma", str): a distinct type in Python, its supertype here
             return self.ref(tp.__supertype__)
-        if isinstance(tp, TypeAliasType):
+        if isinstance(tp, TypeAliasType) or typing.is_typeddict(tp):
             self.define(tp)
-            return tp.__name__
-        if typing.is_typeddict(tp):
-            self.define(tp)
-            return self.name_of(tp)
-        if tp in PRIMITIVES:
-            return PRIMITIVES[tp]
+            name = str(tp.__name__)
+            return self.named(name, recursive=name not in self.definitions)
+        if tp in self.primitives:
+            return self.primitives[tp]
         origin, args = get_origin(tp), get_args(tp)
         if origin is Literal:
-            return " | ".join(_literal(a) for a in args)
+            return self.literal(args)
         if origin in (types.UnionType, typing.Union):
-            return " | ".join(self.ref(a) for a in args)
+            return self.union([self.ref(a) for a in args])
         if origin is list:
-            inner = self.ref(args[0])
-            return f"({inner})[]" if "|" in inner else f"{inner}[]"
+            return self.array(self.ref(args[0]))
         if origin is dict:
-            key = self.ref(args[0])
-            record = f"Record<{key}, {self.ref(args[1])}>"
-            # A Literal-keyed dict needn't have every key; a Record over a union would
-            return record if key == "string" else f"Partial<{record}>"
+            return self.record(self.ref(args[0]), self.ref(args[1]))
         if origin is tuple:
-            return "[" + ", ".join(self.ref(a) for a in args) + "]"
-        raise TypeError(f"no TypeScript for {tp!r}")
+            return self.tuple([self.ref(a) for a in args])
+        raise TypeError(f"no {type(self).__name__} output for {tp!r}")
 
     def define(self, tp: Any) -> None:
-        name = self.name_of(tp)
-        if name in self.done:
+        name = str(tp.__name__)
+        if name in self.sources:
             if self.sources[name] is not tp:
                 raise TypeError(f"two different types are both named {name}")
             return
-        self.done.add(name)
         self.sources[name] = tp
         if isinstance(tp, TypeAliasType):
-            body = f"export type {name} = {self.ref(tp.__value__)};"
+            body = self.alias(name, self.ref(tp.__value__))
         else:
-            hints = get_type_hints(tp)
             required: frozenset[str] = tp.__required_keys__
-            fields = "\n".join(
-                f"  {_key(key)}{'' if key in required else '?'}: {self.ref(hint)};"
-                for key, hint in hints.items()
-            )
-            body = f"export interface {name} {{\n{fields}\n}}"
-        self.order.append(name)
+            fields = [
+                Field(_key(key), key in required, self.ref(hint))
+                for key, hint in get_type_hints(tp).items()
+            ]
+            body = self.interface(name, fields)
         self.definitions[name] = body
 
     def emit(self) -> Iterator[str]:
-        yield HEADER
-        for name in self.order:
-            yield self.definitions[name] + "\n"
+        yield self.header
+        for body in self.definitions.values():
+            yield body + "\n"
+
+    def named(self, name: str, *, recursive: bool) -> str:
+        """A named type, by name; recursive when it's used while it's being defined."""
+        return name
+
+    @abstractmethod
+    def literal(self, values: tuple[object, ...]) -> str: ...
+
+    @abstractmethod
+    def union(self, members: list[str]) -> str: ...
+
+    @abstractmethod
+    def array(self, item: str) -> str: ...
+
+    @abstractmethod
+    def record(self, key: str, value: str) -> str: ...
+
+    @abstractmethod
+    def tuple(self, items: list[str]) -> str: ...
+
+    @abstractmethod
+    def alias(self, name: str, value: str) -> str: ...
+
+    @abstractmethod
+    def interface(self, name: str, fields: list[Field]) -> str: ...
+
+
+class TypeScript(Emitter):
+    header = HEADER
+    primitives: ClassVar[Mapping[object, str]] = {
+        str: "string",
+        int: "number",
+        float: "number",
+        bool: "boolean",
+        type(None): "null",
+        object: "unknown",
+    }
+
+    def literal(self, values: tuple[object, ...]) -> str:
+        return " | ".join(_literal(v) for v in values)
+
+    def union(self, members: list[str]) -> str:
+        return " | ".join(members)
+
+    def array(self, item: str) -> str:
+        return f"({item})[]" if "|" in item else f"{item}[]"
+
+    def record(self, key: str, value: str) -> str:
+        record = f"Record<{key}, {value}>"
+        # A Literal-keyed dict needn't have every key; a Record over a union would
+        return record if key == "string" else f"Partial<{record}>"
+
+    def tuple(self, items: list[str]) -> str:
+        return "[" + ", ".join(items) + "]"
+
+    def alias(self, name: str, value: str) -> str:
+        return f"export type {name} = {value};"
+
+    def interface(self, name: str, fields: list[Field]) -> str:
+        lines = "\n".join(f"  {f.key}{'' if f.required else '?'}: {f.type};" for f in fields)
+        return f"export interface {name} {{\n{lines}\n}}"
+
+
+ZOD_HEADER = """\
+// Generated by analysis/scripts/gen_ts_types.py zod from the Python schemas. Don't edit.
+// Zod schemas for the types of schema.gen.ts, for the API's OpenAPI spec.
+
+import * as z from "zod";
+import type * as types from "./schema.gen.ts";
+"""
+
+
+class Zod(Emitter):
+    """Zod schemas for the types TypeScript writes, each checked against its type."""
+
+    header = ZOD_HEADER
+    primitives: ClassVar[Mapping[object, str]] = {
+        str: "z.string()",
+        int: "z.number().int()",
+        float: "z.number()",
+        bool: "z.boolean()",
+        type(None): "z.null()",
+        object: "z.unknown()",
+    }
+
+    def named(self, name: str, *, recursive: bool) -> str:
+        return f"z.lazy(() => {name})" if recursive else name
+
+    def literal(self, values: tuple[object, ...]) -> str:
+        if all(isinstance(v, str) for v in values):
+            return "z.enum([" + ", ".join(_literal(v) for v in values) + "])"
+        return _zod_union([f"z.literal({_literal(v)})" for v in values])
+
+    def union(self, members: list[str]) -> str:
+        null = self.primitives[type(None)]
+        others = [m for m in members if m != null]
+        inner = _zod_union(others)
+        return f"{inner}.nullable()" if len(others) < len(members) else inner
+
+    def array(self, item: str) -> str:
+        return f"z.array({item})"
+
+    def record(self, key: str, value: str) -> str:
+        record = "z.record" if key == self.primitives[str] else "z.partialRecord"
+        return f"{record}({key}, {value})"
+
+    def tuple(self, items: list[str]) -> str:
+        return "z.tuple([" + ", ".join(items) + "])"
+
+    def alias(self, name: str, value: str) -> str:
+        return self._schema(name, value)
+
+    def interface(self, name: str, fields: list[Field]) -> str:
+        lines = "\n".join(
+            f"  {f.key}: {f.type}{'' if f.required else '.exactOptional()'}," for f in fields
+        )
+        return self._schema(name, f"z.object({{\n{lines}\n}})")
+
+    def _schema(self, name: str, schema: str) -> str:
+        meta = f'.meta({{ id: "{name}" }})'
+        # Pure, so a bundle keeps only the schemas it uses, though meta() registers each one
+        body = f"/* @__PURE__ */ (() => {schema}{meta})()"
+        return f"export const {name}: z.ZodType<types.{name}> = {body};"
+
+
+def _zod_union(members: list[str]) -> str:
+    return members[0] if len(members) == 1 else "z.union([" + ", ".join(members) + "])"
 
 
 def _literal(value: object) -> str:
@@ -129,12 +261,19 @@ def _key(key: str) -> str:
 
 
 def generate() -> str:
-    generator = Generator()
+    generator = TypeScript()
     for root in ROOTS:
         generator.define(root)
     constants = [f"export const {name} = {value};\n" for name, value in CONSTANTS.items()]
     return "\n".join([*generator.emit(), "".join(constants)])
 
 
+def generate_zod() -> str:
+    generator = Zod()
+    for root in ROOTS:
+        generator.define(root)
+    return "\n".join(generator.emit())
+
+
 if __name__ == "__main__":
-    print(generate(), end="")
+    print(generate_zod() if sys.argv[1:] == ["zod"] else generate(), end="")

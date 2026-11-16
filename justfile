@@ -14,6 +14,7 @@ _default:
 check:
     pnpm exec biome ci
     pnpm check
+    redocly lint api/openapi.json
     cd analysis && uv run ruff check . && uv run ruff format --check . && uv run pyright
     terraform -chdir=infra fmt -check
     TF_DATA_DIR=.terraform-validate terraform -chdir=infra init -backend=false -input=false >/dev/null
@@ -44,6 +45,10 @@ screenshot *args:
 build:
     pnpm --filter @skolia/reader build
     pnpm --dir api exec wrangler deploy --dry-run --outdir dist --env=''
+
+# Write the API's OpenAPI spec (api/openapi.json) from its routes; src/openapi.test.ts fails until you do
+openapi:
+    node api/src/spec.ts
 
 # wrangler dev (both Workers, the ingest container, local D1/R2/queue) and the reader's Vite server,
 # with the curated texts in curated/ synced once the API is up

@@ -8,3 +8,6 @@ packages:
 allowBuilds:
   esbuild: false
   workerd: false
+# hono-openapi 1.5.0 allows standard-openapi 0.2.12, which wants a standard-json newer than 1.5.0 takes
+overrides:
+  "@standard-community/standard-openapi": 0.2.11

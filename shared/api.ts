@@ -151,9 +151,7 @@ export interface Tag {
 }
 
 /** A tag that can be given, and what it means: level:B1, "Intermediate". */
-export interface AvailableTag extends Tag {
-  description: string | null;
-}
+export type AvailableTag = z.output<typeof schemas.AvailableTag>;
 
 /** An entry's tags, each kind to its value. */
 export type Tags = Readonly<Record<string, string>>;
@@ -210,47 +208,14 @@ export function timestamp(date: Date): Timestamp {
 
 /** One user's entry for a text: the viewer's own, or someone's public one. Its title,
  * visibility, licence, author and source are that user's. */
-export interface DocumentSummary {
-  /** The text's: the same text imported twice in one language is one document. */
-  id: DocumentId;
-  title: string;
-  lang: Lang;
-  importedAt: Timestamp;
-  words: number;
-  visibility: Visibility;
-  licence: Licence;
-  /** Who wrote the text, as the uploader gives it. */
-  author: string | null;
-  /** An http(s) URL of where the text is from. */
-  source: string | null;
-  tags: Tags;
-  /** The entry's user: with id, the summary is one (document, user) pair. */
-  importer: { id: UserId; name: string };
-  /** Whether it's the viewer's entry, so they can change or delete it. */
-  mine: boolean;
-  /** Where it is in its language's analysis queue: for the viewer's own document, while
-   * it's queued or analysing, when it's asked for on its own. */
-  queue?: QueuePlace | undefined;
-  state: State;
-  /** The analysis and bundle to show, by name (GET .../analysis/{name}): the current
-   * ones, or while newer ones are queued or analysing (or failed), the previous ones.
-   * Absent until a first analysis is ready. */
-  reading?: ReadingNames | undefined;
-  error?: string | undefined;
-}
+export type DocumentSummary = z.output<typeof schemas.DocumentSummary>;
 
 /** starting: the language's analyser is starting, its container booting or its model
  * loading. ahead: how many texts it analyses before this one, the one it's analysing
  * included; null when it hasn't been handed this one yet. */
-export interface QueuePlace {
-  starting: boolean;
-  ahead: number | null;
-}
+export type QueuePlace = z.output<typeof schemas.QueuePlace>;
 
-export interface ReadingNames {
-  analysis: string;
-  bundle: string;
-}
+export type ReadingNames = z.output<typeof schemas.ReadingNames>;
 
 /** Which entries a list of documents keeps. mine: only the viewer's own, public or
  * private. title: those whose title has it, case aside (ASCII letters' case only). */
@@ -360,31 +325,17 @@ export type ReviewRequestInput = z.input<typeof schemas.ReviewRequest>;
 
 /** A lexicon entry: what a card shows. Its paradigms' forms point into feature sets,
  * ["psa", [50, 51]], which the response carries (FeatureSets). */
-export interface LexiconEntry {
-  lemmaId: LemmaId;
-  lemma: string;
-  upos: Upos;
-  senses: Sense[];
-  relations: Relation[];
-  /** How the lemma is said */
-  pronunciations: Pronunciation[];
-  paradigms: BundleParadigm[];
-}
+export type LexiconEntry = z.output<typeof schemas.LexiconEntry>;
 
 /** The feature sets a response's paradigms use, by id: { "50": { Case: "Gen", ... } }. An
  * id means something only within its language's loaded lexicon. */
-export type FeatureSets = Record<string, Feats>;
+export type FeatureSets = z.output<typeof schemas.FeatureSets>;
 
 /** Entries by lemma id, and the feature sets their paradigms use, by language. */
-export interface Lookup {
-  entries: LexiconEntry[];
-  featureSets: Partial<Record<Lang, FeatureSets>>;
-}
+export type Lookup = z.output<typeof schemas.Lookup>;
 
 /** A card to review. entry is null if the lexicon doesn't have the lemma. */
-export interface DueCard extends ScheduledCard {
-  entry: LexiconEntry | null;
-}
+export type DueCard = z.output<typeof schemas.DueCard>;
 
 export type ScheduledCard = z.output<typeof schemas.ScheduledCard>;
 
@@ -424,15 +375,10 @@ export function blankParts(cloze: Pick<Cloze, "sentence" | "sentenceStart" | "bl
 }
 
 /** The cloze card made, or the one the sentence and word already had. */
-export interface ClozeMade {
-  readonly cardId: CardId;
-}
+export type ClozeMade = Readonly<z.output<typeof schemas.ClozeMade>>;
 
 /** One of a text's cloze cards, by where its blank starts in it. */
-export type ClozeStart = {
-  readonly cardId: CardId;
-  readonly start: number;
-};
+export type ClozeStart = Readonly<z.output<typeof schemas.ClozeStart>>;
 
 /** Where a text is on the user's reading list. A text that isn't on it has none. */
 export const READING_STATUSES = ["to-read", "reading", "finished"] as const;
@@ -472,52 +418,31 @@ export type AnnotationKind = AnnotationContent["kind"];
 export const MAX_ANNOTATION_TEXT = 2000;
 
 /** A text on the reading list, with the entry the user sees for it. */
-export type ListedReading = ReadingEntry & { readonly document: DocumentSummary };
+export type ListedReading = z.output<typeof schemas.ListedReading>;
 
 /** What's left of today's allowances: words in lemmas, forms in cards. */
-export type NewLeft = Readonly<Record<CardGroup, number>>;
+export type NewLeft = Readonly<z.output<typeof schemas.NewLeft>>;
 
 /** Cards due now, then new cards up to what's left of today's allowances. */
-export interface Due {
-  cards: DueCard[];
-  newLeft: NewLeft;
-  /** The feature sets the cards' paradigms use, in the cards' language */
-  featureSets: FeatureSets;
-}
+export type Due = z.output<typeof schemas.Due>;
 
 /** Cards due now, and what new would come up today: words' lemmas, as newLeft counts them,
  * and forms' cards. */
-export interface Tally {
-  readonly due: number;
-  readonly new: number;
-}
+export type Tally = Readonly<z.output<typeof schemas.Tally>>;
 
 /** A language's cards to review, by group. */
-export type CardCounts = { readonly lang: Lang } & Readonly<Record<CardGroup, Tally>>;
+export type CardCounts = Readonly<z.output<typeof schemas.CardCounts>>;
 
 /** A card after a review: when it's due next. */
-export interface Reviewed {
-  cardId: CardId;
-  dueAt: Timestamp;
-}
+export type Reviewed = z.output<typeof schemas.Reviewed>;
 
 /** standard: someone who signed in. system: skolia.io's own accounts, the end-to-end
  * tests' importer and the curated texts'. */
 export const USER_TYPES = ["standard", "system"] as const;
 export type UserType = (typeof USER_TYPES)[number];
 
-export interface User {
-  id: UserId;
-  name: string;
-  email: string;
-  image: string | null;
-  type: UserType;
-}
+export type User = z.output<typeof schemas.User>;
 
-export interface Version {
-  version: string;
-}
+export type Version = z.output<typeof schemas.Version>;
 
-export interface ApiError {
-  error: string;
-}
+export type ApiError = z.output<typeof schemas.ApiError>;

@@ -3,10 +3,10 @@
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { HTTPException } from "hono/http-exception";
-import type { Context, TypedResponse } from "hono";
+import type { Context, Env, TypedResponse } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import type { JSONParsed } from "hono/utils/types";
-import { zValidator } from "@hono/zod-validator";
+import type { StandardSchemaV1 } from "@standard-schema/spec";
 import * as z from "zod";
 import { LANGS, MAX_TEXT_LENGTH, type ApiError, type User, type Version } from "@skolia/shared/api";
 import * as schemas from "@skolia/shared/schemas";
@@ -17,7 +17,21 @@ import * as positions from "./controllers/positions.ts";
 import * as readingList from "./controllers/reading-list.ts";
 import { fail, ok, type BlobResult, type Failed, type NotModified, type Result } from "./controllers/result.ts";
 import { log } from "./log.ts";
+import {
+  NOT_SIGNED_IN,
+  NO_BODY,
+  REDOC_PAGE,
+  SCALAR_PAGE,
+  SIGNED_IN,
+  TAGS,
+  describe,
+  error,
+  json,
+  responses,
+  validator,
+} from "./openapi.ts";
 import type { Deps } from "./ports.ts";
+import spec from "../openapi.json" with { type: "json" };
 
 const logger = log("api");
 
@@ -31,6 +45,26 @@ const MAX_ANNOTATION_BYTES = 16 * 1024;
 const LEMMA_ID_MESSAGE = `lemma id must be {lang}:{lemma}:{upos}, lang one of ${LANGS.join(", ")}`;
 
 export type AppType = ReturnType<typeof createApp>;
+
+/** A route for the signed-in user, in the spec. */
+function mine(tag: string, summary: string, description?: string) {
+  return describe({ tags: [tag], summary, ...(description === undefined ? {} : { description }), security: SIGNED_IN });
+}
+
+/** A route anyone may call, which shows the signed-in user more. */
+function anyone(tag: string, summary: string, description?: string) {
+  return describe({ tags: [tag], summary, ...(description === undefined ? {} : { description }), security: [{}, ...SIGNED_IN] });
+}
+
+const JSON_ERROR = { "application/json": { schema: { $ref: "#/components/schemas/ApiError" } } };
+
+/** An analysis or bundle: stored Brotli-compressed, and sent that way. */
+const PART_RESPONSES = {
+  200: { description: "The JSON, with Content-Encoding: br", content: { "application/json": { schema: { type: "object" } } } },
+  304: { description: "The client's copy is current" },
+  404: { description: "No such document, or it has no such analysis or bundle", content: JSON_ERROR },
+  406: { description: "The client doesn't accept Brotli", content: JSON_ERROR },
+} as const;
 
 export function createApp(deps: Deps) {
   // Stop reading an oversized body early instead of parsing it and then refusing it
@@ -54,6 +88,8 @@ export function createApp(deps: Deps) {
     return send<R | Failed<401>>(c, user ? await run(user) : fail(401, message));
   }
 
+  const responds = (specs: Parameters<typeof responses>[0]) => responses(specs, deps.checkResponses ?? false);
+
   const app = new Hono()
     .onError((error, c) => {
       if (error instanceof HTTPException && error.status < 500) {
@@ -62,141 +98,356 @@ export function createApp(deps: Deps) {
       logger.error("request failed", { method: c.req.method, path: c.req.path, error });
       return c.json({ error: "internal error" } satisfies ApiError, 500);
     })
-    .get("/api/version", (c) => c.json({ version: deps.version } satisfies Version, 200))
-    .on(["GET", "POST"], "/api/auth/*", (c) => deps.auth.handle(c.req.raw))
-    .get("/api/me", (c) => signedIn(c, async (user) => ok(user)))
-    .get("/api/me/words", zValidator("query", schemas.WordsQuery, badRequest()), (c) =>
-      signedIn(c, (user) => cards.words(deps, user, c.req.valid("query"))),
+    .get(
+      "/api/version",
+      describe({ tags: [TAGS.account], summary: "The deployed version", security: [] }),
+      responds({ 200: json(schemas.Version, "The version, from git describe") }),
+      async (c) => c.json({ version: deps.version } satisfies Version, 200),
+    )
+    .on(["GET", "POST"], "/api/auth/*", describe({ hide: true }), (c) => deps.auth.handle(c.req.raw))
+    .get("/api/openapi.json", describe({ hide: true }), (c) => c.json({ ...spec, info: { ...spec.info, version: deps.version } }, 200))
+    .get("/api/docs", describe({ hide: true }), (c) => c.redirect("/api/scalar", 302))
+    .get("/api/scalar", describe({ hide: true }), (c) => c.html(SCALAR_PAGE))
+    .get("/api/redoc", describe({ hide: true }), (c) => c.html(REDOC_PAGE))
+    .get("/api/me", mine(TAGS.account, "The signed-in user"), responds({ 200: json(schemas.User, "The user"), 401: NOT_SIGNED_IN }), (c) =>
+      signedIn(c, async (user) => ok(user)),
+    )
+    .get(
+      "/api/me/words",
+      mine(TAGS.words, "A page of the user's words", "Every word the user has given a status, by lemma id."),
+      validator("query", schemas.WordsQuery, badRequest()),
+      responds({ 200: json(schemas.page(schemas.Word), "A page of words"), 401: NOT_SIGNED_IN }),
+      (c) => signedIn(c, (user) => cards.words(deps, user, c.req.valid("query"))),
     )
     .put(
       "/api/me/words/:lemmaId",
-      zValidator("param", z.object({ lemmaId: schemas.LemmaId }), badRequest(LEMMA_ID_MESSAGE)),
-      zValidator("json", schemas.SetWord, badRequest()),
+      mine(TAGS.words, "Set a word's status", "active: the user is learning it; known and ignored take its cards out of reviews."),
+      validator("param", z.object({ lemmaId: schemas.LemmaId }), badRequest(LEMMA_ID_MESSAGE)),
+      validator("json", schemas.SetWord, badRequest()),
+      responds({ 204: NO_BODY, 401: NOT_SIGNED_IN }),
       (c) => signedIn(c, (user) => cards.setWord(deps, user, c.req.valid("param").lemmaId, c.req.valid("json").status)),
     )
-    .delete("/api/me/words/:lemmaId", zValidator("param", z.object({ lemmaId: schemas.LemmaId }), badRequest(LEMMA_ID_MESSAGE)), (c) =>
-      signedIn(c, (user) => cards.clearWordStatus(deps, user, c.req.valid("param").lemmaId)),
+    .delete(
+      "/api/me/words/:lemmaId",
+      mine(TAGS.words, "Clear a word's status", "The word is new again, and its cards are reviewed; nothing is deleted."),
+      validator("param", z.object({ lemmaId: schemas.LemmaId }), badRequest(LEMMA_ID_MESSAGE)),
+      responds({ 204: NO_BODY, 401: NOT_SIGNED_IN }),
+      (c) => signedIn(c, (user) => cards.clearWordStatus(deps, user, c.req.valid("param").lemmaId)),
     )
-    .get("/api/me/cards/counts", zValidator("query", schemas.CountsQuery, badRequest("dayStart must be an ISO time")), (c) =>
-      signedIn(c, (user) => cards.counts(deps, user, c.req.valid("query").dayStart)),
+    .get(
+      "/api/me/cards/counts",
+      mine(TAGS.cards, "Cards to review, by language", "dayStart: when the user's day started; today's new cards count from it."),
+      validator("query", schemas.CountsQuery, badRequest("dayStart must be an ISO time")),
+      responds({ 200: json(z.array(schemas.CardCounts), "Each language's due and new cards, by group"), 401: NOT_SIGNED_IN }),
+      (c) => signedIn(c, (user) => cards.counts(deps, user, c.req.valid("query").dayStart)),
     )
     .get(
       "/api/me/cards/due",
-      zValidator("query", schemas.DueQuery, badRequest("lang must be a language, dayStart an ISO time and group words or forms")),
+      mine(TAGS.cards, "Cards to review now", "Cards due now, then new cards up to what's left of today's allowances."),
+      validator("query", schemas.DueQuery, badRequest("lang must be a language, dayStart an ISO time and group words or forms")),
+      responds({ 200: json(schemas.Due, "The cards, with their lexicon entries"), 401: NOT_SIGNED_IN }),
       (c) => {
         const { lang, dayStart, group } = c.req.valid("query");
         return signedIn(c, (user) => cards.due(deps, user, lang, dayStart, group));
       },
     )
-    .post("/api/me/reviews", zValidator("json", schemas.ReviewRequest, badRequest()), (c) =>
-      signedIn(c, (user) => cards.review(deps, user, c.req.valid("json"))),
+    .post(
+      "/api/me/reviews",
+      mine(TAGS.cards, "Review a card", "The review's id is the client's, so a retried review isn't counted twice."),
+      validator("json", schemas.ReviewRequest, badRequest()),
+      responds({
+        200: json(schemas.Reviewed, "When the card is due next"),
+        400: error("The review is in the future"),
+        401: NOT_SIGNED_IN,
+        404: error("No such card"),
+        409: error("The review's id was used for another review"),
+      }),
+      (c) => signedIn(c, (user) => cards.review(deps, user, c.req.valid("json"))),
     )
-    .post("/api/me/clozes", zValidator("json", schemas.NewCloze, badRequest()), (c) =>
-      signedIn(c, (user) => cards.makeCloze(deps, user, c.req.valid("json"))),
+    .post(
+      "/api/me/clozes",
+      mine(TAGS.cards, "Make a cloze card", "A sentence from a text the user sees, with a word blanked out."),
+      validator("json", schemas.NewCloze, badRequest()),
+      responds({
+        200: json(schemas.ClozeMade, "The sentence and word already had a card"),
+        201: json(schemas.ClozeMade, "A new card"),
+        401: NOT_SIGNED_IN,
+        404: error("No such document"),
+        409: error("The user has as many cloze cards as they may"),
+      }),
+      (c) => signedIn(c, (user) => cards.makeCloze(deps, user, c.req.valid("json"))),
     )
-    .get("/api/me/clozes", zValidator("query", schemas.ClozesQuery, badRequest()), (c) => {
-      const { documentId, ...page } = c.req.valid("query");
-      return signedIn(c, (user) => cards.clozes(deps, user, documentId, page));
-    })
+    .get(
+      "/api/me/clozes",
+      mine(TAGS.cards, "A page of a text's cloze cards", "By where each one's blank starts in the text."),
+      validator("query", schemas.ClozesQuery, badRequest()),
+      responds({ 200: json(schemas.page(schemas.ClozeStart), "A page of cards"), 401: NOT_SIGNED_IN }),
+      (c) => {
+        const { documentId, ...page } = c.req.valid("query");
+        return signedIn(c, (user) => cards.clozes(deps, user, documentId, page));
+      },
+    )
     .delete(
       "/api/me/clozes/:cardId",
-      zValidator("param", z.object({ cardId: schemas.CardId }), badRequest("card id must be a UUID")),
+      mine(TAGS.cards, "Delete a cloze card"),
+      validator("param", z.object({ cardId: schemas.CardId }), badRequest("card id must be a UUID")),
+      responds({ 204: NO_BODY, 401: NOT_SIGNED_IN, 404: error("No such card") }),
       (c) => signedIn(c, (user) => cards.deleteCloze(deps, user, c.req.valid("param").cardId)),
     )
-    .get("/api/me/positions/:id", zValidator("param", z.object({ id: schemas.DocumentId }), badRequest(DOCUMENT_ID_MESSAGE)), (c) =>
-      signedIn(c, (user) => positions.get(deps, user, c.req.valid("param").id)),
+    .get(
+      "/api/me/positions/:id",
+      mine(TAGS.reading, "Where the user is in a text"),
+      validator("param", z.object({ id: schemas.DocumentId }), badRequest(DOCUMENT_ID_MESSAGE)),
+      responds({
+        200: json(z.object({ position: schemas.StoredPosition.nullable() }), "The position, null if there's none"),
+        401: NOT_SIGNED_IN,
+      }),
+      (c) => signedIn(c, (user) => positions.get(deps, user, c.req.valid("param").id)),
     )
     .put(
       "/api/me/positions/:id",
-      zValidator("param", z.object({ id: schemas.DocumentId }), badRequest(DOCUMENT_ID_MESSAGE)),
-      zValidator("json", schemas.ReadingPosition, badRequest()),
+      mine(TAGS.reading, "Save where the user is in a text", "A position older than the saved one is ignored."),
+      validator("param", z.object({ id: schemas.DocumentId }), badRequest(DOCUMENT_ID_MESSAGE)),
+      validator("json", schemas.ReadingPosition, badRequest()),
+      responds({ 204: NO_BODY, 400: error("The position is in the future"), 401: NOT_SIGNED_IN, 404: error("No such document") }),
       (c) => signedIn(c, (user) => positions.set(deps, user, c.req.valid("param").id, c.req.valid("json"))),
     )
-    .get("/api/me/reading-list", zValidator("query", schemas.ReadingQuery, badRequest()), (c) =>
-      signedIn(c, (user) => {
-        const { status, lang, ...page } = c.req.valid("query");
-        return readingList.list(deps, user, { status, lang }, page);
-      }),
+    .get(
+      "/api/me/reading-list",
+      mine(TAGS.reading, "A page of the reading list", "The texts with a status, latest changed first."),
+      validator("query", schemas.ReadingQuery, badRequest()),
+      responds({ 200: json(schemas.page(schemas.ListedReading), "A page of texts"), 401: NOT_SIGNED_IN }),
+      (c) =>
+        signedIn(c, (user) => {
+          const { status, lang, ...page } = c.req.valid("query");
+          return readingList.list(deps, user, { status, lang }, page);
+        }),
     )
-    .get("/api/me/reading-list/:id", zValidator("param", z.object({ id: schemas.DocumentId }), badRequest(DOCUMENT_ID_MESSAGE)), (c) =>
-      signedIn(c, (user) => readingList.get(deps, user, c.req.valid("param").id)),
+    .get(
+      "/api/me/reading-list/:id",
+      mine(TAGS.reading, "A text's place on the reading list"),
+      validator("param", z.object({ id: schemas.DocumentId }), badRequest(DOCUMENT_ID_MESSAGE)),
+      responds({
+        200: json(z.object({ entry: schemas.ReadingEntry.nullable() }), "Its entry, null if it isn't on the list"),
+        401: NOT_SIGNED_IN,
+      }),
+      (c) => signedIn(c, (user) => readingList.get(deps, user, c.req.valid("param").id)),
     )
     .put(
       "/api/me/reading-list/:id",
-      zValidator("param", z.object({ id: schemas.DocumentId }), badRequest(DOCUMENT_ID_MESSAGE)),
-      zValidator("json", schemas.SetReading, badRequest()),
+      mine(TAGS.reading, "Put a text on the reading list, or change its status"),
+      validator("param", z.object({ id: schemas.DocumentId }), badRequest(DOCUMENT_ID_MESSAGE)),
+      validator("json", schemas.SetReading, badRequest()),
+      responds({ 200: json(z.object({ entry: schemas.ReadingEntry }), "Its entry"), 401: NOT_SIGNED_IN, 404: error("No such document") }),
       (c) => signedIn(c, (user) => readingList.set(deps, user, c.req.valid("param").id, c.req.valid("json").status)),
     )
-    .delete("/api/me/reading-list/:id", zValidator("param", z.object({ id: schemas.DocumentId }), badRequest(DOCUMENT_ID_MESSAGE)), (c) =>
-      signedIn(c, (user) => readingList.remove(deps, user, c.req.valid("param").id)),
+    .delete(
+      "/api/me/reading-list/:id",
+      mine(TAGS.reading, "Take a text off the reading list"),
+      validator("param", z.object({ id: schemas.DocumentId }), badRequest(DOCUMENT_ID_MESSAGE)),
+      responds({ 204: NO_BODY, 401: NOT_SIGNED_IN }),
+      (c) => signedIn(c, (user) => readingList.remove(deps, user, c.req.valid("param").id)),
     )
-    .get("/api/me/documents", zValidator("query", schemas.MyDocumentsQuery, badRequest()), (c) =>
-      signedIn(c, (user) => documents.mine(deps, user, c.req.valid("query"))),
+    .get(
+      "/api/me/documents",
+      mine(TAGS.documents, "A page of the user's own documents", "Public and private."),
+      validator("query", schemas.MyDocumentsQuery, badRequest()),
+      responds({ 200: json(schemas.page(schemas.DocumentSummary), "A page of documents"), 401: NOT_SIGNED_IN }),
+      (c) => signedIn(c, (user) => documents.mine(deps, user, c.req.valid("query"))),
     )
-    .get("/api/me/settings", (c) => signedIn(c, (user) => cards.settings(deps, user)))
-    .put("/api/me/settings", zValidator("json", schemas.Settings, badRequest()), (c) =>
-      signedIn(c, (user) => cards.setSettings(deps, user, c.req.valid("json"))),
+    .get(
+      "/api/me/settings",
+      mine(TAGS.cards, "The user's review settings"),
+      responds({ 200: json(schemas.Settings, "The settings"), 401: NOT_SIGNED_IN }),
+      (c) => signedIn(c, (user) => cards.settings(deps, user)),
     )
-    .post("/api/lexicon/entries", zValidator("json", schemas.LookupRequest, badRequest()), async (c) =>
-      send(c, await cards.lookUp(deps, c.req.valid("json").ids)),
+    .put(
+      "/api/me/settings",
+      mine(TAGS.cards, "Change the user's review settings"),
+      validator("json", schemas.Settings, badRequest()),
+      responds({ 204: NO_BODY, 401: NOT_SIGNED_IN }),
+      (c) => signedIn(c, (user) => cards.setSettings(deps, user, c.req.valid("json"))),
     )
-    .get("/api/documents", zValidator("query", schemas.DocumentsQuery, badRequest()), async (c) => {
-      const { tag, lang, q, mine, ...page } = c.req.valid("query");
-      return send(c, await documents.list(deps, await deps.auth.user(c.req.raw.headers), { tags: tag ?? {}, lang, title: q, mine }, page));
-    })
-    .get("/api/tags", zValidator("query", schemas.TagsQuery, badRequest()), async (c) =>
-      send(c, await documents.tags(deps, c.req.valid("query"))),
+    .post(
+      "/api/lexicon/entries",
+      describe({ tags: [TAGS.lexicon], summary: "Look up lexicon entries", description: "A POST so the ids fit in a body.", security: [] }),
+      validator("json", schemas.LookupRequest, badRequest()),
+      responds({ 200: json(schemas.Lookup, "The entries the lexicon has") }),
+      async (c) => send(c, await cards.lookUp(deps, c.req.valid("json").ids)),
     )
-    .post("/api/documents", limit, zValidator("json", schemas.ImportRequest, badRequest()), (c) =>
-      signedIn(c, (user) => documents.importText(deps, user, c.req.valid("json")), "sign in to import"),
-    )
-    .get("/api/documents/:id", async (c) => send(c, await documents.get(deps, c.req.param("id"), await deps.auth.user(c.req.raw.headers))))
-    .patch("/api/documents/:id", zValidator("json", schemas.DocumentUpdate, badRequest()), (c) =>
-      signedIn(c, (user) => documents.update(deps, user, c.req.param("id"), c.req.valid("json"))),
-    )
-    .delete("/api/documents/:id", (c) => signedIn(c, (user) => documents.remove(deps, user, c.req.param("id"))))
-    .get("/api/documents/:id/text", async (c) =>
-      send(c, await documents.text(deps, c.req.param("id"), await deps.auth.user(c.req.raw.headers), c.req.header("if-none-match"))),
-    )
-    .get("/api/documents/:id/analysis/:name", async (c) =>
-      send(
-        c,
-        await documents.part(
-          deps,
-          c.req.param("id"),
-          await deps.auth.user(c.req.raw.headers),
-          "analysis",
-          c.req.param("name"),
-          c.req.header("if-none-match"),
-        ),
+    .get(
+      "/api/documents",
+      anyone(
+        TAGS.documents,
+        "A page of the documents the viewer sees",
+        "Public entries, and the viewer's own. tag=kind:value, once or more, keeps entries with any of the values of each kind; " +
+          "lang, those in the language; q, those whose title has it; mine=true, only the viewer's own.",
       ),
+      validator("query", schemas.DocumentsQuery, badRequest()),
+      responds({ 200: json(schemas.page(schemas.DocumentSummary), "A page of documents"), 401: error("mine=true without a session") }),
+      async (c) => {
+        const { tag, lang, q, mine, ...page } = c.req.valid("query");
+        return send(
+          c,
+          await documents.list(deps, await deps.auth.user(c.req.raw.headers), { tags: tag ?? {}, lang, title: q, mine }, page),
+        );
+      },
     )
-    .get("/api/documents/:id/bundle/:name", async (c) =>
-      send(
-        c,
-        await documents.part(
-          deps,
-          c.req.param("id"),
-          await deps.auth.user(c.req.raw.headers),
-          "bundle",
-          c.req.param("name"),
-          c.req.header("if-none-match"),
-        ),
+    .get(
+      "/api/tags",
+      describe({
+        tags: [TAGS.documents],
+        summary: "A page of the tags that can be given",
+        security: [],
+        description: "By kind, then in each kind's order.",
+      }),
+      validator("query", schemas.TagsQuery, badRequest()),
+      responds({ 200: json(schemas.page(schemas.AvailableTag), "A page of tags") }),
+      async (c) => send(c, await documents.tags(deps, c.req.valid("query"))),
+    )
+    .post(
+      "/api/documents",
+      mine(
+        TAGS.documents,
+        "Import a text",
+        "A text someone else imported gets the user's own entry, with their title, visibility and licence. A failed import is retried by importing the same text again.",
       ),
+      limit,
+      validator("json", schemas.ImportRequest, badRequest()),
+      responds({
+        200: json(schemas.DocumentSummary, "The text was here already"),
+        202: json(schemas.DocumentSummary, "The text is queued for analysis"),
+        400: error("A tag skolia doesn't have"),
+        401: error("Not signed in"),
+        413: error("The text is too long"),
+      }),
+      (c) => signedIn(c, (user) => documents.importText(deps, user, c.req.valid("json")), "sign in to import"),
     )
-    .get("/api/documents/:id/annotations", zValidator("query", schemas.AnnotationsQuery, badRequest()), async (c) => {
-      const { from, to, ...page } = c.req.valid("query");
-      return send(c, await annotations.list(deps, c.req.param("id"), await deps.auth.user(c.req.raw.headers), { from, to }, page));
-    })
-    .post("/api/documents/:id/annotations", annotationLimit, zValidator("json", schemas.NewAnnotation, badRequest()), (c) =>
-      signedIn(c, (user) => annotations.add(deps, user, c.req.param("id"), c.req.valid("json"))),
+    .get(
+      "/api/documents/:id",
+      anyone(TAGS.documents, "A document", "The viewer's own entry for it, else a public one. Opening it queues it again if it needs it."),
+      responds({ 200: json(schemas.DocumentSummary, "The entry, with where it is in the queue"), 404: error("No such document") }),
+      async (c) => send(c, await documents.get(deps, c.req.param("id"), await deps.auth.user(c.req.raw.headers))),
+    )
+    .patch(
+      "/api/documents/:id",
+      mine(
+        TAGS.documents,
+        "Change the user's entry for a text",
+        "A field left out stays as it is; null clears author or source; tags replace all of its tags.",
+      ),
+      validator("json", schemas.DocumentUpdate, badRequest()),
+      responds({
+        200: json(schemas.DocumentSummary, "The changed entry"),
+        400: error("A change that isn't allowed"),
+        401: NOT_SIGNED_IN,
+        403: error("Not the user's entry"),
+        404: error("No such document"),
+      }),
+      (c) => signedIn(c, (user) => documents.update(deps, user, c.req.param("id"), c.req.valid("json"))),
+    )
+    .delete(
+      "/api/documents/:id",
+      mine(
+        TAGS.documents,
+        "Delete the user's entry for a text",
+        "The text and its analyses stay, so importing it again needn't analyse it again.",
+      ),
+      responds({ 204: NO_BODY, 401: NOT_SIGNED_IN, 403: error("Not the user's entry"), 404: error("No such document") }),
+      (c) => signedIn(c, (user) => documents.remove(deps, user, c.req.param("id"))),
+    )
+    .get(
+      "/api/documents/:id/text",
+      anyone(TAGS.documents, "A document's text", "Its id is the text's hash, so what's here never changes; the ETag says so."),
+      describe({
+        responses: {
+          200: { description: "The text", content: { "text/plain": { schema: { type: "string" } } } },
+          304: { description: "The client's copy is current" },
+          404: { description: "No such document", content: JSON_ERROR },
+        },
+      }),
+      async (c) =>
+        send(c, await documents.text(deps, c.req.param("id"), await deps.auth.user(c.req.raw.headers), c.req.header("if-none-match"))),
+    )
+    .get(
+      "/api/documents/:id/analysis/:name",
+      anyone(
+        TAGS.documents,
+        "A document's analysis",
+        "By its name in DocumentSummary.reading: its sentences and tokens (Blob in shared/schema.gen.ts), Brotli-compressed.",
+      ),
+      describe({ responses: PART_RESPONSES }),
+      async (c) =>
+        send(
+          c,
+          await documents.part(
+            deps,
+            c.req.param("id"),
+            await deps.auth.user(c.req.raw.headers),
+            "analysis",
+            c.req.param("name"),
+            c.req.header("if-none-match"),
+          ),
+        ),
+    )
+    .get(
+      "/api/documents/:id/bundle/:name",
+      anyone(
+        TAGS.documents,
+        "A document's lexicon bundle",
+        "By its name in DocumentSummary.reading: the lexicon entries its words need (Bundle in shared/schema.gen.ts), Brotli-compressed.",
+      ),
+      describe({ responses: PART_RESPONSES }),
+      async (c) =>
+        send(
+          c,
+          await documents.part(
+            deps,
+            c.req.param("id"),
+            await deps.auth.user(c.req.raw.headers),
+            "bundle",
+            c.req.param("name"),
+            c.req.header("if-none-match"),
+          ),
+        ),
+    )
+    .get(
+      "/api/documents/:id/annotations",
+      anyone(
+        TAGS.annotations,
+        "A page of an entry's annotations",
+        "Those of the entry the viewer sees, by where they start; from and to keep those overlapping [from, to).",
+      ),
+      validator("query", schemas.AnnotationsQuery, badRequest()),
+      responds({ 200: json(schemas.page(schemas.Annotation), "A page of annotations"), 404: error("No such document") }),
+      async (c) => {
+        const { from, to, ...page } = c.req.valid("query");
+        return send(c, await annotations.list(deps, c.req.param("id"), await deps.auth.user(c.req.raw.headers), { from, to }, page));
+      },
+    )
+    .post(
+      "/api/documents/:id/annotations",
+      mine(TAGS.annotations, "Annotate the user's entry", "Attach a kind and its data to a range of the text."),
+      annotationLimit,
+      validator("json", schemas.NewAnnotation, badRequest()),
+      responds({
+        200: json(schemas.Annotation, "The entry had it already"),
+        201: json(schemas.Annotation, "A new annotation"),
+        400: error("It ends after the text does"),
+        401: NOT_SIGNED_IN,
+        404: error("The user hasn't imported the text"),
+        409: error("The entry has as many annotations as it may"),
+        413: error("The annotation is too big"),
+      }),
+      (c) => signedIn(c, (user) => annotations.add(deps, user, c.req.param("id"), c.req.valid("json"))),
     )
     .delete(
       "/api/documents/:id/annotations/:annotationId",
-      zValidator("param", z.object({ id: z.string(), annotationId: schemas.AnnotationId }), badRequest(ANNOTATION_ID_MESSAGE)),
+      mine(TAGS.annotations, "Delete an annotation from the user's entry"),
+      validator("param", z.object({ id: z.string(), annotationId: schemas.AnnotationId }), badRequest(ANNOTATION_ID_MESSAGE)),
+      responds({ 204: NO_BODY, 401: NOT_SIGNED_IN, 404: error("No such annotation") }),
       (c) => signedIn(c, (user) => annotations.remove(deps, user, c.req.param("id"), c.req.valid("param").annotationId)),
     );
-
   return app;
 }
 
@@ -248,8 +499,11 @@ export function acceptsEncoding(header: string | undefined, encoding: string): b
 
 /** A 400 with the first problem the schema found, or `message` in its place. */
 function badRequest(message?: string) {
-  return (result: { success: true } | { success: false; error: z.core.$ZodError }, c: Context) => {
+  return <E extends Env, P extends string>(
+    result: { success: true } | { success: false; error: readonly StandardSchemaV1.Issue[] },
+    c: Context<E, P>,
+  ) => {
     if (result.success) return undefined;
-    return c.json({ error: message ?? result.error.issues[0]?.message ?? "invalid request" } satisfies ApiError, 400);
+    return c.json({ error: message ?? result.error[0]?.message ?? "invalid request" } satisfies ApiError, 400);
   };
 }

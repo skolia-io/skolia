@@ -1,4 +1,5 @@
-# The tools the justfile needs beyond pnpm and uv: terraform and just, and for just dev,
+# The tools the justfile needs beyond pnpm and uv: terraform, just and redocly (which lints the
+# API's OpenAPI spec), and for just dev,
 # sops and age, and git-lfs for the reader's screenshots. nix develop puts them on PATH. CI adds
 # packages.ci to PATH (.github/actions/setup): tools with Node, pnpm and uv, fetched in one build.
 {
@@ -46,6 +47,7 @@
             paths = [
               terraform
               pkgs.just
+              pkgs.redocly
             ];
           };
         in

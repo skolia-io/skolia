@@ -70,8 +70,10 @@ test("the walk finds timestamps through objects, intersections, pipes and tuples
     assert.ok(paths.includes(path), path);
 });
 
-test("a field that holds a Timestamp is named for its event, with At", () => {
-  const misnamed = timestamps.filter((p) => p.name !== null && !p.name.endsWith("At") && !allowed.has(p.path)).map((p) => p.path);
+test("a field that holds a Timestamp is at, or named for its event with At", () => {
+  const misnamed = timestamps
+    .filter((p) => p.name !== null && p.name !== "at" && !p.name.endsWith("At") && !allowed.has(p.path))
+    .map((p) => p.path);
   assert.deepEqual(misnamed, []);
 });
 
