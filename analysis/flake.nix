@@ -223,7 +223,8 @@
             }
             ''
               mkdir $out
-              skolia-build-lexicon pl ${input."kaikki.org-dictionary-Polish.jsonl"} $out/pl.sqlite
+              skolia-build-lexicon pl ${input."kaikki.org-dictionary-Polish.jsonl"} $out/pl.sqlite \
+                --commons ${input."commons-recordings-pl.txt"}
               unzip -q ${input."walenty_20180630-text.zip"} -d walenty
               skolia-build-valency walenty/walenty_20180630-text $out/pl-valency.json
             '';

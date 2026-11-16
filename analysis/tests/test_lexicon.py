@@ -3,7 +3,7 @@ import sqlite3
 from pathlib import Path
 
 from skolia_analysis.lang.pl.walenty.parse import parse_schema
-from skolia_analysis.lexicon import build, bundle, cards, pronunciation, store
+from skolia_analysis.lexicon import build, bundle, cards, commons, pronunciation, store
 from skolia_analysis.lexicon.kaikki import KaikkiSound
 from skolia_analysis.lexicon.schema import Form, Paradigm, Pronunciation, Recording, Sense
 from skolia_analysis.lexicon.source import Converted
@@ -164,6 +164,46 @@ def test_bundle_pronounces_tokens_and_lemmas(tmp_path: Path) -> None:
         "lead:VERB": [{"ipa": "/liːd/"}],
     }
     assert made.get("recordings") == {"lead:VERB": [lead]}
+
+
+def test_commons_names_give_their_words() -> None:
+    assert commons.word("pl", "LL-Q809 (pol)-Olaf-ósma.wav") == "ósma"
+    assert commons.word("pl", "LL-Q809 (pol)-Jest Spoczko-écru.wav") == "écru"
+    assert commons.word("pl", "LL-Q809 (pol)-Poemat-biało-czerwony.wav") == "biało-czerwony"
+    assert commons.word("pl", "LL-Q809 (pol)-Poemat-à propos.wav") == "à propos"
+    assert commons.word("pl", "Pl-pies.ogg") == "pies"
+    assert commons.word("pl", "Pl-pies-2.ogg") == "pies"
+    assert commons.word("pl", "Pl-biało-czerwony.ogg") == "biało-czerwony"
+    assert commons.word("pl", "Polish flag.svg") is None
+
+
+def test_commons_mp3_url_is_kaikkis() -> None:
+    assert commons.mp3_url("LL-Q809 (pol)-KaMan-cukinię.wav") == (
+        "https://upload.wikimedia.org/wikipedia/commons/transcoded/d/d5/"
+        "LL-Q809_%28pol%29-KaMan-cukini%C4%99.wav/LL-Q809_%28pol%29-KaMan-cukini%C4%99.wav.mp3"
+    )
+
+
+def test_commons_recordings_are_lingua_libres_first() -> None:
+    found = commons.recordings("pl", ["Pl-pies.ogg", "LL-Q809 (pol)-Olaf-pies.wav", "x.png"])
+    assert [r["audio"] for r in found["pies"]] == ["LL-Q809 (pol)-Olaf-pies.wav", "Pl-pies.ogg"]
+    assert list(found) == ["pies"]
+
+
+def test_bundle_falls_back_to_commons_recordings(tmp_path: Path) -> None:
+    path = tmp_path / "pl.sqlite"
+    wiktionary: Recording = {"audio": "Pl-kot.ogg", "mp3_url": "https://x/Pl-kot.ogg.mp3"}
+    psa: Recording = {"audio": "LL-psa.wav", "mp3_url": "https://x/LL-psa.wav.mp3"}
+    kot: Recording = {"audio": "LL-kot.wav", "mp3_url": "https://x/LL-kot.wav.mp3"}
+    said = [
+        store.PronunciationRow("kot", "NOUN", [{"ipa": "/kɔt/"}], [wiktionary]),
+        store.PronunciationRow("pies", "NOUN", [{"ipa": "/ˈpjɛs/"}], []),
+    ]
+    store.write(path, [], {"version": "test/1"}, lambda: said, {"psa": [psa], "kot": [kot]})
+    lexicon = store.Lexicon(path)
+    assert bundle.record(lexicon, "kot", "NOUN") == [wiktionary]
+    assert bundle.record(lexicon, "Psa", "NOUN") == [psa]
+    assert bundle.record(lexicon, "pies", "NOUN") == []
 
 
 def test_recordings_are_the_sounds_with_audio_each_file_once() -> None:

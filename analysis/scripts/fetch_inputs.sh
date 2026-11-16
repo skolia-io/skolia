@@ -3,7 +3,7 @@
 # where the flake finds them by hash, unless the lexicon itself can be fetched from Cachix:
 #   fetch_inputs.sh [lang...]   every language when none is given
 # Each input is kept in R2 as skolia-lexicon-sources/{sha256}-{name}.zst, since kaikki.org
-# overwrites its extract in place. Needs zstd and wrangler credentials.
+# overwrites its extract in place and Commons' categories grow. Needs zstd and wrangler credentials.
 set -euo pipefail
 
 root=$(cd "$(dirname "$0")/../.." && pwd)
@@ -14,7 +14,7 @@ for lang in "$@"; do
   case $lang in
     en) names=" kaikki.org-dictionary-English.jsonl " ;;
     fr) names=" kaikki.org-dictionary-French.jsonl " ;;
-    pl) names=" kaikki.org-dictionary-Polish.jsonl walenty_20180630-text.zip " ;;
+    pl) names=" kaikki.org-dictionary-Polish.jsonl walenty_20180630-text.zip commons-recordings-pl.txt " ;;
     *) echo "fetch_inputs.sh: unknown language $lang" >&2; exit 2 ;;
   esac
   # --max-jobs 0: fetch, but never build

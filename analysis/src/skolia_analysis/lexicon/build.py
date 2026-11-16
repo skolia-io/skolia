@@ -7,13 +7,13 @@ from pathlib import Path
 
 from ..blob import lemma_id
 from ..schema import Upos
-from . import kaikki, store
+from . import commons, kaikki, store
 from .pronunciation import merge as merge_pronunciations
 from .pronunciation import merge_recordings
 from .schema import Paradigm, Pronunciation, Recording, Relation, Sense
 from .source import Converted, LexiconSource
 
-LEXICON_VERSION = "4"
+LEXICON_VERSION = "5"
 
 
 @dataclass
@@ -33,6 +33,8 @@ class Stats:
     """Words with a pronunciation, by part of speech."""
     recorded: int = 0
     """Words with a recording, by part of speech."""
+    commons: int = 0
+    """Spellings with a recording from Commons."""
 
 
 def merge(converted: Iterable[Converted]) -> dict[tuple[str, Upos], Merged]:
@@ -127,7 +129,14 @@ def rows(
             yield store.Row(entry_id, lemma, upos, entry.senses, entry.relations, entry.paradigms)
 
 
-def build(lang: str, source: LexiconSource, kaikki_path: Path, out: Path) -> tuple[int, Stats]:
+def build(
+    lang: str,
+    source: LexiconSource,
+    kaikki_path: Path,
+    out: Path,
+    commons_path: Path | None = None,
+) -> tuple[int, Stats]:
+    """commons_path is a snapshot of Commons' recordings' file names (commons.fetch)."""
     stats = Stats()
     # Named by content: kaikki.org overwrites its extract in place, and a download's
     # mtime is the day it was fetched, so a date would differ between machines
@@ -135,6 +144,9 @@ def build(lang: str, source: LexiconSource, kaikki_path: Path, out: Path) -> tup
     lexicon_version = f"{LEXICON_VERSION}+kaikki-{extract}"
     if source.version:
         lexicon_version += f"+{source.version}"
+    if commons_path is not None:
+        lexicon_version += f"+commons-{_sha256(commons_path)[:12]}"
+    by_word = commons.recordings(lang, commons.read(commons_path)) if commons_path else {}
     meta = {"lang": lang, "version": lexicon_version, "attribution": source.attribution}
     pronunciations: Pronunciations = {}
     recordings: Recordings = {}
@@ -148,7 +160,9 @@ def build(lang: str, source: LexiconSource, kaikki_path: Path, out: Path) -> tup
             )
             for word, upos in sorted(pronunciations.keys() | recordings.keys())
         ),
+        by_word,
     )
+    stats.commons = len(by_word)
     stats.pronounced = len(pronunciations)
     stats.recorded = len(recordings)
     return count, stats

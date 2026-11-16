@@ -7,7 +7,7 @@ made (Polish, by Morfeusz) stores none.
 
 import json
 import sqlite3
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from pathlib import Path
 from typing import NamedTuple, cast
 
@@ -34,6 +34,7 @@ CREATE TABLE pronunciation (
     recordings TEXT NOT NULL,
     PRIMARY KEY (word, upos)
 );
+CREATE TABLE recording (word TEXT PRIMARY KEY, recordings TEXT NOT NULL);
 """
 
 
@@ -59,9 +60,11 @@ def write(
     rows: Iterable[Row],
     meta: dict[str, str],
     pronunciations: Callable[[], Iterable[PronunciationRow]] = lambda: (),
+    recordings: Mapping[str, list[Recording]] | None = None,
 ) -> int:
     """pronunciations is called after rows is used up: the build collects both in one pass
-    over the Kaikki extract."""
+    over the Kaikki extract. recordings are Commons' by word (commons.py), for any part of
+    speech."""
     path.unlink(missing_ok=True)
     with sqlite3.connect(path) as db:
         db.executescript(SCHEMA)
@@ -91,6 +94,13 @@ def write(
                     json.dumps(p.recordings, ensure_ascii=False),
                 )
                 for p in pronunciations()
+            ),
+        )
+        db.executemany(
+            "INSERT INTO recording VALUES (?, ?)",
+            (
+                (word, json.dumps(found, ensure_ascii=False))
+                for word, found in sorted((recordings or {}).items())
             ),
         )
     return count
@@ -135,6 +145,12 @@ class Lexicon:
             "SELECT upos, recordings FROM pronunciation WHERE word = ?", (word,)
         )
         return {cast(Upos, upos): json.loads(r) for upos, r in found if r != "[]"}
+
+    def word_recordings(self, word: str) -> list[Recording]:
+        """Commons' recordings of the spelling, whatever its part of speech."""
+        found = self._db.execute("SELECT recordings FROM recording WHERE word = ?", (word,))
+        row = found.fetchone()
+        return cast(list[Recording], json.loads(row[0])) if row else []
 
     def rows(self) -> Iterator[Row]:
         """Every entry, by lemma_id."""

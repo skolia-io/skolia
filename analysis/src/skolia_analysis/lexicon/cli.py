@@ -7,7 +7,7 @@ from typing import cast
 from .. import lang
 from ..plugin import lexicon_path
 from ..schema import Blob
-from . import build, cards
+from . import build, cards, commons
 from .store import Lexicon
 
 
@@ -19,16 +19,34 @@ def build_main() -> None:
     parser.add_argument("lang", choices=lang.LANGS)
     parser.add_argument("kaikki", type=Path, help="e.g. kaikki.org-dictionary-Polish.jsonl")
     parser.add_argument("out", type=Path, help="output .sqlite file (replaced)")
+    parser.add_argument(
+        "--commons",
+        type=Path,
+        help="Commons' recordings' file names, from skolia-fetch-commons (Polish only)",
+    )
     args = parser.parse_args()
     source = lang.plugin(args.lang).lexicon_source()
-    count, stats = build.build(args.lang, source, args.kaikki, args.out)
+    count, stats = build.build(args.lang, source, args.kaikki, args.out, args.commons)
     print(
         f"{count} lemma entries from {stats.entries} Kaikki entries "
         f"({stats.skipped} skipped: inflected forms, phrases, affixes); "
         f"{stats.pronounced} (word, part of speech) pairs with a pronunciation, "
-        f"{stats.recorded} with a recording",
+        f"{stats.recorded} with a recording; "
+        f"{stats.commons} spellings with a recording from Commons",
         file=sys.stderr,
     )
+
+
+def fetch_commons_main() -> None:
+    parser = argparse.ArgumentParser(
+        prog="skolia-fetch-commons",
+        description="Snapshot the file names of a language's recordings on Wikimedia Commons, "
+        "for skolia-build-lexicon --commons. Takes a few minutes: Commons rate-limits.",
+    )
+    parser.add_argument("lang", choices=sorted(commons.CATEGORIES))
+    parser.add_argument("out", type=Path, help="output .txt file (replaced)")
+    args = parser.parse_args()
+    print(f"{commons.fetch(args.lang, args.out)} files", file=sys.stderr)
 
 
 def cards_main() -> None:

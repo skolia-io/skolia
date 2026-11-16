@@ -27,6 +27,8 @@ if TYPE_CHECKING:
 ATTRIBUTION = (
     "Meanings and pronunciations from Wiktionary (https://en.wiktionary.org) via kaikki.org, "
     "CC BY-SA 4.0; "
+    "recordings of words from Wikimedia Commons (https://commons.wikimedia.org), "
+    "mostly Lingua Libre's, each credited and licensed on its file page; "
     "forms from Morfeusz 2 / SGJP (http://morfeusz.sgjp.pl), BSD 2-clause; "
     "verb valency from Walenty, IPI PAN (http://zil.ipipan.waw.pl/Walenty), CC BY-SA 4.0"
 )
