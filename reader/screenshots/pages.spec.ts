@@ -53,6 +53,8 @@ test("nav drawer", async ({ page, isMobile }) => {
   await open(page, "#/list");
   await page.getByRole("button", { name: "Menu" }).click();
   await expect(page.getByRole("link", { name: "Review" })).toBeVisible();
+  // Off the drawer: the click leaves the pointer where Explore opens, hovering it
+  await page.mouse.move(380, 600);
   await expect(page).toHaveScreenshot("nav-drawer.png");
 });
 

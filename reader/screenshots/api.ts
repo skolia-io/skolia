@@ -441,6 +441,11 @@ export async function serve(
   const app = createApp(deps(signedIn, annotations));
   const failed: string[] = [];
   await page.clock.setFixedTime(NOW);
+  // The review's shuffle (lib/review.ts) keeps the cards in the order the API sends them
+  // when every draw is just under 1, so the tests know which card comes when
+  await page.addInitScript(() => {
+    Math.random = () => 1 - Number.EPSILON;
+  });
   await page.route("https://skolia.test/**", async (route) => {
     const { pathname } = new URL(route.request().url());
     if (pathname.startsWith("/api/")) return forward(route, app, failed);
