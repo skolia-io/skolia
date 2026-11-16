@@ -4,6 +4,7 @@
   import type { Cursor } from "@skolia/shared/page";
   import { LANGS, LANGUAGE_INFO } from "@skolia/shared/api";
   import { listDocuments, type DocumentQuery } from "../lib/api.ts";
+  import { hashQuery, readExplore, replaceQuery, writeExplore, type ExploreFilters } from "../lib/filters.ts";
   import { tagsQuery } from "../lib/queries.ts";
   import TagFilter from "../components/TagFilter.svelte";
   import DocumentList from "../components/DocumentList.svelte";
@@ -14,12 +15,28 @@
   /** How long typing in the search waits before it asks for the list again. */
   const SEARCH_DELAY_MS = 250;
 
-  let query = $state("");
-  let title = $state("");
-  let lang = $state<Lang | "all">("all");
-  let importer = $state<"all" | "mine">("all");
+  const start = readExplore(hashQuery(location.hash));
+  let query = $state(start.title);
+  let title = $state(start.title);
+  let lang = $state<Lang | "all">(start.lang ?? "all");
+  let importer = $state<"all" | "mine">(start.mine ? "mine" : "all");
   /** The tags kept, as kind:value: any of one kind, all of the kinds. */
-  let tagged = $state<readonly string[]>([]);
+  let tagged = $state<readonly string[]>(start.tags);
+
+  const filters = $derived<ExploreFilters>({ title, lang: lang === "all" ? null : lang, mine: importer === "mine", tags: tagged });
+
+  $effect(() => replaceQuery("#/", writeExplore(filters)));
+
+  /** Takes up a link to Explore with other filters, such as the nav's, which has none. */
+  function follow(): void {
+    if (!["", "#", "#/"].includes(location.hash.split("?")[0] ?? "")) return;
+    const next = readExplore(hashQuery(location.hash));
+    if (writeExplore(next) === writeExplore(filters)) return;
+    query = title = next.title;
+    lang = next.lang ?? "all";
+    importer = next.mine ? "mine" : "all";
+    tagged = next.tags;
+  }
 
   const request = $derived<DocumentQuery>({ lang: lang === "all" ? undefined : lang, title, mine: importer === "mine", tags: [...tagged] });
   const filtered = $derived(request.lang !== undefined || request.title.trim() !== "" || request.tags.length > 0);
@@ -37,7 +54,7 @@
   }));
 
   $effect(() => {
-    if (!user && importer === "mine") importer = "all";
+    if (user === null && importer === "mine") importer = "all";
   });
 
   $effect(() => {
@@ -46,6 +63,8 @@
     return () => clearTimeout(timer);
   });
 </script>
+
+<svelte:window onhashchange={follow} />
 
 <Page title="Explore" wide>
   <label class="search">

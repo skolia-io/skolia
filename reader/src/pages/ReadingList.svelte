@@ -2,6 +2,7 @@
   import { LANGS, LANGUAGE_INFO, type Lang, type ReadingStatus, type User } from "@skolia/shared/api";
   import { signIn } from "../lib/api.ts";
   import { READING_STATUS_LABELS, createReadingList } from "../lib/reading-list.ts";
+  import { hashQuery, readReadingList, replaceQuery, writeReadingList } from "../lib/filters.ts";
   import Button from "../components/Button.svelte";
   import DocumentList from "../components/DocumentList.svelte";
   import Page from "../components/Page.svelte";
@@ -9,13 +10,22 @@
 
   let { user }: { user: User | null | undefined } = $props();
 
-  let lang = $state<Lang | "all">("all");
+  let lang = $state<Lang | "all">(readReadingList(hashQuery(location.hash)) ?? "all");
+
+  $effect(() => replaceQuery("#/list", writeReadingList(lang === "all" ? null : lang)));
+
+  /** Takes up a link to the list with another language, such as the nav's, which has none. */
+  function follow(): void {
+    if (location.hash.split("?")[0] === "#/list") lang = readReadingList(hashQuery(location.hash)) ?? "all";
+  }
   const inLang = () => (lang === "all" ? undefined : lang);
 
   /** The page's sections, in the order they're shown: what's being read first. */
   const ORDER: readonly ReadingStatus[] = ["reading", "to-read", "finished"];
   const lists = ORDER.map((status) => ({ status, list: createReadingList(status, inLang) }));
 </script>
+
+<svelte:window onhashchange={follow} />
 
 <Page title="Reading list" wide>
   {#snippet actions()}

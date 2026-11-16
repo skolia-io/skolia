@@ -24,7 +24,8 @@
     | { page: "reader"; id: DocumentId };
 
   function parse(hash: string): Route {
-    if (hash === "#/list") return { page: "list" };
+    // After the path, a list's filters (lib/filters.ts), which the list reads
+    if (/^#\/list(?:\?.*)?$/.test(hash)) return { page: "list" };
     if (hash === "#/upload") return { page: "upload" };
     if (hash === "#/review") return { page: "review", lang: null, group: null };
     const [, review, group] = /^#\/review\/([a-z]+)(?:\/(words|forms))?$/.exec(hash) ?? [];
