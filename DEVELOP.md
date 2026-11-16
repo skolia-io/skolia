@@ -63,7 +63,7 @@ Both are strict TypeScript (`strict`, `noUncheckedIndexedAccess`, `exactOptional
 
 The language-specific parts the reader shows (paradigm layout, case explanations, Walenty frames) are in `shared/lang/<lang>/`, behind the `Language` interface in `shared/lang/types.ts`; the reader only renders them.
 
-After changing a Python schema (`schema.py`, `lexicon/schema.py`, `ingest/schema.py`), regenerate the TypeScript types, and the Zod schemas of those the API sends; `tests/test_ts_types.py` fails until you do:
+After changing a Python schema (`schema.py`, `lexicon/schema.py`, `ingest/schema.py`), regenerate the TypeScript types and their Zod schemas; `tests/test_ts_types.py` fails until you do:
 
 ```fish
 cd analysis; and uv run python scripts/gen_ts_types.py > ../shared/schema.gen.ts; and uv run python scripts/gen_ts_types.py zod > ../shared/schema.zod.gen.ts
