@@ -28,7 +28,7 @@ importers:
         version: 1.7.12(@better-auth/core@1.7.12(@better-auth/utils@0.5.0)(@better-fetch/fetch@1.3.2)(better-call@1.4.4(zod@4.6.7))(jose@6.2.15)(kysely@0.29.8)(nanostores@1.5.5))(@better-auth/utils@0.5.0)(better-auth@1.7.12(drizzle-kit@0.31.11)(drizzle-orm@0.45.4(@cloudflare/workers-types@5.20261104.1)(kysely@0.29.8))(svelte@5.57.2))(better-call@1.4.4(zod@4.6.7))
       '@hono/standard-validator':
         specifier: 0.4.1
-        version: 0.4.1(@standard-schema/spec@1.1.0)(hono@4.13.13)
+        version: 0.4.1(@standard-schema/spec@1.1.0)(hono@4.13.16)
       '@logtape/logtape':
         specifier: 2.4.2
         version: 2.4.2
@@ -42,8 +42,8 @@ importers:
         specifier: 'catalog:'
         version: 1.7.12(drizzle-kit@0.31.11)(drizzle-orm@0.45.4(@cloudflare/workers-types@5.20261104.1)(kysely@0.29.8))(svelte@5.57.2)
       hono:
-        specifier: 4.13.13
-        version: 4.13.13
+        specifier: 4.13.16
+        version: 4.13.16
       ts-fsrs:
         specifier: 6.0.0
         version: 6.0.0
@@ -65,7 +65,7 @@ importers:
         version: 26.6.5
       hono-openapi:
         specifier: 1.5.0
-        version: 1.5.0(hono@4.13.13)(zod@4.6.7)
+        version: 1.5.0(hono@4.13.16)(zod@4.6.7)
       openapi-types:
         specifier: 12.1.3
         version: 12.1.3
@@ -104,8 +104,8 @@ importers:
         specifier: 6.3.6
         version: 6.3.6(svelte@5.57.2)
       hono:
-        specifier: 4.13.13
-        version: 4.13.13
+        specifier: 4.13.16
+        version: 4.13.16
       svelte:
         specifier: 5.57.2
         version: 5.57.2
@@ -1606,8 +1606,8 @@ packages:
     peerDependencies:
       hono: ^4.11.2
 
-  hono@4.13.13:
-    resolution: {integrity: sha512-CQ46U0ZkAGmbT/4UxdzzGJpacP2IeKgY4a5/tOI9AABbpOMfK739wfDXmv1usCk+3RkKj1hQy4/fjhiwa2xlrA==}
+  hono@4.13.16:
+    resolution: {integrity: sha512-AOLOEhvrV+iH92xXCnFr/5+3KjPKcI3xP63XJtX5spAnkznPdHijlIsUTpi7/9EhWqrTCekw5c5zh1K+YsVw7A==}
     engines: {node: '>=16.9.0'}
 
   is-reference@3.0.3:
@@ -2331,10 +2331,10 @@ snapshots:
   '@esbuild/win32-x64@0.28.2':
     optional: true
 
-  '@hono/standard-validator@0.4.1(@standard-schema/spec@1.1.0)(hono@4.13.13)':
+  '@hono/standard-validator@0.4.1(@standard-schema/spec@1.1.0)(hono@4.13.16)':
     dependencies:
       '@standard-schema/spec': 1.1.0
-      hono: 4.13.13
+      hono: 4.13.16
 
   '@img/colour@1.1.0': {}
 
@@ -2832,14 +2832,14 @@ snapshots:
       resolve-pkg-maps: 1.0.0
     optional: true
 
-  hono-openapi@1.5.0(hono@4.13.13)(zod@4.6.7):
+  hono-openapi@1.5.0(hono@4.13.16)(zod@4.6.7):
     dependencies:
-      '@hono/standard-validator': 0.4.1(@standard-schema/spec@1.1.0)(hono@4.13.13)
+      '@hono/standard-validator': 0.4.1(@standard-schema/spec@1.1.0)(hono@4.13.16)
       '@standard-community/standard-json': 0.3.7(@standard-schema/spec@1.1.0)(@types/json-schema@7.0.15)(zod@4.6.7)
       '@standard-community/standard-openapi': 0.2.11(@standard-community/standard-json@0.3.7(@standard-schema/spec@1.1.0)(@types/json-schema@7.0.15)(zod@4.6.7))(@standard-schema/spec@1.1.0)(openapi-types@12.1.3)(zod@4.6.7)
       '@standard-schema/spec': 1.1.0
       '@types/json-schema': 7.0.15
-      hono: 4.13.13
+      hono: 4.13.16
       openapi-types: 12.1.3
     transitivePeerDependencies:
       - '@valibot/to-json-schema'
@@ -2852,7 +2852,7 @@ snapshots:
       - zod-openapi
       - zod-to-json-schema
 
-  hono@4.13.13: {}
+  hono@4.13.16: {}
 
   is-reference@3.0.3:
     dependencies:
