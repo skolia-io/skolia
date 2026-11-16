@@ -26,7 +26,10 @@ import {
 import { allPages, type Cursor } from "@skolia/shared/page";
 import type { AppType } from "./app.ts";
 import { API_KEY_HEADER } from "./auth.ts";
+import { runScript, scriptLog, since } from "./script-log.ts";
 import { body, expectStatus } from "./testing/responses.ts";
+
+const log = scriptLog("e2e");
 
 const TIMEOUT_MS = 10 * 60 * 1000;
 const POLL_MS = 10 * 1000;
@@ -67,7 +70,7 @@ async function checkVersion(base: string, expected: string): Promise<void> {
     try {
       const { version } = (await (await fetchOk("version", `${base}/api/version`)).json()) as Version;
       if (version === expected) {
-        console.log(`version ${version}`);
+        log.info("version {version}", { version });
         return;
       }
       result = `serving ${version}, expected ${expected}`;
@@ -75,7 +78,7 @@ async function checkVersion(base: string, expected: string): Promise<void> {
       result = error instanceof Error ? error.message : String(error);
     }
     if (Date.now() > deadline) throw new Error(`version: ${result}`);
-    console.log(`version: ${result}`);
+    log.info("version: {result}", { result, expected });
     await sleep(POLL_MS);
   }
 }
@@ -86,7 +89,8 @@ async function documents(base: string, key: string, lang: Lang): Promise<void> {
   const at = new Date().toISOString();
   const request: ImportRequest = { title: `end-to-end test ${at}`, text: `${TEXTS[lang]} Test ${at}.`, lang, visibility: "private" };
   const { id } = await body(`${lang} import`, api.documents.$post({ json: request }), 202);
-  console.log(`${lang}: imported ${id}`);
+  const imported = performance.now();
+  log.info("{lang}: imported {doc}", { lang, doc: id });
   const library = await body("library", anonymous.documents.$get({ query: { q: request.title } }));
   assert.ok(!library.items.some((d) => d.id === id), `${lang}: a private text is in the library`);
   const mine = await body("the importer's documents", api.documents.$get({ query: { q: request.title } }));
@@ -99,7 +103,7 @@ async function documents(base: string, key: string, lang: Lang): Promise<void> {
   for (;;) {
     // As the importer, who's told where it is in the queue (from the ingest Worker)
     const summary = await body(`${lang} status`, api.documents[":id"].$get({ param: { id } }));
-    console.log(`${lang}: ${summary.state}${summary.queue ? ` ${JSON.stringify(summary.queue)}` : ""}`);
+    log.info("{lang}: {state}", { lang, doc: id, state: summary.state, queue: summary.queue, ms: since(imported) });
     if (summary.state === "queued" || summary.state === "analysing") {
       assert.ok(summary.queue, `${lang}: ${summary.state} without its place in the queue`);
     }
@@ -111,7 +115,7 @@ async function documents(base: string, key: string, lang: Lang): Promise<void> {
       assert.equal((await fetch(`${base}/api/documents/${id}/text`)).status, 404, `${lang}: a private text is readable signed out`);
       for (const [part, name] of Object.entries(summary.reading)) {
         const blob = await fetchOk(`${lang} ${part}`, `${base}/api/documents/${id}/${part}/${name}`, key);
-        console.log(`${lang}: ${part} ${name}: ${(await blob.arrayBuffer()).byteLength} bytes`);
+        log.info("{lang}: {part} {name}", { lang, doc: id, part, name, bytes: (await blob.arrayBuffer()).byteLength });
       }
       return;
     }
@@ -125,7 +129,7 @@ async function auth(base: string, systemKey: string, userKey: string): Promise<v
   await expectStatus("/api/me with an unknown key", client(base, "00".repeat(32)).me.$get(), 401);
   assert.equal((await body("the system user", client(base, systemKey).me.$get())).id, "system");
   assert.match((await body("the e2e user", client(base, userKey).me.$get())).id, /^e2e-/);
-  console.log("auth: ok");
+  log.info("auth: ok");
 }
 
 async function lexicon(base: string): Promise<void> {
@@ -143,7 +147,7 @@ async function lexicon(base: string): Promise<void> {
       `lexicon: ${lang} feature sets missing`,
     );
   }
-  console.log(`lexicon: ${entries.length} entries`);
+  log.info("lexicon: {entries} entries", { entries: entries.length });
 }
 
 /** The start of today in UTC: when today's new cards count from. */
@@ -214,26 +218,31 @@ async function cards(base: string, key: string, lang: Lang): Promise<void> {
   }
   assert.deepEqual((await due()).cards, [], `${lang}: a known word's cards are due`);
   assert.deepEqual(await counts(), { lang, words: none, forms: none }, `${lang}: counts after marking a word known`);
-  console.log(`${lang}: cards ok`);
+  log.info("{lang}: cards ok", { lang });
 }
 
-const [, , url, expected] = process.argv;
-const systemKey = process.env["E2E_API_KEY"];
-const userKey = process.env["E2E_USER_KEY"];
-if (!url || !expected || !systemKey || !userKey) {
-  console.error("usage: E2E_API_KEY=<key> E2E_USER_KEY=<key> node src/e2e.ts <base url> <version>");
-  process.exit(2);
+async function main(): Promise<void> {
+  const [, , url, expected] = process.argv;
+  const systemKey = process.env["E2E_API_KEY"];
+  const userKey = process.env["E2E_USER_KEY"];
+  if (!url || !expected || !systemKey || !userKey) {
+    console.error("usage: E2E_API_KEY=<key> E2E_USER_KEY=<key> node src/e2e.ts <base url> <version>");
+    process.exit(2);
+  }
+  const base = url.replace(/\/$/, "");
+  const start = performance.now();
+  await checkVersion(base, expected);
+  // The containers are separate, so the languages run at the same time; the journeys run
+  // while they analyse
+  await Promise.all([
+    ...LANGS.map((lang) => documents(base, systemKey, lang)),
+    (async () => {
+      await auth(base, systemKey, userKey);
+      await lexicon(base);
+      for (const lang of LANGS) await cards(base, userKey, lang);
+    })(),
+  ]);
+  log.info("end-to-end tests passed", { ms: since(start) });
 }
-const base = url.replace(/\/$/, "");
-await checkVersion(base, expected);
-// The containers are separate, so the languages run at the same time; the journeys run
-// while they analyse
-await Promise.all([
-  ...LANGS.map((lang) => documents(base, systemKey, lang)),
-  (async () => {
-    await auth(base, systemKey, userKey);
-    await lexicon(base);
-    for (const lang of LANGS) await cards(base, userKey, lang);
-  })(),
-]);
-console.log("end-to-end tests passed");
+
+await runScript(log, main);
