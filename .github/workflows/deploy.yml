@@ -1,9 +1,9 @@
 name: Deploy
 
 # One environment: Terraform and migrations; then the ingest Worker with the images
-# ci.yml's build-ingest-image pushed; then the skolia Worker (reader and API), the
-# end-to-end tests and the curated texts in curated/ (just sync-curated). The ingest Worker consumes
-# the queue the skolia Worker feeds, so it goes
+# ci.yml's build-ingest-image pushed; then the skolia Worker (reader and API); then, side
+# by side, the end-to-end tests (e2e) and the curated texts in curated/ (sync-curated,
+# sync-curated.yml). The ingest Worker consumes the queue the skolia Worker feeds, so it goes
 # first. Called by ci.yml, after the images are built. wrangler leaves an unchanged image
 # as it is. The lexicon loads beside them, after the migrations; it's skipped when D1
 # already has its version. Previews (pr-<N>) share one GitHub environment, preview.
@@ -18,6 +18,9 @@ on:
       url:
         description: The environment's URL, set once the skolia Worker's deployed, even if a later step fails
         value: ${{ jobs.deploy-web.outputs.url }}
+      e2e:
+        description: The end-to-end tests' result (success, failure or cancelled), empty if they didn't run
+        value: ${{ jobs.e2e.outputs.result }}
 
 permissions:
   contents: read
@@ -100,7 +103,7 @@ jobs:
       # The preview environment's only: its sign-in goes through the OAuth proxy (oauth-proxy/)
       OAUTH_PROXY_SECRET: ${{ secrets.OAUTH_PROXY_SECRET }}
     steps:
-      # The tags, for git describe (justfile deploy-web and e2e)
+      # The tags, for git describe (justfile deploy-web)
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
@@ -108,7 +111,30 @@ jobs:
       - run: just deploy-web ${{ inputs.env }}
       - id: url
         run: echo "url=$(just url ${{ inputs.env }})" >> "$GITHUB_OUTPUT"
-      - name: End-to-end tests
-        run: just e2e ${{ inputs.env }}
-      - name: Sync the curated texts
-        run: just sync-curated ${{ inputs.env }}
+
+  e2e:
+    needs: deploy-web
+    runs-on: ubuntu-24.04
+    environment: ${{ startsWith(inputs.env, 'pr-') && 'preview' || inputs.env }}
+    concurrency:
+      group: e2e-${{ inputs.env }}
+      cancel-in-progress: false
+    outputs:
+      result: ${{ steps.result.outputs.result }}
+    steps:
+      # The tags, for git describe (justfile e2e)
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/setup
+      - run: just e2e ${{ inputs.env }}
+      - id: result
+        if: always()
+        run: echo "result=${{ job.status }}" >> "$GITHUB_OUTPUT"
+
+  sync-curated:
+    needs: deploy-web
+    uses: ./.github/workflows/sync-curated.yml
+    with:
+      env: ${{ inputs.env }}
+    secrets: inherit
