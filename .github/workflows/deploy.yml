@@ -21,6 +21,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 env:
   CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
@@ -112,3 +113,11 @@ jobs:
         run: just e2e ${{ inputs.env }}
       - name: Sync the curated texts
         run: just sync-curated ${{ inputs.env }}
+
+  # A Gantt chart of the run's jobs and steps up to here, in its summary
+  timeline:
+    if: always()
+    needs: deploy-web
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: Kesin11/actions-timeline@v3.2.1
