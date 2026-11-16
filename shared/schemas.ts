@@ -1,5 +1,6 @@
 import * as z from "zod";
 import {
+  ANNOTATION_BATCH,
   ANNOTATION_PAGE,
   CARD_GROUPS,
   CARD_PAGE,
@@ -368,6 +369,11 @@ export const NewAnnotation = z
   .intersection(z.object({ start: TextOffset, end: TextOffset, ...AnnotationAttribution.shape }), AnnotationContent)
   .refine((a) => a.start < a.end, { message: "an annotation must end after it starts", path: ["end"] })
   .transform((a) => ({ ...a, author: a.author ?? null, source: a.source ?? null }));
+
+/** Annotations to add to an entry in one request, all or, when it fills up, some. */
+export const NewAnnotations = z.object({ annotations: z.array(NewAnnotation).min(1).max(ANNOTATION_BATCH) });
+/** The annotations, in the order given, as the entry has them, and how many of them are new. */
+export const Annotated = z.object({ added: z.number().int().min(0), annotations: z.array(Annotation) });
 
 export const AnnotationKey = z.tuple([TextOffset, AnnotationId]).readonly();
 /** A TextOffset in a query string. */
