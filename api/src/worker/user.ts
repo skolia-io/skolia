@@ -11,8 +11,9 @@ import {
   type NewLeft,
   type Tally,
   type CardId as CardIdType,
-  type ClozeKey,
-  type ClozeStart,
+  type Card,
+  type CardKey,
+  type CardListing,
   type DocumentId,
   type Paginated,
   type ReadingEntry,
@@ -57,7 +58,7 @@ import type { ClozeOutcome, DueCards, ReviewOutcome, StoredPosition, StoredReadi
 import type { DefaultScheduler } from "ts-fsrs";
 import { fromJson, fsrs, newCard, review, toJson } from "./scheduler.ts";
 import { MIGRATIONS } from "../user/migrations/index.ts";
-import { READING_ENTRY, readingListQuery } from "../user/queries.ts";
+import { READING_ENTRY, cardsQuery, readingListQuery } from "../user/queries.ts";
 import {
   LogEntry,
   MigrationError,
@@ -78,12 +79,33 @@ export interface MigrationStatus {
 
 let checksummed: Promise<Checksummed[]> | undefined;
 
+/** The cloze's columns of a card's row, null for a word's card, for its schema to parse. */
+function clozeOf(row: Record<string, SqlStorageValue>): Record<string, unknown> | null {
+  const { documentId, sentence, sentenceStart, blankStart, blankEnd, feats, why } = row;
+  return documentId === null ? null : { documentId, sentence, sentenceStart, blankStart, blankEnd, feats: JSON.parse(String(feats)), why };
+}
+
 /** A row of due()'s query: a card, with its cloze's columns if it's a cloze card. */
 function scheduled(row: Record<string, SqlStorageValue>): ScheduledCard {
-  const { id, lemmaId, kind, dueAt, documentId, sentence, sentenceStart, blankStart, blankEnd, feats, why } = row;
-  const cloze =
-    documentId === null ? null : { documentId, sentence, sentenceStart, blankStart, blankEnd, feats: JSON.parse(String(feats)), why };
-  return schemas.ScheduledCard.parse({ id, lemmaId, kind, dueAt, isNew: row["isNew"] === 1, cloze });
+  const { id, lemmaId, kind, dueAt } = row;
+  return schemas.ScheduledCard.parse({ id, lemmaId, kind, dueAt, isNew: row["isNew"] === 1, cloze: clozeOf(row) });
+}
+
+/** A row of cardsQuery. */
+function listed(row: Record<string, SqlStorageValue>): Card {
+  const { id, lemmaId, kind, createdAt, scheduleStatus, dueAt, scheduledDays, lastReviewedAt } = row;
+  return schemas.Card.parse({
+    id,
+    lemmaId,
+    kind,
+    createdAt,
+    active: row["active"] === 1,
+    scheduleStatus,
+    dueAt,
+    scheduledDays,
+    lastReviewedAt,
+    cloze: clozeOf(row),
+  });
 }
 
 /** A group's cards, as a condition on card. */
@@ -259,24 +281,21 @@ export class User extends DurableObject<UserEnv> {
     });
   }
 
-  /** A page of a text's cloze cards, by where their blanks start in it: those after the
-   * page's key, which cloze's (document_id, blank_start) index seeks to. */
-  clozes(documentId: DocumentId, { after, limit }: PageRequest<ClozeKey>): Paginated<ClozeStart, ClozeKey> {
-    const rows = this.#exec(
-      sql`SELECT card_id, blank_start FROM cloze WHERE document_id = ${documentId} AND blank_start > ${after?.[0] ?? -1} ORDER BY blank_start LIMIT ${limit + 1}`,
-    )
-      .toArray()
-      .map((row): ClozeStart => ({ cardId: CardId.parse(row["card_id"]), start: Number(row["blank_start"]) }));
-    return paginate(
-      rows.map((item) => ({ item, key: [item.start] as const })),
-      limit,
-    );
+  /** A page of a language's cards, newest first, or of a text's, by where their blanks start in it. */
+  cards(listing: CardListing): Paginated<Card, CardKey> {
+    const cards = this.#exec(cardsQuery(listing)).toArray().map(listed);
+    const keyed = cards.map((item) => ({
+      item,
+      key: "documentId" in listing ? ([item.cloze?.blankStart ?? 0] as const) : ([item.createdAt, item.id] as const),
+    }));
+    return paginate<Card, CardKey>(keyed, listing.limit);
   }
 
-  /** Deletes a cloze card, and by the foreign keys its cloze row and reviews; a word's
-   * cards can only be taken out of reviews (setWord). Whether there was one. */
-  deleteCloze(cardId: CardIdType): boolean {
-    return this.#exec(sql`DELETE FROM card WHERE id = ${cardId} AND kind = 'cloze'`).rowsWritten > 0;
+  /** Deletes a card of any kind, and by the foreign keys its cloze row and reviews. A word
+   * card's word keeps its status, and setWord active makes the card again, new. Whether
+   * there was one. */
+  deleteCard(cardId: CardIdType): boolean {
+    return this.#exec(sql`DELETE FROM card WHERE id = ${cardId}`).rowsWritten > 0;
   }
 
   /** What a language has left of today's allowances: the daily limits are per language.

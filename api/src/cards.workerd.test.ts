@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  CARD_PAGE,
   MAX_NEW_PER_DAY,
   WORD_PAGE,
   lemmaParam,
   type CardCounts,
   type CardGroup,
+  type CardKey,
   type Due,
   type Lang,
   type LemmaId,
@@ -74,7 +76,18 @@ async function makeCloze(app: App, headers: Headers, lemmaId: LemmaId, n: number
     feats: { Case: "Acc" },
     why: null,
   };
-  return body("cloze", client(app, headers).me.clozes.$post({ json }), 201);
+  return body("cloze", client(app, headers).me.cards.$post({ json: { kind: "cloze", ...json } }), 201);
+}
+
+/** Every card of the language, or of one group of its cards, a page of limit at a time. */
+function listCards(app: App, headers: Headers, lang: Lang, group?: CardGroup, limit = CARD_PAGE.max) {
+  return walk(limit, (after?: Cursor<CardKey>) =>
+    body("cards", client(app, headers).me.cards.$get({ query: { lang, group, after, limit: String(limit) } })),
+  );
+}
+
+function deleteCard(app: App, headers: Headers | undefined, cardId: string) {
+  return client(app, headers).me.cards[":cardId"].$delete({ param: { cardId } });
 }
 
 function words(app: App, headers: Headers): Promise<readonly Word[]> {
@@ -526,4 +539,124 @@ test("a lexicon lookup gives each language's loaded version, leaving out ids it 
     ).status,
     200,
   );
+});
+
+test("a language's cards are listed newest first, a page at a time, all of them or one group's", async () => {
+  const headers = await signedIn();
+  await mark(setup(), headers, "pl:pies:NOUN", "active");
+  const later = setup({ at: "2026-11-04T01:00:00Z" });
+  await mark(later, headers, "pl:kot:NOUN", "active");
+  const { cardId: cloze } = await makeCloze(setup({ at: "2026-11-04T02:00:00Z" }), headers, "pl:pies:NOUN", 0);
+  const all = await listCards(later, headers, "pl");
+  assert.deepEqual(
+    all.map((c) => [c.createdAt, c.lemmaId]),
+    [
+      ["2026-11-04T02:00:00.000Z", "pl:pies:NOUN"],
+      ["2026-11-04T01:00:00.000Z", "pl:kot:NOUN"],
+      ["2026-11-04T01:00:00.000Z", "pl:kot:NOUN"],
+      ["2026-11-04T00:00:00.000Z", "pl:pies:NOUN"],
+      ["2026-11-04T00:00:00.000Z", "pl:pies:NOUN"],
+    ],
+  );
+  // Made together, by id, last first
+  assert.ok(all[1]!.id > all[2]!.id && all[3]!.id > all[4]!.id);
+  assert.deepEqual(await listCards(later, headers, "pl", undefined, 2), all);
+  assert.deepEqual(
+    (await listCards(later, headers, "pl", "words", 1)).map((c) => c.id),
+    all.filter((c) => c.kind !== "cloze").map((c) => c.id),
+  );
+  assert.deepEqual(
+    (await listCards(later, headers, "pl", "forms")).map((c) => c.id),
+    [cloze],
+  );
+  assert.deepEqual(await listCards(later, headers, "en"), []);
+  const [first] = all;
+  assert.deepEqual(first, {
+    id: cloze,
+    lemmaId: "pl:pies:NOUN",
+    kind: "cloze",
+    createdAt: "2026-11-04T02:00:00.000Z",
+    active: true,
+    scheduleStatus: "new",
+    dueAt: "2026-11-04T02:00:00.000Z",
+    scheduledDays: 0,
+    lastReviewedAt: null,
+    cloze: first?.cloze,
+  });
+  assert.equal(first?.cloze?.sentence, "Widzę psa.");
+});
+
+test("a listed card says whether it's reviewed, where it is in its schedule and when it was last answered", async () => {
+  const app = setup();
+  const headers = await signedIn();
+  await mark(app, headers, "pl:pies:NOUN", "active");
+  const recognition = (await listCards(app, headers, "pl")).find((c) => c.kind === "recognition");
+  assert.ok(recognition);
+  await body("review", review(app, headers, answer(recognition.id, 3)));
+  const [card] = (await listCards(app, headers, "pl")).filter((c) => c.id === recognition.id);
+  assert.equal(card?.scheduleStatus, "review");
+  assert.equal(card.lastReviewedAt, "2026-11-04T00:00:00.000Z");
+  assert.ok(card.dueAt > card.createdAt);
+  assert.equal((await mark(app, headers, "pl:pies:NOUN", "known")).status, 204);
+  assert.deepEqual(
+    (await listCards(app, headers, "pl")).map((c) => c.active),
+    [false, false],
+  );
+});
+
+test("deleting a word card takes it and its reviews away; its word keeps its status, and becoming active again makes it anew", async () => {
+  const app = setup();
+  const headers = await signedIn();
+  await mark(app, headers, "pl:pies:NOUN", "active");
+  const recognition = (await listCards(app, headers, "pl")).find((c) => c.kind === "recognition");
+  assert.ok(recognition);
+  await body("review", review(app, headers, answer(recognition.id, 3)));
+  const bob = await local.signIn((await local.signUp({ name: "Bob", email: "bob@example.com" })).id);
+  assert.equal((await deleteCard(app, bob, recognition.id)).status, 404);
+  assert.equal((await deleteCard(app, undefined, recognition.id)).status, 401);
+  assert.equal((await deleteCard(app, headers, recognition.id)).status, 204);
+  assert.equal((await deleteCard(app, headers, recognition.id)).status, 404);
+  assert.equal((await review(app, headers, answer(recognition.id, 3))).status, 404);
+  assert.deepEqual(
+    (await listCards(app, headers, "pl")).map((c) => c.kind),
+    ["production"],
+  );
+  assert.deepEqual(
+    (await words(app, headers)).map((w) => [w.lemmaId, w.status]),
+    [["pl:pies:NOUN", "active"]],
+  );
+  assert.deepEqual(
+    (await due(app, headers, "pl")).cards.map((c) => c.kind),
+    ["production"],
+  );
+  await mark(app, headers, "pl:pies:NOUN", "known");
+  await mark(app, headers, "pl:pies:NOUN", "active");
+  const again = (await listCards(app, headers, "pl")).find((c) => c.kind === "recognition");
+  assert.ok(again);
+  assert.notEqual(again.id, recognition.id);
+  assert.equal(again.scheduleStatus, "new");
+});
+
+test("a list of cards needs a session, a language or a text but not both, and a cursor from the same kind of list", async () => {
+  const app = setup();
+  assert.equal((await client(app).me.cards.$get({ query: { lang: "pl" } })).status, 401);
+  const headers = await signedIn();
+  const cards = client(app, headers).me.cards;
+  const refused = async (query: Parameters<typeof cards.$get>[0]["query"], error: string) =>
+    assert.deepEqual(await body(JSON.stringify(query), cards.$get({ query }), 400), { error });
+  await refused({}, "give lang, or documentId");
+  await refused({ group: "words" }, "give lang, or documentId");
+  await refused({ lang: "pl", documentId: "a".repeat(64) }, "documentId lists a text's cards, without lang or group");
+  await refused({ group: "forms", documentId: "a".repeat(64) }, "documentId lists a text's cards, without lang or group");
+  assert.equal((await cards.$get({ query: { lang: "zz" as Lang } })).status, 400);
+  await refusesBadPages(CARD_PAGE.max, (query) => cards.$get({ query: { lang: "pl", ...query } }));
+
+  await makeCloze(app, headers, "pl:pies:NOUN", 0);
+  await makeCloze(app, headers, "pl:pies:NOUN", 1);
+  const newest = await body("newest", cards.$get({ query: { lang: "pl", limit: "1" } }));
+  assert.ok(newest.next);
+  const { items } = await body("forms", cards.$get({ query: { lang: "pl", group: "forms" } }));
+  const documentId = items[0]?.cloze?.documentId;
+  assert.ok(documentId);
+  await refused({ documentId, after: newest.next }, "after isn't a cursor this list gave");
 });

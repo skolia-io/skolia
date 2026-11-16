@@ -9,9 +9,10 @@ import type {
   AvailableTag,
   CardCounts,
   CardGroup,
+  Card,
   CardId,
-  ClozeKey,
-  ClozeStart,
+  CardKey,
+  CardListing,
   DocumentFilter,
   DocumentId,
   DocumentKey,
@@ -173,10 +174,11 @@ export interface UserData {
   /** A new cloze card, unless the text's sentence and word already had one or the user has
    * MAX_CLOZES. */
   makeCloze(userId: UserId, cloze: NewCloze, now: Timestamp): Promise<ClozeOutcome>;
-  /** A page of the text's cloze cards, by where their blanks start. */
-  clozes(userId: UserId, documentId: DocumentId, page: PageRequest<ClozeKey>): Promise<Paginated<ClozeStart, ClozeKey>>;
-  /** False if the user has no such cloze card. */
-  deleteCloze(userId: UserId, cardId: CardId): Promise<boolean>;
+  /** A page of a language's cards, newest first, or of a text's, by where their blanks start. */
+  cards(userId: UserId, listing: CardListing): Promise<Paginated<Card, CardKey>>;
+  /** Deletes the card and its reviews; a word card's word keeps its status. False if the
+   * user has no such card. */
+  deleteCard(userId: UserId, cardId: CardId): Promise<boolean>;
   settings(userId: UserId): Promise<Settings>;
   setSettings(userId: UserId, settings: Settings): Promise<void>;
   position(userId: UserId, documentId: DocumentId): Promise<StoredPosition | null>;

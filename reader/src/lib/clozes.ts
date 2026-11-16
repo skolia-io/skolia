@@ -2,18 +2,21 @@
 // sheet can say a word already has one, and take it away. Reader loads them with the text.
 import { createMutation, createQuery, mutationOptions, queryOptions } from "@tanstack/svelte-query";
 import type { CardId, DocumentId, LemmaId, NewClozeInput } from "@skolia/shared/api";
-import { deleteCloze, listClozes, makeCloze } from "./api.ts";
+import { deleteCard, listTextCards, makeCloze } from "./api.ts";
 import { resume, userQuery } from "./queries.ts";
 import { activateUnmarked, resumeWords, unmark } from "./words.ts";
 
 export type ClozesByStart = ReadonlyMap<number, CardId>;
 
+/** Every text's cloze cards, for a change made elsewhere to ask for again. */
+export const CLOZES_KEY = ["me", "clozes"] as const;
+
 function clozesQuery(documentId: DocumentId) {
   return queryOptions({
-    queryKey: ["me", "clozes", documentId],
+    queryKey: [...CLOZES_KEY, documentId],
     queryFn: async (): Promise<ClozesByStart | null> => {
-      const list = await listClozes(documentId);
-      return list && new Map(list.map((c) => [c.start, c.cardId]));
+      const list = await listTextCards(documentId);
+      return list && new Map(list.flatMap((c) => (c.cloze ? [[c.cloze.blankStart, c.id] as const] : [])));
     },
   });
 }
@@ -53,7 +56,7 @@ export function createAddCloze() {
 export type ClozeRemoval = { readonly documentId: DocumentId; readonly start: number; readonly cardId: CardId };
 
 const removeMutation = mutationOptions({
-  mutationFn: ({ cardId }: ClozeRemoval) => deleteCloze(cardId),
+  mutationFn: ({ cardId }: ClozeRemoval) => deleteCard(cardId),
   onMutate: async ({ documentId, start }, { client }) => {
     await client.cancelQueries({ queryKey: keyOf(documentId) });
     client.setQueryData(keyOf(documentId), (byStart) => byStart && new Map([...byStart].filter(([s]) => s !== start)));

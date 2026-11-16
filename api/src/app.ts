@@ -164,35 +164,44 @@ export function createApp(deps: Deps) {
       }),
       (c) => signedIn(c, (user) => cards.review(deps, user, c.req.valid("json"))),
     )
-    .post(
-      "/api/me/clozes",
-      mine(TAGS.cards, "Make a cloze card", "A sentence from a text the user sees, with a word blanked out."),
-      validator("json", schemas.NewCloze, badRequest()),
+    .get(
+      "/api/me/cards",
+      mine(
+        TAGS.cards,
+        "A page of the user's cards",
+        "A language's (lang), newest first, group narrowing them to its cards; or a text's cloze cards (documentId), in the order of the text. The cursor must be one the same kind of list gave.",
+      ),
+      validator("query", schemas.CardsQuery, badRequest()),
       responds({
-        200: json(schemas.ClozeMade, "The sentence and word already had a card"),
-        201: json(schemas.ClozeMade, "A new card"),
+        200: json(schemas.page(schemas.Card), "A page of cards"),
+        400: error("Neither lang nor documentId, or both, or another list's cursor"),
+        401: NOT_SIGNED_IN,
+      }),
+      (c) => signedIn(c, (user) => cards.cards(deps, user, c.req.valid("query"))),
+    )
+    .post(
+      "/api/me/cards",
+      mine(
+        TAGS.cards,
+        "Make a card",
+        "Only cloze cards are made this way: a sentence from a text the user sees, with a word blanked out. A word's cards come with its status.",
+      ),
+      validator("json", schemas.NewCard, badRequest()),
+      responds({
+        200: json(schemas.CardMade, "The sentence and word already had a card"),
+        201: json(schemas.CardMade, "A new card"),
         401: NOT_SIGNED_IN,
         404: error("No such document"),
         409: error("The user has as many cloze cards as they may"),
       }),
-      (c) => signedIn(c, (user) => cards.makeCloze(deps, user, c.req.valid("json"))),
-    )
-    .get(
-      "/api/me/clozes",
-      mine(TAGS.cards, "A page of a text's cloze cards", "By where each one's blank starts in the text."),
-      validator("query", schemas.ClozesQuery, badRequest()),
-      responds({ 200: json(schemas.page(schemas.ClozeStart), "A page of cards"), 401: NOT_SIGNED_IN }),
-      (c) => {
-        const { documentId, ...page } = c.req.valid("query");
-        return signedIn(c, (user) => cards.clozes(deps, user, documentId, page));
-      },
+      (c) => signedIn(c, (user) => cards.makeCard(deps, user, c.req.valid("json"))),
     )
     .delete(
-      "/api/me/clozes/:cardId",
-      mine(TAGS.cards, "Delete a cloze card"),
+      "/api/me/cards/:cardId",
+      mine(TAGS.cards, "Delete a card", "A card of any kind, with its reviews. A word card's word keeps its status."),
       validator("param", z.object({ cardId: schemas.CardId }), badRequest("card id must be a UUID")),
       responds({ 204: NO_BODY, 401: NOT_SIGNED_IN, 404: error("No such card") }),
-      (c) => signedIn(c, (user) => cards.deleteCloze(deps, user, c.req.valid("param").cardId)),
+      (c) => signedIn(c, (user) => cards.deleteCard(deps, user, c.req.valid("param").cardId)),
     )
     .get(
       "/api/me/positions/:id",

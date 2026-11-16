@@ -60,6 +60,20 @@ test("settings", async ({ page }) => {
   await expect(page).toHaveScreenshot("settings.png", { fullPage: true });
 });
 
+test("cards", async ({ page }) => {
+  await open(page, "#/cards/pl");
+  await expect(page.getByText("Due in 4 days")).toBeVisible();
+  await expect(page).toHaveScreenshot("cards.png", { fullPage: true });
+});
+
+test("cards, one deleted", async ({ page }) => {
+  await open(page, "#/cards/pl/words");
+  page.once("dialog", (dialog) => void dialog.accept());
+  await page.getByRole("button", { name: "Delete" }).first().click();
+  await expect(page.getByText("New", { exact: true })).toBeHidden();
+  await expect(page).toHaveScreenshot("cards-deleted.png", { fullPage: true });
+});
+
 test("review, forms on their own", async ({ page }) => {
   await open(page, "#/settings");
   await page.getByLabel("Review forms with words").uncheck();

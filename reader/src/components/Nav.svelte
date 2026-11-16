@@ -10,7 +10,7 @@
     user,
     onerror,
   }: {
-    page: "explore" | "list" | "upload" | "review" | "settings" | "reader";
+    page: "explore" | "list" | "upload" | "review" | "cards" | "settings" | "reader";
     user: User | null | undefined;
     onerror: (message: string) => void;
   } = $props();
@@ -40,7 +40,7 @@
     {#if user}
       <a href="#/list" aria-current={page === "list" ? "page" : undefined}>Reading list</a>
       <a href="#/upload" aria-current={page === "upload" ? "page" : undefined}>Upload</a>
-      <a href="#/review" aria-current={page === "review" ? "page" : undefined}>Review</a>
+      <a href="#/review" aria-current={page === "review" || page === "cards" ? "page" : undefined}>Review</a>
     {/if}
   </nav>
   <div class="account">
@@ -69,7 +69,8 @@
                 run(async () => {
                   menu?.hidePopover();
                   await signOut();
-                  if (page === "list" || page === "upload" || page === "review" || page === "settings") location.hash = "#/";
+                  if (page === "list" || page === "upload" || page === "review" || page === "cards" || page === "settings")
+                    location.hash = "#/";
                   await forgetUser(client);
                 })}
               >Sign out</button

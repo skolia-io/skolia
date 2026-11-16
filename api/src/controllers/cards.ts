@@ -6,20 +6,20 @@ import {
   timestamp,
   type CardCounts,
   type CardGroup,
+  type Card,
   type CardId,
-  type ClozeKey,
-  type ClozeMade,
-  type ClozeStart,
+  type CardKey,
+  type CardListing,
+  type CardMade,
   type Paginated,
   type WordKey,
-  type DocumentId,
   type Due,
   type FeatureSets,
   type Lang,
   type LemmaId,
   type LexiconEntry,
   type Lookup,
-  type NewCloze,
+  type NewCard,
   type Reviewed,
   type ReviewRequest,
   type ScheduledCard,
@@ -80,15 +80,11 @@ export async function review(deps: Deps, user: User, request: ReviewRequest): Pr
   }
 }
 
-/** 201 for a new card, 200 when the sentence and word already had one. The text is one the
- * user sees, and the sentence is in it where it says it starts. */
-export async function makeCloze(
-  deps: Deps,
-  user: User,
-  cloze: NewCloze,
-): Promise<Json<ClozeMade, 201> | Ok<ClozeMade> | Failed<404 | 409>> {
-  if (!(await deps.documents.visible(cloze.documentId, user.id))) return noSuchDocument();
-  const made = await deps.users.makeCloze(user.id, cloze, timestamp(deps.now()));
+/** A cloze card: 201 for a new one, 200 when the sentence and word already had one. The
+ * text is one the user sees, and the sentence is in it where it says it starts. */
+export async function makeCard(deps: Deps, user: User, card: NewCard): Promise<Json<CardMade, 201> | Ok<CardMade> | Failed<404 | 409>> {
+  if (!(await deps.documents.visible(card.documentId, user.id))) return noSuchDocument();
+  const made = await deps.users.makeCloze(user.id, card, timestamp(deps.now()));
   switch (made.kind) {
     case "made":
       return { status: 201, body: { cardId: made.cardId } };
@@ -99,17 +95,13 @@ export async function makeCloze(
   }
 }
 
-export async function clozes(
-  deps: Deps,
-  user: User,
-  documentId: DocumentId,
-  page: PageRequest<ClozeKey>,
-): Promise<Ok<Paginated<ClozeStart, ClozeKey>>> {
-  return ok(await deps.users.clozes(user.id, documentId, page));
+export async function cards(deps: Deps, user: User, listing: CardListing): Promise<Ok<Paginated<Card, CardKey>>> {
+  return ok(await deps.users.cards(user.id, listing));
 }
 
-export async function deleteCloze(deps: Deps, user: User, cardId: CardId): Promise<NoContent | Failed<404>> {
-  return (await deps.users.deleteCloze(user.id, cardId)) ? NO_CONTENT : fail(404, "no such cloze card");
+/** Any kind of card, with its reviews. */
+export async function deleteCard(deps: Deps, user: User, cardId: CardId): Promise<NoContent | Failed<404>> {
+  return (await deps.users.deleteCard(user.id, cardId)) ? NO_CONTENT : fail(404, "no such card");
 }
 
 export async function settings(deps: Deps, user: User): Promise<Ok<Settings>> {

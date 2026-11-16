@@ -6,7 +6,7 @@ import { type TableColumn, tableColumns, timestampNames } from "@skolia/util/che
 import { startLocal, type Local } from "./testing/harness.ts";
 import { MIGRATIONS } from "./user/migrations/index.ts";
 import { checksum } from "./user/migrator.ts";
-import { readingListQuery } from "./user/queries.ts";
+import { cardsQuery, readingListQuery } from "./user/queries.ts";
 
 let local: Local;
 
@@ -191,6 +191,50 @@ test("a page of the reading list seeks to its key in an index, with or without a
   }
 });
 
+test("a page of cards seeks to its key in an index, in a language, a group or a text, and sorts nothing", async () => {
+  await local.env.USER.getByName("ivan").words(FIRST_PAGE);
+  const storage = await storageOf("ivan");
+  const newest = schemas.NewestCardKey.parse(["2026-11-07T00:00:00.000Z", "00000000-0000-4000-8000-000000000000"]);
+  const listings = [false, true].flatMap((after) => [
+    { index: "card_listed", listing: { lang: "pl" as const, group: undefined, after: after ? newest : undefined, limit: 3 } },
+    { index: "card_group_listed", listing: { lang: "pl" as const, group: "words" as const, after: after ? newest : undefined, limit: 3 } },
+    { index: "card_group_listed", listing: { lang: "pl" as const, group: "forms" as const, after: after ? newest : undefined, limit: 3 } },
+    {
+      index: "sqlite_autoindex_cloze_2",
+      listing: {
+        documentId: schemas.DocumentId.parse("0".repeat(64)),
+        after: after ? schemas.TextCardKey.parse([5]) : undefined,
+        limit: 3,
+      },
+    },
+  ]);
+  for (const { index, listing } of listings) {
+    const query = cardsQuery(listing);
+    const plan = (await storage.exec<{ detail: string }>(`EXPLAIN QUERY PLAN ${query.sql.text}`, ...query.sql.params)).map(
+      (row) => row.detail,
+    );
+    const why = `${JSON.stringify(listing)}: ${plan.join("; ")}`;
+    assert.ok(plan[0]?.startsWith(`SEARCH ${"documentId" in listing ? "cloze" : "card"} USING INDEX ${index} `), why);
+    assert.ok(
+      plan.slice(1).every((d) => d.startsWith("SEARCH ") && !d.includes("TEMP B-TREE")),
+      why,
+    );
+  }
+});
+
+test("card_list's down drops card_group and its indexes, keeping the cards", async () => {
+  const kim = local.env.USER.getByName("kim");
+  await kim.setWord("pl:pies:NOUN", "active", schemas.Timestamp.parse("2026-11-07T00:00:00.000Z"));
+  await kim.migrate(8);
+  const storage = await storageOf("kim");
+  assert.deepEqual(await storage.exec("select name from pragma_table_xinfo('card') where name = 'card_group'"), []);
+  await kim.migrate(LATEST);
+  assert.deepEqual((await kim.cards({ lang: "pl", group: "words", limit: 10 })).items.map((c) => c.kind).sort(), [
+    "production",
+    "recognition",
+  ]);
+});
+
 test("an active word's cards are stored with their ts-fsrs state, which gives their due time", async () => {
   const ivan = local.env.USER.getByName("ivan");
   await ivan.setWord("pl:pies:NOUN", "active", schemas.Timestamp.parse("2026-11-07T00:00:00.000Z"));
@@ -318,7 +362,7 @@ test("row_count's triggers keep the count of cloze cards however one goes, and i
   await mia.makeCloze({ ...cloze, blankStart: 16, blankEnd: 19 }, at);
   assert.equal((await mia.makeCloze(cloze, at)).kind, "had");
   assert.equal(await count(), 2);
-  assert.ok(await mia.deleteCloze(made.cardId));
+  assert.ok(await mia.deleteCard(made.cardId));
   assert.equal(await count(), 1);
   await storage.exec("delete from card where kind = 'cloze'");
   assert.equal(await count(), 0);

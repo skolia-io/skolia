@@ -974,6 +974,146 @@
         "type": "string",
         "pattern": "^[0-9a-f]{64}$"
       },
+      "Card": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/CardId"
+          },
+          "lemmaId": {
+            "$ref": "#/components/schemas/LemmaId"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "recognition",
+              "production",
+              "cloze"
+            ]
+          },
+          "createdAt": {
+            "$ref": "#/components/schemas/Timestamp"
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "scheduleStatus": {
+            "type": "string",
+            "enum": [
+              "new",
+              "learning",
+              "review"
+            ]
+          },
+          "dueAt": {
+            "$ref": "#/components/schemas/Timestamp"
+          },
+          "scheduledDays": {
+            "type": "number",
+            "minimum": 0
+          },
+          "lastReviewedAt": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Timestamp"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cloze": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "documentId": {
+                    "$ref": "#/components/schemas/DocumentId"
+                  },
+                  "sentence": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2000
+                  },
+                  "sentenceStart": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 20000
+                  },
+                  "blankStart": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 20000
+                  },
+                  "blankEnd": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 20000
+                  },
+                  "feats": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  },
+                  "why": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "documentId",
+                  "sentence",
+                  "sentenceStart",
+                  "blankStart",
+                  "blankEnd",
+                  "feats",
+                  "why"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "lemmaId",
+          "kind",
+          "createdAt",
+          "active",
+          "scheduleStatus",
+          "dueAt",
+          "scheduledDays",
+          "lastReviewedAt",
+          "cloze"
+        ],
+        "additionalProperties": false
+      },
+      "CardMade": {
+        "type": "object",
+        "properties": {
+          "cardId": {
+            "$ref": "#/components/schemas/CardId"
+          }
+        },
+        "required": [
+          "cardId"
+        ],
+        "additionalProperties": false
+      },
       "ReadingStatus": {
         "type": "string",
         "enum": [
@@ -1932,14 +2072,123 @@
         }
       }
     },
-    "/api/me/clozes": {
-      "post": {
-        "operationId": "postApiMeClozes",
+    "/api/me/cards": {
+      "get": {
+        "operationId": "getApiMeCards",
         "tags": [
           "Cards"
         ],
-        "summary": "Make a cloze card",
-        "description": "A sentence from a text the user sees, with a word blanked out.",
+        "summary": "A page of the user's cards",
+        "description": "A language's (lang), newest first, group narrowing them to its cards; or a text's cloze cards (documentId), in the order of the text. The cursor must be one the same kind of list gave.",
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of cards",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Card"
+                      }
+                    },
+                    "next": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "next"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Neither lang nor documentId, or both, or another list's cursor",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "query",
+            "name": "after",
+            "schema": {}
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 50,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000
+            }
+          },
+          {
+            "in": "query",
+            "name": "lang",
+            "schema": {
+              "$ref": "#/components/schemas/Lang"
+            }
+          },
+          {
+            "in": "query",
+            "name": "group",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "words",
+                "forms"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "documentId",
+            "schema": {
+              "$ref": "#/components/schemas/DocumentId"
+            }
+          }
+        ]
+      },
+      "post": {
+        "operationId": "postApiMeCards",
+        "tags": [
+          "Cards"
+        ],
+        "summary": "Make a card",
+        "description": "Only cloze cards are made this way: a sentence from a text the user sees, with a word blanked out. A word's cards come with its status.",
         "security": [
           {
             "session": []
@@ -1954,16 +2203,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "cardId": {
-                      "$ref": "#/components/schemas/CardId"
-                    }
-                  },
-                  "required": [
-                    "cardId"
-                  ],
-                  "additionalProperties": false
+                  "$ref": "#/components/schemas/CardMade"
                 }
               }
             }
@@ -1973,16 +2213,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "cardId": {
-                      "$ref": "#/components/schemas/CardId"
-                    }
-                  },
-                  "required": [
-                    "cardId"
-                  ],
-                  "additionalProperties": false
+                  "$ref": "#/components/schemas/CardMade"
                 }
               }
             }
@@ -2080,6 +2311,10 @@
                   },
                   "lemmaId": {
                     "$ref": "#/components/schemas/LemmaId"
+                  },
+                  "kind": {
+                    "type": "string",
+                    "const": "cloze"
                   }
                 },
                 "required": [
@@ -2090,128 +2325,23 @@
                   "blankEnd",
                   "feats",
                   "why",
-                  "lemmaId"
+                  "lemmaId",
+                  "kind"
                 ]
               }
             }
           }
         }
-      },
-      "get": {
-        "operationId": "getApiMeClozes",
-        "tags": [
-          "Cards"
-        ],
-        "summary": "A page of a text's cloze cards",
-        "description": "By where each one's blank starts in the text.",
-        "security": [
-          {
-            "session": []
-          },
-          {
-            "apiKey": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "A page of cards",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "items": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "cardId": {
-                            "$ref": "#/components/schemas/CardId"
-                          },
-                          "start": {
-                            "type": "integer",
-                            "minimum": 0,
-                            "maximum": 20000
-                          }
-                        },
-                        "required": [
-                          "cardId",
-                          "start"
-                        ],
-                        "additionalProperties": false
-                      }
-                    },
-                    "next": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "items",
-                    "next"
-                  ],
-                  "additionalProperties": false
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "The request doesn't fit its schema",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Not signed in",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        },
-        "parameters": [
-          {
-            "in": "query",
-            "name": "after",
-            "schema": {}
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "schema": {
-              "default": 500,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 1000
-            }
-          },
-          {
-            "in": "query",
-            "name": "documentId",
-            "schema": {
-              "$ref": "#/components/schemas/DocumentId"
-            },
-            "required": true
-          }
-        ]
       }
     },
-    "/api/me/clozes/{cardId}": {
+    "/api/me/cards/{cardId}": {
       "delete": {
-        "operationId": "deleteApiMeClozesByCardId",
+        "operationId": "deleteApiMeCardsByCardId",
         "tags": [
           "Cards"
         ],
-        "summary": "Delete a cloze card",
+        "summary": "Delete a card",
+        "description": "A card of any kind, with its reviews. A word card's word keeps its status.",
         "security": [
           {
             "session": []

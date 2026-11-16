@@ -339,7 +339,10 @@
         <p class="muted">Loading…</p>
       {/if}
     {:else if user && due}
-      <p class="counts muted">{left} to go · {newLeft(due.newLeft)} · <a href="#/settings">Settings</a></p>
+      <p class="counts muted">
+        {left}
+        to go · {newLeft(due.newLeft)} · <a href="#/cards/{selected}">All cards</a> · <a href="#/settings">Settings</a>
+      </p>
       {#if card}
         <section class="flashcard" aria-live="polite" aria-atomic="true">
           <div class="known">

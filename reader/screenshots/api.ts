@@ -13,6 +13,7 @@ import {
   blankOut,
   matchesTags,
   type Annotation,
+  type Card,
   type Cloze,
   type DocumentId as DocumentIdType,
   type Lang,
@@ -261,6 +262,38 @@ const cards: readonly ScheduledCard[] = [
   },
 ];
 
+/** The cards as the list of them has them, newest first: one due in days, one new, one
+ * whose word is known, and the cloze card due. */
+const listedCards: readonly Card[] = [
+  listed(cards[2]!, "2026-11-08T08:00:00.000Z", { scheduleStatus: "learning", dueAt: "2026-11-09T09:00:00.000Z", scheduledDays: 0 }),
+  listed(cards[1]!, "2026-11-07T08:00:00.000Z", { scheduleStatus: "new", dueAt: "2026-11-09T08:00:00.000Z", scheduledDays: 0 }),
+  listed(cards[0]!, "2026-11-06T08:00:00.000Z", { scheduleStatus: "review", dueAt: "2026-11-13T08:00:00.000Z", scheduledDays: 4 }),
+  listed(
+    { ...cards[0]!, id: CardId.parse("00000000-0000-4000-8000-000000000004"), kind: "production" },
+    "2026-11-06T08:00:00.000Z",
+    { scheduleStatus: "review", dueAt: "2026-12-01T08:00:00.000Z", scheduledDays: 25 },
+    false,
+  ),
+];
+
+/** A card to review as the list of cards has it, last answered the day before NOW unless it's new. */
+function listed(
+  { isNew: _, ...card }: ScheduledCard,
+  createdAt: string,
+  { scheduleStatus, dueAt, scheduledDays }: { scheduleStatus: Card["scheduleStatus"]; dueAt: string; scheduledDays: number },
+  active = true,
+): Card {
+  return {
+    ...card,
+    active,
+    createdAt: Timestamp.parse(createdAt),
+    scheduleStatus,
+    dueAt: Timestamp.parse(dueAt),
+    scheduledDays,
+    lastReviewedAt: scheduleStatus === "new" ? null : Timestamp.parse("2026-11-08T09:00:00.000Z"),
+  };
+}
+
 /** The API's ports, in memory, for one test. Writes the pages make are accepted and
  * forgotten, except settings. */
 function deps(signedIn: boolean, annotations: readonly Annotation[]): Deps {
@@ -286,8 +319,14 @@ function deps(signedIn: boolean, annotations: readonly Annotation[]): Deps {
         dueAt: Timestamp.parse("2026-11-10T10:00:00.000Z"),
       }),
       makeCloze: async () => ({ kind: "made", cardId: CardId.parse("00000000-0000-4000-8000-000000000009") }),
-      clozes: async () => ({ items: [], next: null }),
-      deleteCloze: async () => true,
+      cards: async (_userId, listing) => ({
+        items:
+          "documentId" in listing || listing.lang !== "pl"
+            ? []
+            : listedCards.filter((c) => listing.group === undefined || (c.kind === "cloze") === (listing.group === "forms")),
+        next: null,
+      }),
+      deleteCard: async () => true,
       settings: async () => settings,
       setSettings: async (_userId, next) => {
         settings = next;

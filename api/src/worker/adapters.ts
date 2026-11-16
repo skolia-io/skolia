@@ -11,9 +11,10 @@ import {
   type AnnotationKey,
   type CardCounts,
   type CardGroup,
+  type Card,
   type CardId,
-  type ClozeKey,
-  type ClozeStart,
+  type CardKey,
+  type CardListing,
   type DocumentFilter,
   type DocumentKey,
   type NewCloze,
@@ -133,12 +134,12 @@ export class DurableObjectUsers implements UserData {
     return this.users.getByName(userId).makeCloze(cloze, now);
   }
 
-  async clozes(userId: UserId, documentId: DocumentId, page: PageRequest<ClozeKey>): Promise<Paginated<ClozeStart, ClozeKey>> {
-    return this.users.getByName(userId).clozes(documentId, page);
+  async cards(userId: UserId, listing: CardListing): Promise<Paginated<Card, CardKey>> {
+    return this.users.getByName(userId).cards(listing);
   }
 
-  async deleteCloze(userId: UserId, cardId: CardId): Promise<boolean> {
-    return this.users.getByName(userId).deleteCloze(cardId);
+  async deleteCard(userId: UserId, cardId: CardId): Promise<boolean> {
+    return this.users.getByName(userId).deleteCard(cardId);
   }
 
   async settings(userId: UserId): Promise<Settings> {

@@ -1,8 +1,9 @@
 // Queries of the user Durable Object (src/worker/user.ts) that the tests check the plans of.
 
-import type { ReadingFilter, ReadingKey } from "@skolia/shared/api";
+import type { CardListing, ReadingFilter, ReadingKey } from "@skolia/shared/api";
 import type { PageRequest } from "@skolia/shared/page";
-import { desc, eq, lt, row, select, type Query } from "@skolia/util/query";
+import { col, desc, eq, gt, lt, row, select, type Query } from "@skolia/util/query";
+import { sql } from "@skolia/util/sql";
 
 /** A reading_list row's columns, as a ReadingEntry. */
 export const READING_ENTRY = { status: "status", addedAt: "added_at", updatedAt: "updated_at" };
@@ -15,5 +16,51 @@ export function readingListQuery({ status, lang }: ReadingFilter, { after, limit
     .from("reading_list")
     .where(lang !== undefined && eq("lang", lang), eq("status", status), after !== undefined && lt(row("updated_at", "document_id"), after))
     .orderBy(desc("updated_at"), desc("document_id"))
+    .limit(limit + 1);
+}
+
+/** A card's columns, and its cloze's if it's a cloze card, as a Card once parsed. */
+const LISTED_CARD = {
+  id: "card.id",
+  lemmaId: "card.lemma_id",
+  kind: "card.kind",
+  createdAt: "card.created_at",
+  active: "card.active",
+  scheduleStatus: "card.schedule_status",
+  dueAt: "card.due_at",
+  scheduledDays: "card.scheduled_days",
+  lastReviewedAt: sql`card.fsrs ->> '$.lastReviewAt'`,
+  documentId: "cloze.document_id",
+  sentence: "cloze.sentence",
+  sentenceStart: "cloze.sentence_start",
+  blankStart: "cloze.blank_start",
+  blankEnd: "cloze.blank_end",
+  feats: "cloze.feats",
+  why: "cloze.why",
+};
+
+/** A page of cards, and one more if there is one. A language's, newest first: those
+ * before the page's key, which card_listed, or with a group card_group_listed, seeks to.
+ * A text's: those after the page's key, by cloze's (document_id, blank_start). */
+export function cardsQuery(listing: CardListing): Query {
+  if ("documentId" in listing) {
+    const { documentId, after, limit } = listing;
+    return select(LISTED_CARD)
+      .from("cloze")
+      .join("card", eq("card.id", col("cloze.card_id")))
+      .where(eq("cloze.document_id", documentId), after !== undefined && gt("cloze.blank_start", after[0]))
+      .orderBy("cloze.blank_start")
+      .limit(limit + 1);
+  }
+  const { lang, group, after, limit } = listing;
+  return select(LISTED_CARD)
+    .from("card")
+    .leftJoin("cloze", eq("cloze.card_id", col("card.id")))
+    .where(
+      eq("card.lang", lang),
+      group !== undefined && eq("card.card_group", group),
+      after !== undefined && lt(row("card.created_at", "card.id"), after),
+    )
+    .orderBy(desc("card.created_at"), desc("card.id"))
     .limit(limit + 1);
 }

@@ -4,7 +4,7 @@ import type { z } from "zod";
 import type { BundleParadigm, Feats, Pronunciation, Relation, Sense, State, Token, Upos } from "./schema.gen.ts";
 import type * as schemas from "./schemas.ts";
 
-import type { PageSize } from "./page.ts";
+import type { PageRequest, PageSize } from "./page.ts";
 
 export type { Paginated } from "./page.ts";
 
@@ -13,7 +13,8 @@ export const DOCUMENT_PAGE: PageSize = { fallback: 24, max: 50 };
 export const TAG_PAGE: PageSize = { fallback: 100, max: 500 };
 /** The reader follows these lists to the end, so their pages are big. */
 export const WORD_PAGE: PageSize = { fallback: 500, max: 1000 };
-export const CLOZE_PAGE: PageSize = { fallback: 500, max: 1000 };
+/** The reader follows a text's cards to the end; a language's it shows a page at a time. */
+export const CARD_PAGE: PageSize = { fallback: 50, max: 1000 };
 /** Like a page of documents, a page of the reading list reads each text's status from R2. */
 export const READING_PAGE: PageSize = { fallback: 24, max: 50 };
 export const ANNOTATION_PAGE: PageSize = { fallback: 500, max: 1000 };
@@ -231,7 +232,6 @@ export type DocumentFilter = {
 export type DocumentKey = z.output<typeof schemas.DocumentKey>;
 export type TagKey = z.output<typeof schemas.TagKey>;
 export type WordKey = z.output<typeof schemas.WordKey>;
-export type ClozeKey = z.output<typeof schemas.ClozeKey>;
 
 /** A word the user is learning (active), or has marked as known or ignored (names,
  * typos), which takes its cards out of reviews. A word with no status is new. */
@@ -374,11 +374,29 @@ export function blankParts(cloze: Pick<Cloze, "sentence" | "sentenceStart" | "bl
   return { before: cloze.sentence.slice(0, start), blank: cloze.sentence.slice(start, end), after: cloze.sentence.slice(end) };
 }
 
-/** The cloze card made, or the one the sentence and word already had. */
-export type ClozeMade = Readonly<z.output<typeof schemas.ClozeMade>>;
+/** A card to make: a cloze card for the word in the sentence. */
+export type NewCard = z.output<typeof schemas.NewCard>;
+/** What the reader sends: the same, before the API's validation brands its ids. */
+export type NewCardInput = z.input<typeof schemas.NewCard>;
 
-/** One of a text's cloze cards, by where its blank starts in it. */
-export type ClozeStart = Readonly<z.output<typeof schemas.ClozeStart>>;
+/** The card made, or the one the sentence and word already had. */
+export type CardMade = Readonly<z.output<typeof schemas.CardMade>>;
+
+/** Where a card is in its ts-fsrs schedule. */
+export const SCHEDULE_STATUSES = ["new", "learning", "review"] as const;
+export type ScheduleStatus = (typeof SCHEDULE_STATUSES)[number];
+
+export type Card = z.output<typeof schemas.Card>;
+export type NewestCardKey = z.output<typeof schemas.NewestCardKey>;
+export type TextCardKey = z.output<typeof schemas.TextCardKey>;
+/** Where a card is in a list of them: newest first in a language's, by its blank in a text's. */
+export type CardKey = NewestCardKey | TextCardKey;
+
+/** A page of cards: a language's, group narrowing them, newest first; or a text's cloze
+ * cards, in the order of the text. */
+export type CardListing =
+  | ({ readonly lang: Lang; readonly group: CardGroup | undefined } & PageRequest<NewestCardKey>)
+  | ({ readonly documentId: DocumentId } & PageRequest<TextCardKey>);
 
 /** Where a text is on the user's reading list. A text that isn't on it has none. */
 export const READING_STATUSES = ["to-read", "reading", "finished"] as const;

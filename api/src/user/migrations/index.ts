@@ -6,6 +6,7 @@ import * as m0005 from "./0005_card_groups.ts";
 import * as m0006 from "./0006_reading_list.ts";
 import * as m0007 from "./0007_at_columns.ts";
 import * as m0008 from "./0008_row_count.ts";
+import * as m0009 from "./0009_card_list.ts";
 
 export interface Migration {
   version: number;
@@ -23,4 +24,5 @@ export const MIGRATIONS: readonly Migration[] = [
   { version: 6, name: "reading_list", ...m0006 },
   { version: 7, name: "at_columns", ...m0007 },
   { version: 8, name: "row_count", ...m0008 },
+  { version: 9, name: "card_list", ...m0009 },
 ];
