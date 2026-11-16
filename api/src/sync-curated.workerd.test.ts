@@ -21,12 +21,11 @@ const INWOKACJA = {
 test("the sync imports, updates and deletes until the curated user's documents match the texts", async () => {
   const app = setup();
   const api = client(app, await local.signIn(CURATED_USER));
-  const log = () => {};
   const kinds = (changes: Change[]) => changes.map((c) => c.kind).sort();
   const first = await toCurated("pl/a.yaml", "pl", INWOKACJA);
   const second = await toCurated("pl/b.yaml", "pl", { title: "B", licence: "cc0", tags: {}, text: "Drugi tekst.", annotations: [] });
-  assert.deepEqual(kinds(await sync(api, [first, second], { log })), ["import", "import"]);
-  assert.deepEqual(await sync(api, [first, second], { check: true, log }), []);
+  assert.deepEqual(kinds(await sync(api, [first, second])), ["import", "import"]);
+  assert.deepEqual(await sync(api, [first, second], { check: true }), []);
 
   const retitled = await toCurated("pl/a.yaml", "pl", { ...INWOKACJA, title: "Pan Tadeusz, Inwokacja" });
   const edited = await toCurated("pl/b.yaml", "pl", {
@@ -36,19 +35,17 @@ test("the sync imports, updates and deletes until the curated user's documents m
     text: "Drugi tekst, poprawiony.",
     annotations: [],
   });
-  assert.deepEqual(kinds(await sync(api, [retitled, edited], { check: true, log })), ["delete", "import", "update"]);
-  assert.deepEqual(kinds(await sync(api, [retitled, edited], { log })), ["delete", "import", "update"]);
-  assert.deepEqual(await sync(api, [retitled, edited], { check: true, log }), []);
+  assert.deepEqual(kinds(await sync(api, [retitled, edited], { check: true })), ["delete", "import", "update"]);
+  assert.deepEqual(kinds(await sync(api, [retitled, edited])), ["delete", "import", "update"]);
+  assert.deepEqual(await sync(api, [retitled, edited], { check: true }), []);
   assert.deepEqual((await listed(app)).sort(), [first.id, edited.id].sort());
   assert.equal((await client(app).documents[":id"].$get({ param: { id: second.id } })).status, 404);
 
   const tagged = await toCurated("pl/a.yaml", "pl", { ...INWOKACJA, title: "Pan Tadeusz, Inwokacja", tags: { level: "C2" } });
-  assert.deepEqual(await sync(api, [tagged, edited], { log }), [
-    { kind: "update", text: tagged, id: first.id, update: { tags: { level: "C2" } } },
-  ]);
-  assert.deepEqual(await sync(api, [tagged, edited], { check: true, log }), []);
-  assert.deepEqual(kinds(await sync(api, [retitled, edited], { log })), ["update"]);
-  assert.deepEqual(await sync(api, [retitled, edited], { check: true, log }), []);
+  assert.deepEqual(await sync(api, [tagged, edited]), [{ kind: "update", text: tagged, id: first.id, update: { tags: { level: "C2" } } }]);
+  assert.deepEqual(await sync(api, [tagged, edited], { check: true }), []);
+  assert.deepEqual(kinds(await sync(api, [retitled, edited])), ["update"]);
+  assert.deepEqual(await sync(api, [retitled, edited], { check: true }), []);
 });
 
 const noFetch: Fetch = async (url) => {
@@ -76,7 +73,6 @@ const expected = ({ annotations, request }: Curated) =>
 test("the sync adds a text's annotations, and removes those not in its file any more", async () => {
   const app = setup();
   const api = client(app, await local.signIn(CURATED_USER));
-  const log = () => {};
   const kinds = (changes: Change[]) => changes.map((c) => c.kind).sort();
   const marked = "[Thuli ma krótkie włosy.]{2}\n\nAnna ma [długie]{d} włosy.";
   const credits = (long: string) =>
@@ -86,20 +82,20 @@ test("the sync adds a text's annotations, and removes those not in its file any 
     "    - kind: audio\n      url: https://example.org/d.mp3\n      licence: cc0\n";
 
   const first = await inline(marked, credits("long"));
-  assert.deepEqual(kinds(await sync(api, [first], { log })), ["annotate", "annotate", "annotate", "import"]);
-  assert.deepEqual(await sync(api, [first], { check: true, log }), []);
+  assert.deepEqual(kinds(await sync(api, [first])), ["annotate", "annotate", "annotate", "import"]);
+  assert.deepEqual(await sync(api, [first], { check: true }), []);
   assert.deepEqual(await annotated(app, first), expected(first));
   assert.deepEqual((await annotated(app, first)).map(([, text]) => text).sort(), ["Thuli ma krótkie włosy.", "długie", "długie"]);
 
   const edited = await inline(marked, credits("long, of hair"));
   assert.equal(edited.id, first.id);
-  assert.deepEqual(kinds(await sync(api, [edited], { log })), ["annotate", "unannotate"]);
-  assert.deepEqual(await sync(api, [edited], { check: true, log }), []);
+  assert.deepEqual(kinds(await sync(api, [edited])), ["annotate", "unannotate"]);
+  assert.deepEqual(await sync(api, [edited], { check: true }), []);
   assert.deepEqual(await annotated(app, edited), expected(edited));
 
   const plain = await inline("Thuli ma krótkie włosy.\n\nAnna ma długie włosy.");
   assert.equal(plain.id, first.id);
-  assert.deepEqual(kinds(await sync(api, [plain], { log })), ["unannotate", "unannotate", "unannotate"]);
-  assert.deepEqual(await sync(api, [plain], { check: true, log }), []);
+  assert.deepEqual(kinds(await sync(api, [plain])), ["unannotate", "unannotate", "unannotate"]);
+  assert.deepEqual(await sync(api, [plain], { check: true }), []);
   assert.deepEqual(await annotated(app, plain), []);
 });

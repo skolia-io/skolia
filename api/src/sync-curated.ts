@@ -36,6 +36,9 @@ import type { AppType } from "./app.ts";
 import { API_KEY_HEADER } from "./auth.ts";
 import { CuratedSpec, resolve, type Fetch, type Resolved } from "./curated-kinds.ts";
 import { trimSpans } from "./curated-spans.ts";
+import { runScript, scriptLog, since } from "./script-log.ts";
+
+const log = scriptLog("sync-curated");
 
 /** A curated file, checked but not yet resolved. */
 export interface CuratedFile {
@@ -127,12 +130,14 @@ export async function readCurated(dir: string): Promise<CuratedFile[]> {
 export async function resolveCurated(files: readonly CuratedFile[], fetch: Fetch = globalThis.fetch): Promise<Curated[]> {
   const texts = await Promise.all(
     files.map(async ({ path, lang, spec }) => {
+      const start = performance.now();
       let resolved: Resolved;
       try {
         resolved = await resolve(spec, lang, fetch);
       } catch (error) {
         throw new Error(`${path}: ${error instanceof Error ? error.message : String(error)}`);
       }
+      log.info("resolved {path}", { path, kind: spec.kind, ms: since(start) });
       return toCurated(path, lang, resolved);
     }),
   );
@@ -198,49 +203,64 @@ function sameTags(a: Tags, b: Tags): boolean {
   return kinds.length === Object.keys(b).length && kinds.every((kind) => a[kind] === b[kind]);
 }
 
-function describe(change: Change): string {
+/** A change's fields for its log record and error */
+function describe(change: Change): Readonly<Record<string, unknown>> {
   switch (change.kind) {
     case "import":
-      return `import ${change.text.path}`;
+      return { change: change.kind, path: change.text.path, doc: change.text.id };
     case "update":
-      return `update ${change.text.path}: ${Object.keys(change.update).join(", ")}`;
+      return { change: change.kind, path: change.text.path, doc: change.id, fields: Object.keys(change.update) };
     case "delete":
-      return `delete ${change.document.id} (${change.document.lang}, "${change.document.title}")`;
+      return { change: change.kind, doc: change.document.id, lang: change.document.lang, title: change.document.title };
     case "annotate":
-      return `annotate ${change.text.path}: ${describeAnnotation(change.annotation.request)}`;
+      return { change: change.kind, path: change.text.path, doc: change.text.id, ...describeAnnotation(change.annotation.request) };
     case "unannotate":
-      return `unannotate ${change.text.path}: ${describeAnnotation(change.annotation)}`;
+      return { change: change.kind, path: change.text.path, doc: change.text.id, ...describeAnnotation(change.annotation) };
   }
 }
 
-function describeAnnotation({ kind, start, end }: { kind: string; start: number; end: number }): string {
-  return `${kind} at ${start}-${end}`;
+function describeAnnotation({ kind, start, end }: { kind: string; start: number; end: number }) {
+  return { annotation: kind, start, end };
 }
 
-async function expectOk(response: { ok: boolean; status: number; text(): Promise<string> }, what: string): Promise<void> {
-  if (!response.ok) throw new Error(`${what}: ${response.status} ${await response.text()}`);
+async function expectOk(response: { ok: boolean; status: number; text(): Promise<string> }, change: Change): Promise<void> {
+  if (!response.ok) throw new Error(`${JSON.stringify(describe(change))}: ${response.status} ${await response.text()}`);
 }
 
 export type Api = ReturnType<typeof hc<AppType>>["api"];
 
 /** Lists, then unless check is set makes, the changes that make the signed-in user's
  * documents match the texts. */
-export async function sync(api: Api, texts: readonly Curated[], { check = false, log = console.log } = {}): Promise<Change[]> {
+export async function sync(api: Api, texts: readonly Curated[], { check = false } = {}): Promise<Change[]> {
   // Every page: a document missing from the list would be imported again, and one in
   // the list but not in curated/ deleted
+  const listStart = performance.now();
   const mine = await allPages(async (after?: Cursor<DocumentKey>) => {
     const listed = await api.me.documents.$get({ query: { after, limit: String(DOCUMENT_PAGE.max) } });
     if (!listed.ok) throw new Error(`list: ${listed.status} ${await listed.text()}`);
     return listed.json();
   });
+  log.info("listed {documents} documents", { documents: mine.length, ms: since(listStart) });
   const imported = new Set(mine.map((d) => d.id));
+  const annotationsStart = performance.now();
   const annotations = new Map(
     await Promise.all(texts.filter((t) => imported.has(t.id)).map(async (t) => [t.id, await annotationsOf(api, t.id)] as const)),
   );
+  log.info("listed the annotations of {documents} documents", {
+    documents: annotations.size,
+    annotations: [...annotations.values()].reduce((n, a) => n + a.length, 0),
+    ms: since(annotationsStart),
+  });
   const changes = plan(texts, mine, annotations);
-  for (const change of changes) log(describe(change));
-  if (check) return changes;
-  for (const change of changes) await make(api, change);
+  if (check) {
+    for (const change of changes) log.info("to {change}", describe(change));
+    return changes;
+  }
+  for (const change of changes) {
+    const start = performance.now();
+    await make(api, change);
+    log.info("{change}", { ...describe(change), ms: since(start) });
+  }
   return changes;
 }
 
@@ -254,25 +274,24 @@ function annotationsOf(api: Api, id: DocumentId): Promise<readonly Annotation[]>
 }
 
 async function make(api: Api, change: Change): Promise<void> {
-  const what = describe(change);
   switch (change.kind) {
     case "import":
-      return expectOk(await api.documents.$post({ json: change.text.request }), what);
+      return expectOk(await api.documents.$post({ json: change.text.request }), change);
     case "update":
-      return expectOk(await api.documents[":id"].$patch({ param: { id: change.id }, json: change.update }), what);
+      return expectOk(await api.documents[":id"].$patch({ param: { id: change.id }, json: change.update }), change);
     case "delete":
-      return expectOk(await api.documents[":id"].$delete({ param: { id: change.document.id } }), what);
+      return expectOk(await api.documents[":id"].$delete({ param: { id: change.document.id } }), change);
     case "annotate":
       return expectOk(
         await api.documents[":id"].annotations.$post({ param: { id: change.text.id }, json: change.annotation.request }),
-        what,
+        change,
       );
     case "unannotate":
       return expectOk(
         await api.documents[":id"].annotations[":annotationId"].$delete({
           param: { id: change.text.id, annotationId: change.annotation.id },
         }),
-        what,
+        change,
       );
   }
 }
@@ -285,11 +304,17 @@ async function main(): Promise<void> {
     process.exit(2);
   }
   const api = hc<AppType>(url.replace(/\/$/u, ""), { headers: { [API_KEY_HEADER]: key } }).api;
+  const start = performance.now();
   const texts = await resolveCurated(await readCurated(dir));
+  log.info("resolved {texts} texts", { texts: texts.length, ms: since(start) });
   const check = flag === "--check";
   const changes = await sync(api, texts, { check });
-  console.log(`${texts.length} texts, ${changes.length} ${check ? "to make" : "made"}`);
-  if (check && changes.length > 0) process.exit(1);
+  log.info(check ? "{changes} changes to make" : "made {changes} changes", {
+    texts: texts.length,
+    changes: changes.length,
+    ms: since(start),
+  });
+  if (check && changes.length > 0) process.exitCode = 1;
 }
 
-if (import.meta.main) await main();
+if (import.meta.main) await runScript(log, main);
