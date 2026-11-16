@@ -1,8 +1,13 @@
 packages:
   - api
+  - oauth-proxy
   - reader
   - shared
   - util
+# One better-auth for the API and the OAuth proxy, which pass each other its encrypted
+# sign-in state and profile
+catalog:
+  better-auth: 1.7.12
 # Their install scripts check the platform binary and download it if it's missing;
 # pnpm already installs it from an optional dependency (e.g. @cloudflare/workerd-darwin-arm64)
 allowBuilds:

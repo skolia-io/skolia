@@ -36,6 +36,7 @@ export function authConfig(database: D1Database): AuthConfig {
     baseURL: ORIGIN,
     secret: "a test secret that is at least 32 characters",
     google: { clientId: "id", clientSecret: "secret" },
+    oauthProxy: undefined,
   };
 }
 

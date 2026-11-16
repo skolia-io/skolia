@@ -1,6 +1,7 @@
 import { apiKey } from "@better-auth/api-key";
 import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { APIError } from "better-auth/api";
+import { oAuthProxy } from "better-auth/plugins/oauth-proxy";
 import { USER_TYPES, type User } from "@skolia/shared/api";
 import { UserId, UserType } from "@skolia/shared/schemas";
 import * as z from "zod";
@@ -12,6 +13,9 @@ export interface AuthConfig {
   secret: string;
   /** Without it there's no Google sign-in, but API keys still work. */
   google: { clientId: string; clientSecret: string } | undefined;
+  /** Previews: Google sends their sign-in to the OAuth proxy at url (oauth-proxy/), whose
+   * redirect URI it has, and the proxy hands the profile back encrypted with secret. */
+  oauthProxy: { url: string; secret: string } | undefined;
 }
 
 /** The header an API key is sent in. Keys are made only by writing them to D1
@@ -31,7 +35,10 @@ export function authOptions(config: AuthConfig) {
     account: { encryptOAuthTokens: true },
     user: { additionalFields: { type: { type: [...USER_TYPES], required: false, defaultValue: "standard", input: false } } },
     disabledPaths: API_KEY_PATHS,
-    plugins: [apiKey({ apiKeyHeaders: API_KEY_HEADER, enableSessionForAPIKeys: true, rateLimit: { enabled: false } })],
+    plugins: [
+      apiKey({ apiKeyHeaders: API_KEY_HEADER, enableSessionForAPIKeys: true, rateLimit: { enabled: false } }),
+      ...(config.oauthProxy ? [oAuthProxy({ productionURL: config.oauthProxy.url, secret: config.oauthProxy.secret })] : []),
+    ],
     telemetry: { enabled: false },
   } satisfies BetterAuthOptions;
 }

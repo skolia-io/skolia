@@ -91,7 +91,14 @@ def config(env: str) -> None:
     web = promote("wrangler.jsonc", env)
     web["workers_dev"] = True
     web["preview_urls"] = False
-    web["vars"] = {**as_object(web.get("vars"), "vars"), "BASE_URL": url(env), "MUTABLE_FINAL_USER_MIGRATION": "true"}
+    # Google sign-in goes through the OAuth proxy (oauth-proxy/)
+    proxy = as_string(as_object(read("../oauth-proxy/wrangler.jsonc").get("vars"), "oauth-proxy vars").get("BASE_URL"), "oauth-proxy BASE_URL")
+    web["vars"] = {
+        **as_object(web.get("vars"), "vars"),
+        "BASE_URL": url(env),
+        "MUTABLE_FINAL_USER_MIGRATION": "true",
+        "OAUTH_PROXY_URL": proxy,
+    }
     ingest = promote("wrangler.ingest.jsonc", env)
     ingest["vars"] = {**as_object(ingest.get("vars"), "vars"), "SLEEP_AFTER": PREVIEW_SLEEP_AFTER}
     configs = {f"wrangler.{env}.json": web, f"wrangler.ingest.{env}.json": ingest}
