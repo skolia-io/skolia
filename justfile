@@ -191,6 +191,7 @@ e2e env="local":
     node api/src/e2e.ts "$url" "$(git describe --tags --always --dirty)"
 
 # Make the curated user's documents match curated/ (api/src/sync-curated.ts); with --check, only list what that takes.
+# A preview gets 5 of the texts (--sample), spread over languages, kinds and annotations.
 # Writes a new API key for the curated user to the environment's D1 first (api/src/sync-curated-key.ts).
 sync-curated env *flags:
     #!/usr/bin/env bash
@@ -199,7 +200,8 @@ sync-curated env *flags:
     SYNC_CURATED_API_KEY=$(openssl rand -hex 32)
     export SYNC_CURATED_API_KEY
     just d1-sql {{ env }} api/src/sync-curated-key.ts
-    node api/src/sync-curated.ts "$url" curated {{ flags }}
+    case {{ env }} in pr-*) sample="--sample 5" ;; *) sample= ;; esac
+    node api/src/sync-curated.ts "$url" curated $sample {{ flags }}
 
 # The environment's URL
 [private]

@@ -82,7 +82,7 @@ test("the sync adds a text's annotations, and removes those not in its file any 
     "    - kind: audio\n      url: https://example.org/d.mp3\n      licence: cc0\n";
 
   const first = await inline(marked, credits("long"));
-  assert.deepEqual(kinds(await sync(api, [first])), ["annotate", "annotate", "annotate", "import"]);
+  assert.deepEqual(kinds(await sync(api, [first])), ["annotate", "import"]);
   assert.deepEqual(await sync(api, [first], { check: true }), []);
   assert.deepEqual(await annotated(app, first), expected(first));
   assert.deepEqual((await annotated(app, first)).map(([, text]) => text).sort(), ["Thuli ma krótkie włosy.", "długie", "długie"]);

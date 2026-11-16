@@ -7,10 +7,13 @@
 // With --check, only lists what it would do, and fails if that's anything.
 // curated/{lang}/{name}.yaml: one text, of a kind (curated-kinds.ts) that has it inline or
 // names where to fetch it.
-// usage: SYNC_CURATED_API_KEY=<key> node src/sync-curated.ts <base url> <curated dir> [--check]
+// With --concurrency, makes that many changes at once (default CONCURRENCY). With --sample,
+// syncs only that many of the texts (sampleCurated), as previews do.
+// usage: SYNC_CURATED_API_KEY=<key> node src/sync-curated.ts <base url> <curated dir> [--check] [--concurrency <n>] [--sample <n>]
 import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
-import { hc } from "hono/client";
+import { parseArgs } from "node:util";
+import { hc, type ClientRequestOptions } from "hono/client";
 import { parse as parseYaml } from "yaml";
 import * as z from "zod";
 import {
@@ -33,6 +36,7 @@ import { annotationId } from "@skolia/shared/annotations";
 import { docId } from "@skolia/shared/keys";
 import { allPages, type Cursor } from "@skolia/shared/page";
 import * as schemas from "@skolia/shared/schemas";
+import { GraphBuilder, runGraph, type Graph } from "@skolia/util/graph";
 import type { AppType } from "./app.ts";
 import { API_KEY_HEADER } from "./auth.ts";
 import { CuratedSpec, resolve, type Fetch, type Resolved } from "./curated-kinds.ts";
@@ -65,8 +69,11 @@ export type Change =
   | { kind: "import"; text: Curated }
   | { kind: "update"; text: Curated; id: DocumentId; update: DocumentUpdate }
   | { kind: "delete"; document: DocumentSummary }
-  | { kind: "annotate"; text: Curated; annotation: CuratedAnnotation }
+  | { kind: "annotate"; text: Curated; annotations: readonly CuratedAnnotation[] }
   | { kind: "unannotate"; text: Curated; annotation: Annotation };
+
+/** How many changes are made at once, unless --concurrency says */
+const CONCURRENCY = 8;
 
 /** A curated file's YAML, checked against its kind. Throws, naming the file, if it isn't one. */
 export function parseCurated(path: string, lang: Lang, raw: string): CuratedFile {
@@ -126,6 +133,23 @@ export async function readCurated(dir: string): Promise<CuratedFile[]> {
   return files.flat();
 }
 
+/** n of the files, the same each time, spread over their languages, kinds and whether they
+ * have annotations: a file from each of those groups in turn, each group in path order. */
+export function sampleCurated(files: readonly CuratedFile[], n: number): CuratedFile[] {
+  const groups = files
+    .toSorted((a, b) => a.path.localeCompare(b.path))
+    .reduce((byGroup, file) => {
+      const annotated = file.spec.kind === "inline" && Object.keys(file.spec.annotations).length > 0;
+      const group = `${file.lang} ${file.spec.kind} ${annotated}`;
+      return byGroup.set(group, [...(byGroup.get(group) ?? []), file]);
+    }, new Map<string, readonly CuratedFile[]>());
+  const ordered = [...groups].toSorted(([a], [b]) => a.localeCompare(b)).map(([, group]) => group);
+  const rounds = Math.max(0, ...ordered.map((group) => group.length));
+  return Array.from({ length: rounds }, (_, round) => ordered.flatMap((group) => group[round] ?? []))
+    .flat()
+    .slice(0, n);
+}
+
 /** The files' texts, fetching those their kind names a source for. Throws, naming the
  * file, if one can't be had or two are the same text. */
 export async function resolveCurated(files: readonly CuratedFile[], fetch: Fetch = globalThis.fetch): Promise<Curated[]> {
@@ -151,52 +175,47 @@ export async function resolveCurated(files: readonly CuratedFile[], fetch: Fetch
   return texts;
 }
 
-/** What makes the curated user's documents, and the annotations on those already imported
- * (by document), match the texts. A text imported now gets all its annotations, after
- * every import. */
+/** The changes that make the curated user's documents, and the annotations on those already
+ * imported (by document), match the texts: a graph, each change after those it needs. */
 export function plan(
   texts: readonly Curated[],
   mine: readonly DocumentSummary[],
   annotations: ReadonlyMap<DocumentId, readonly Annotation[]>,
-): Change[] {
-  return [...planDocuments(texts, mine), ...planAnnotations(texts, annotations)];
-}
-
-function planAnnotations(texts: readonly Curated[], annotations: ReadonlyMap<DocumentId, readonly Annotation[]>): Change[] {
-  return texts.flatMap((text): Change[] => {
-    const had = annotations.get(text.id) ?? [];
-    const wanted = new Set(text.annotations.map((a) => a.id));
-    const hadIds = new Set(had.map((a) => a.id));
-    return [
-      ...had.filter((a) => !wanted.has(a.id)).map((annotation) => ({ kind: "unannotate" as const, text, annotation })),
-      ...text.annotations.filter((a) => !hadIds.has(a.id)).map((annotation) => ({ kind: "annotate" as const, text, annotation })),
-    ];
-  });
-}
-
-function planDocuments(texts: readonly Curated[], mine: readonly DocumentSummary[]): Change[] {
+): Graph<Change> {
+  const graph = new GraphBuilder<Change>();
   const byId = new Map(mine.map((d) => [d.id, d]));
-  const changes: Change[] = [];
-  for (const text of texts) {
-    const document = byId.get(text.id);
-    if (document === undefined) {
-      changes.push({ kind: "import", text });
-      continue;
-    }
-    const { title, licence, author, source, tags } = text.request;
-    const update: DocumentUpdate = {};
-    if (title !== undefined && title !== document.title) update.title = title;
-    if (licence !== document.licence) update.licence = licence;
-    if ((author ?? null) !== document.author) update.author = author ?? null;
-    if ((source ?? null) !== document.source) update.source = source ?? null;
-    if (!sameTags(tags, document.tags)) update.tags = tags;
-    if (Object.keys(update).length > 0) changes.push({ kind: "update", text, id: text.id, update });
-  }
+  for (const text of texts) planText(graph, text, byId.get(text.id), annotations.get(text.id) ?? []);
   const wanted = new Set(texts.map((t) => t.id));
-  for (const document of mine) {
-    if (!wanted.has(document.id)) changes.push({ kind: "delete", document });
+  for (const document of mine) if (!wanted.has(document.id)) graph.add({ kind: "delete", document });
+  return graph.build();
+}
+
+/** A text's changes: its import or update, the annotations it has that its file hasn't, and
+ * those its file has that it hasn't, in batches. A batch depends on the import, and on the
+ * removals, which make room under MAX_ANNOTATIONS. */
+function planText(graph: GraphBuilder<Change>, text: Curated, document: DocumentSummary | undefined, had: readonly Annotation[]): void {
+  const imported = document === undefined ? [graph.add({ kind: "import", text })] : [];
+  const update = document === undefined ? {} : updateOf(text, document);
+  if (Object.keys(update).length > 0) graph.add({ kind: "update", text, id: text.id, update });
+  const wanted = new Set(text.annotations.map((a) => a.id));
+  const removed = had.filter((a) => !wanted.has(a.id)).map((annotation) => graph.add({ kind: "unannotate", text, annotation }));
+  const hadIds = new Set(had.map((a) => a.id));
+  const missing = text.annotations.filter((a) => !hadIds.has(a.id));
+  for (let i = 0; i < missing.length; i += ANNOTATION_BATCH) {
+    graph.add({ kind: "annotate", text, annotations: missing.slice(i, i + ANNOTATION_BATCH) }, [...imported, ...removed]);
   }
-  return changes;
+}
+
+/** What of the document's title and credits differs from the text's file. */
+function updateOf(text: Curated, document: DocumentSummary): DocumentUpdate {
+  const { title, licence, author, source, tags } = text.request;
+  return {
+    ...(title !== undefined && title !== document.title ? { title } : {}),
+    ...(licence !== document.licence ? { licence } : {}),
+    ...((author ?? null) !== document.author ? { author: author ?? null } : {}),
+    ...((source ?? null) !== document.source ? { source: source ?? null } : {}),
+    ...(sameTags(tags, document.tags) ? {} : { tags }),
+  };
 }
 
 function sameTags(a: Tags, b: Tags): boolean {
@@ -214,7 +233,7 @@ function describe(change: Change): Readonly<Record<string, unknown>> {
     case "delete":
       return { change: change.kind, doc: change.document.id, lang: change.document.lang, title: change.document.title };
     case "annotate":
-      return { change: change.kind, path: change.text.path, doc: change.text.id, ...describeAnnotation(change.annotation.request) };
+      return { change: change.kind, path: change.text.path, doc: change.text.id, annotations: change.annotations.length };
     case "unannotate":
       return { change: change.kind, path: change.text.path, doc: change.text.id, ...describeAnnotation(change.annotation) };
   }
@@ -224,15 +243,16 @@ function describeAnnotation({ kind, start, end }: { kind: string; start: number;
   return { annotation: kind, start, end };
 }
 
-async function expectOk(response: { ok: boolean; status: number; text(): Promise<string> }, change: Change): Promise<void> {
-  if (!response.ok) throw new Error(`${JSON.stringify(describe(change))}: ${response.status} ${await response.text()}`);
+/** The error for a change the API refused. */
+async function refused(response: { status: number; text(): Promise<string> }, change: Change): Promise<Error> {
+  return new Error(`${JSON.stringify(describe(change))}: ${response.status} ${await response.text()}`);
 }
 
 export type Api = ReturnType<typeof hc<AppType>>["api"];
 
 /** Lists, then unless check is set makes, the changes that make the signed-in user's
  * documents match the texts. */
-export async function sync(api: Api, texts: readonly Curated[], { check = false } = {}): Promise<Change[]> {
+export async function sync(api: Api, texts: readonly Curated[], { check = false, concurrency = CONCURRENCY } = {}): Promise<Change[]> {
   // Every page: a document missing from the list would be imported again, and one in
   // the list but not in curated/ deleted
   const listStart = performance.now();
@@ -252,58 +272,18 @@ export async function sync(api: Api, texts: readonly Curated[], { check = false 
     annotations: [...annotations.values()].reduce((n, a) => n + a.length, 0),
     ms: since(annotationsStart),
   });
-  const changes = plan(texts, mine, annotations);
+  const graph = plan(texts, mine, annotations);
+  const changes = [...graph.nodes];
   if (check) {
     for (const change of changes) log.info("to {change}", describe(change));
     return changes;
   }
-  // Annotations go last, after their texts are imported and their old annotations removed,
-  // a text's in as few requests as the batch size allows
-  for (const change of changes) {
-    if (change.kind === "annotate") continue;
+  await runGraph(graph, concurrency, async (change, signal) => {
     const start = performance.now();
-    await make(api, change);
-    log.info("{change}", { ...describe(change), ms: since(start) });
-  }
-  for (const batch of annotationBatches(changes)) {
-    const start = performance.now();
-    const added = await annotateAll(api, batch);
-    log.info("annotate {path}", {
-      change: "annotate",
-      path: batch.text.path,
-      doc: batch.text.id,
-      annotations: batch.annotations.length,
-      added,
-      ms: since(start),
-    });
-  }
-  return changes;
-}
-
-type AnnotationBatch = { readonly text: Curated; readonly annotations: readonly CuratedAnnotation[] };
-
-/** The annotate changes by text, in batches of at most ANNOTATION_BATCH. */
-function annotationBatches(changes: readonly Change[]): AnnotationBatch[] {
-  const byText = changes.reduce((texts, c) => {
-    if (c.kind === "annotate") texts.set(c.text, [...(texts.get(c.text) ?? []), c.annotation]);
-    return texts;
-  }, new Map<Curated, readonly CuratedAnnotation[]>());
-  return [...byText].flatMap(([text, annotations]) =>
-    Array.from({ length: Math.ceil(annotations.length / ANNOTATION_BATCH) }, (_, i) => ({
-      text,
-      annotations: annotations.slice(i * ANNOTATION_BATCH, (i + 1) * ANNOTATION_BATCH),
-    })),
-  );
-}
-
-/** Adds the batch's annotations to its text, giving how many were new. */
-async function annotateAll(api: Api, { text, annotations }: AnnotationBatch): Promise<number> {
-  const response = await api.documents[":id"].annotations.$post({
-    param: { id: text.id },
-    json: { annotations: annotations.map((a) => a.request) },
+    const made = await make(api, change, { init: { signal } });
+    log.info("{change}", { ...describe(change), ...made, ms: since(start) });
   });
-  if (!response.ok) throw new Error(`annotate ${text.path}: ${response.status} ${await response.text()}`);
-  return (await response.json()).added;
+  return changes;
 }
 
 /** Every page of the signed-in user's annotations on their document. */
@@ -315,43 +295,92 @@ function annotationsOf(api: Api, id: DocumentId): Promise<readonly Annotation[]>
   });
 }
 
-async function make(api: Api, change: Exclude<Change, { kind: "annotate" }>): Promise<void> {
+/** Makes the change, giving what's worth logging of the response. */
+/** options: the client's, for each request, e.g. to abort it */
+async function make(api: Api, change: Change, options: ClientRequestOptions): Promise<Readonly<Record<string, unknown>>> {
   switch (change.kind) {
     case "import":
-      return expectOk(await api.documents.$post({ json: change.text.request }), change);
+      return made(await api.documents.$post({ json: change.text.request }, options), change);
     case "update":
-      return expectOk(await api.documents[":id"].$patch({ param: { id: change.id }, json: change.update }), change);
+      return made(await api.documents[":id"].$patch({ param: { id: change.id }, json: change.update }, options), change);
     case "delete":
-      return expectOk(await api.documents[":id"].$delete({ param: { id: change.document.id } }), change);
+      return made(await api.documents[":id"].$delete({ param: { id: change.document.id } }, options), change);
     case "unannotate":
-      return expectOk(
-        await api.documents[":id"].annotations[":annotationId"].$delete({
-          param: { id: change.text.id, annotationId: change.annotation.id },
-        }),
+      return made(
+        await api.documents[":id"].annotations[":annotationId"].$delete(
+          {
+            param: { id: change.text.id, annotationId: change.annotation.id },
+          },
+          options,
+        ),
         change,
       );
+    case "annotate": {
+      const response = await api.documents[":id"].annotations.$post(
+        {
+          param: { id: change.text.id },
+          json: { annotations: change.annotations.map((a) => a.request) },
+        },
+        options,
+      );
+      if (!response.ok) throw await refused(response, change);
+      return { added: (await response.json()).added };
+    }
   }
 }
 
+/** Nothing to log, once the API has taken the change. */
+async function made(
+  response: { ok: boolean; status: number; text(): Promise<string> },
+  change: Change,
+): Promise<Readonly<Record<string, never>>> {
+  if (!response.ok) throw await refused(response, change);
+  return {};
+}
+
 async function main(): Promise<void> {
-  const [, , url, dir, flag] = process.argv;
-  const key = process.env["SYNC_CURATED_API_KEY"];
-  if (!url || !dir || !key || (flag !== undefined && flag !== "--check")) {
-    console.error("usage: SYNC_CURATED_API_KEY=<key> node src/sync-curated.ts <base url> <curated dir> [--check]");
+  const usage = (): never => {
+    console.error(
+      "usage: SYNC_CURATED_API_KEY=<key> node src/sync-curated.ts <base url> <curated dir> [--check] [--concurrency <n>] [--sample <n>]",
+    );
     process.exit(2);
+  };
+  let args: ReturnType<typeof parseArguments>;
+  try {
+    args = parseArguments();
+  } catch {
+    return usage();
   }
+  const { check, concurrency: given, sample: sampled } = args.values;
+  const [url, dir] = args.positionals;
+  const key = process.env["SYNC_CURATED_API_KEY"];
+  const concurrency = Number(given ?? CONCURRENCY);
+  const sample = sampled === undefined ? undefined : Number(sampled);
+  const counts = [concurrency, sample ?? 1];
+  if (!url || !dir || !key || args.positionals.length > 2 || !counts.every((n) => Number.isInteger(n) && n >= 1)) return usage();
   const api = hc<AppType>(url.replace(/\/$/u, ""), { headers: { [API_KEY_HEADER]: key } }).api;
   const start = performance.now();
-  const texts = await resolveCurated(await readCurated(dir));
+  const files = await readCurated(dir);
+  const chosen = sample === undefined ? files : sampleCurated(files, sample);
+  if (sample !== undefined)
+    log.info("sampled {texts} of {files} texts", { texts: chosen.length, files: files.length, paths: chosen.map((f) => f.path) });
+  const texts = await resolveCurated(chosen);
   log.info("resolved {texts} texts", { texts: texts.length, ms: since(start) });
-  const check = flag === "--check";
-  const changes = await sync(api, texts, { check });
+  const changes = await sync(api, texts, { check, concurrency });
   log.info(check ? "{changes} changes to make" : "made {changes} changes", {
     texts: texts.length,
+    concurrency,
     changes: changes.length,
     ms: since(start),
   });
   if (check && changes.length > 0) process.exitCode = 1;
+}
+
+function parseArguments() {
+  return parseArgs({
+    allowPositionals: true,
+    options: { check: { type: "boolean", default: false }, concurrency: { type: "string" }, sample: { type: "string" } },
+  });
 }
 
 if (import.meta.main) await runScript(log, main);
