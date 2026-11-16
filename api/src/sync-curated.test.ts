@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { ANNOTATION_BATCH, timestamp, type Annotation, type DocumentId, type DocumentSummary, type UserId } from "@skolia/shared/api";
 import type { Graph } from "@skolia/util/graph";
-import { plan, toCurated, type Change, type Curated, type CuratedAnnotation } from "./sync-curated.ts";
+import { parseCurated, plan, sampleCurated, toCurated, type Change, type Curated, type CuratedAnnotation } from "./sync-curated.ts";
 
 const TEXT = { title: "A", licence: "cc0", tags: {}, text: "Ala ma kota." } as const;
 const KOT = { kind: "text", data: { text: "cat" }, licence: "cc0", start: 7, end: 11 } as const;
@@ -88,4 +88,30 @@ test("a text's new annotations go in batches of ANNOTATION_BATCH, and a document
     ["update", ANNOTATION_BATCH, 1, "delete"],
   );
   assert.ok(graph.deps.every((deps) => deps.length === 0));
+});
+
+test("a sample takes a text from each language, kind and whether it's annotated in turn, the same each time", () => {
+  const inline = (path: string, lang: "en" | "pl", annotated = false) =>
+    parseCurated(
+      path,
+      lang,
+      annotated
+        ? "kind: inline\ntitle: A\nlicence: cc0\ntext: '[Ala]{a} ma kota.'\nannotations:\n  a: { kind: text, text: Alice, licence: cc0 }\n"
+        : "kind: inline\ntitle: A\nlicence: cc0\ntext: Ala ma kota.\n",
+    );
+  const lektura = (path: string) => parseCurated(path, "pl", `kind: wolnelektury\nslug: ${path.slice(3, -5)}\n`);
+  const files = [
+    lektura("pl/w2.yaml"),
+    inline("pl/a2.yaml", "pl", true),
+    inline("en/plain.yaml", "en"),
+    inline("pl/a1.yaml", "pl", true),
+    lektura("pl/w1.yaml"),
+    inline("pl/plain.yaml", "pl"),
+    inline("pl/a3.yaml", "pl", true),
+  ];
+  const paths = (n: number, from = files) => sampleCurated(from, n).map((f) => f.path);
+  assert.deepEqual(paths(5), ["en/plain.yaml", "pl/plain.yaml", "pl/a1.yaml", "pl/w1.yaml", "pl/a2.yaml"]);
+  assert.deepEqual(paths(5, files.toReversed()), paths(5));
+  assert.equal(paths(100).length, files.length);
+  assert.deepEqual(paths(2), ["en/plain.yaml", "pl/plain.yaml"]);
 });
