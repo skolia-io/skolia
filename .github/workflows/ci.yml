@@ -4,7 +4,7 @@ name: CI
 # tests (the check job, which the queue requires). Pull requests: a plan per environment,
 # and a preview environment, pr-<number>, deployed and end-to-end tested on each push and torn
 # down when the pull request closes (sweep.yml catches any left); the mergeable job
-# gates merging on it. A comment on the pull request links to the preview, and says when
+# gates merging on it and on the screenshots. A comment on the pull request links to the preview, and says when
 # it's torn down (.github/preview-comment.sh).
 # main: deploy staging and end-to-end test it, and deploy the previews' OAuth proxy. A v* tag on a commit in main: staging, then production. The ingest
 # images are built once, before any deploy. The steps are just recipes (justfile) and
@@ -227,7 +227,7 @@ jobs:
   # skips this, which counts as passing; check itself is required too.
   mergeable:
     if: always() && (github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository))
-    needs: [changes, check, check-curated, deploy-preview, sync-curated-preview]
+    needs: [changes, check, screenshots, check-curated, deploy-preview, sync-curated-preview]
     runs-on: ubuntu-24.04
     steps:
       - if: needs.check-curated.result == 'failure'
@@ -246,6 +246,10 @@ jobs:
       - if: needs.changes.outputs.deploy == 'true' && needs.check.result != 'success'
         run: |
           echo "check didn't pass: ${{ needs.check.result }}" >&2
+          exit 1
+      - if: needs.changes.outputs.deploy == 'true' && needs.screenshots.result != 'success'
+        run: |
+          echo "the screenshots didn't match: ${{ needs.screenshots.result }}" >&2
           exit 1
       - if: github.event_name == 'pull_request' && needs.changes.outputs.deploy == 'true' && needs.deploy-preview.result != 'success'
         run: |
