@@ -14,6 +14,7 @@ import { hc } from "hono/client";
 import { parse as parseYaml } from "yaml";
 import * as z from "zod";
 import {
+  ANNOTATION_BATCH,
   ANNOTATION_PAGE,
   DOCUMENT_PAGE,
   LANGS,
@@ -256,12 +257,53 @@ export async function sync(api: Api, texts: readonly Curated[], { check = false 
     for (const change of changes) log.info("to {change}", describe(change));
     return changes;
   }
+  // Annotations go last, after their texts are imported and their old annotations removed,
+  // a text's in as few requests as the batch size allows
   for (const change of changes) {
+    if (change.kind === "annotate") continue;
     const start = performance.now();
     await make(api, change);
     log.info("{change}", { ...describe(change), ms: since(start) });
   }
+  for (const batch of annotationBatches(changes)) {
+    const start = performance.now();
+    const added = await annotateAll(api, batch);
+    log.info("annotate {path}", {
+      change: "annotate",
+      path: batch.text.path,
+      doc: batch.text.id,
+      annotations: batch.annotations.length,
+      added,
+      ms: since(start),
+    });
+  }
   return changes;
+}
+
+type AnnotationBatch = { readonly text: Curated; readonly annotations: readonly CuratedAnnotation[] };
+
+/** The annotate changes by text, in batches of at most ANNOTATION_BATCH. */
+function annotationBatches(changes: readonly Change[]): AnnotationBatch[] {
+  const byText = changes.reduce((texts, c) => {
+    if (c.kind === "annotate") texts.set(c.text, [...(texts.get(c.text) ?? []), c.annotation]);
+    return texts;
+  }, new Map<Curated, readonly CuratedAnnotation[]>());
+  return [...byText].flatMap(([text, annotations]) =>
+    Array.from({ length: Math.ceil(annotations.length / ANNOTATION_BATCH) }, (_, i) => ({
+      text,
+      annotations: annotations.slice(i * ANNOTATION_BATCH, (i + 1) * ANNOTATION_BATCH),
+    })),
+  );
+}
+
+/** Adds the batch's annotations to its text, giving how many were new. */
+async function annotateAll(api: Api, { text, annotations }: AnnotationBatch): Promise<number> {
+  const response = await api.documents[":id"].annotations.$post({
+    param: { id: text.id },
+    json: { annotations: annotations.map((a) => a.request) },
+  });
+  if (!response.ok) throw new Error(`annotate ${text.path}: ${response.status} ${await response.text()}`);
+  return (await response.json()).added;
 }
 
 /** Every page of the signed-in user's annotations on their document. */
@@ -273,7 +315,7 @@ function annotationsOf(api: Api, id: DocumentId): Promise<readonly Annotation[]>
   });
 }
 
-async function make(api: Api, change: Change): Promise<void> {
+async function make(api: Api, change: Exclude<Change, { kind: "annotate" }>): Promise<void> {
   switch (change.kind) {
     case "import":
       return expectOk(await api.documents.$post({ json: change.text.request }), change);
@@ -281,11 +323,6 @@ async function make(api: Api, change: Change): Promise<void> {
       return expectOk(await api.documents[":id"].$patch({ param: { id: change.id }, json: change.update }), change);
     case "delete":
       return expectOk(await api.documents[":id"].$delete({ param: { id: change.document.id } }), change);
-    case "annotate":
-      return expectOk(
-        await api.documents[":id"].annotations.$post({ param: { id: change.text.id }, json: change.annotation.request }),
-        change,
-      );
     case "unannotate":
       return expectOk(
         await api.documents[":id"].annotations[":annotationId"].$delete({

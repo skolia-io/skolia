@@ -24,8 +24,10 @@ on:
   merge_group:
   workflow_dispatch:
 
+# actions: read is for actions-timeline (deploy.yml), which lists the run's jobs
 permissions:
   contents: read
+  actions: read
 
 env:
   CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}

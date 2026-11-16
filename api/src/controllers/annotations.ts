@@ -4,10 +4,12 @@ import type * as z from "zod";
 import {
   MAX_ANNOTATIONS,
   timestamp,
+  type Annotated,
   type Annotation,
   type AnnotationFilter,
   type AnnotationId,
   type AnnotationKey,
+  type DocumentId,
   type Paginated,
   type User,
 } from "@skolia/shared/api";
@@ -33,29 +35,27 @@ export async function list(
   return ok(await deps.documents.annotations(record.id, record.user, filter, page));
 }
 
-/** 201 for a new annotation on the user's own entry, 200 when it had it already. */
+/** The annotations on the user's own entry, those it hasn't already added, in one go. */
 export async function add(
   deps: Deps,
   user: User,
   id: string,
-  body: z.output<typeof schemas.NewAnnotation>,
-): Promise<Json<Annotation, 201> | Ok<Annotation> | Failed<400 | 404 | 409>> {
+  body: z.output<typeof schemas.NewAnnotations>,
+): Promise<Ok<Annotated> | Failed<400 | 404 | 409>> {
   const record = await ownEntry(deps, id, user);
   if (!record) return noEntry();
-  const text = await deps.blobs.get(textKey(record.id));
-  if (!text) throw new Error(`document ${record.id} has no text`);
-  const length = new TextDecoder().decode(text.body).length;
-  if (body.end > length) return fail(400, `the annotation ends at ${body.end}, after the text's end at ${length}`);
-  const annotated = await deps.documents.annotate(record.id, user.id, {
-    ...body,
-    id: await annotationId(body),
-    addedAt: timestamp(deps.now()),
-  });
+  const length = await textLength(deps, record.id);
+  const after = body.annotations.findIndex((a) => a.end > length);
+  if (after >= 0) return fail(400, `annotation ${after} ends at ${body.annotations[after]?.end}, after the text's end at ${length}`);
+  const addedAt = timestamp(deps.now());
+  const annotated = await deps.documents.annotate(
+    record.id,
+    user.id,
+    await Promise.all(body.annotations.map(async (a) => ({ ...a, id: await annotationId(a), addedAt }))),
+  );
   switch (annotated.kind) {
     case "added":
-      return { status: 201, body: annotated.annotation };
-    case "exists":
-      return ok(annotated.annotation);
+      return ok({ added: annotated.added, annotations: [...annotated.annotations] });
     case "full":
       return fail(409, `an entry has at most ${MAX_ANNOTATIONS} annotations`);
   }
@@ -65,6 +65,13 @@ export async function remove(deps: Deps, user: User, id: string, annotation: Ann
   const record = await ownEntry(deps, id, user);
   if (!record) return noEntry();
   return (await deps.documents.unannotate(record.id, user.id, annotation)) ? NO_CONTENT : fail(404, "no such annotation");
+}
+
+/** The text's length in UTF-16 code units, where its annotations end at most. */
+async function textLength(deps: Deps, id: DocumentId): Promise<number> {
+  const text = await deps.blobs.get(textKey(id));
+  if (!text) throw new Error(`document ${id} has no text`);
+  return new TextDecoder().decode(text.body).length;
 }
 
 /** The user's own entry for the text: the entry they see, if it's theirs. */

@@ -24,6 +24,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 env:
   CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
@@ -138,3 +139,11 @@ jobs:
     with:
       env: ${{ inputs.env }}
     secrets: inherit
+
+  # A Gantt chart of the run's jobs and steps up to here, in its summary
+  timeline:
+    if: always()
+    needs: deploy-web
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: Kesin11/actions-timeline@v3.2.1

@@ -4077,7 +4077,7 @@
           "Annotations"
         ],
         "summary": "Annotate the user's entry",
-        "description": "Attach a kind and its data to a range of the text.",
+        "description": "Attach a kind and its data to ranges of the text, up to 200 at once, in one transaction. Those the entry has already are left as they are.",
         "security": [
           {
             "session": []
@@ -4088,27 +4088,35 @@
         ],
         "responses": {
           "200": {
-            "description": "The entry had it already",
+            "description": "The annotations, as the entry has them, and how many are new",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Annotation"
-                }
-              }
-            }
-          },
-          "201": {
-            "description": "A new annotation",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Annotation"
+                  "type": "object",
+                  "properties": {
+                    "added": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "annotations": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Annotation"
+                      }
+                    }
+                  },
+                  "required": [
+                    "added",
+                    "annotations"
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
           },
           "400": {
-            "description": "It ends after the text does",
+            "description": "One ends after the text does",
             "content": {
               "application/json": {
                 "schema": {
@@ -4138,7 +4146,7 @@
             }
           },
           "409": {
-            "description": "The entry has as many annotations as it may",
+            "description": "The entry filled up before it had them all; those before stay",
             "content": {
               "application/json": {
                 "schema": {
@@ -4148,7 +4156,7 @@
             }
           },
           "413": {
-            "description": "The annotation is too big",
+            "description": "The annotations are too big",
             "content": {
               "application/json": {
                 "schema": {
@@ -4163,143 +4171,156 @@
           "content": {
             "application/json": {
               "schema": {
-                "oneOf": [
-                  {
-                    "type": "object",
-                    "properties": {
-                      "start": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "maximum": 20000
-                      },
-                      "end": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "maximum": 20000
-                      },
-                      "licence": {
-                        "type": "string",
-                        "enum": [
-                          "public-domain",
-                          "cc0",
-                          "cc-by-4.0",
-                          "cc-by-3.0",
-                          "cc-by-sa-4.0",
-                          "cc-by-sa-3.0",
-                          "cc-by-nc-4.0",
-                          "cc-by-nc-3.0",
-                          "cc-by-nc-sa-4.0",
-                          "cc-by-nc-sa-3.0",
-                          "cc-by-nd-4.0",
-                          "cc-by-nd-3.0",
-                          "cc-by-nc-nd-4.0",
-                          "cc-by-nc-nd-3.0"
-                        ]
-                      },
-                      "author": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 200
-                      },
-                      "source": {
-                        "type": "string",
-                        "maxLength": 2000
-                      },
-                      "kind": {
-                        "type": "string",
-                        "const": "audio"
-                      },
-                      "data": {
-                        "type": "object",
-                        "properties": {
-                          "url": {
-                            "type": "string",
-                            "maxLength": 2000,
-                            "format": "uri"
-                          }
+                "type": "object",
+                "properties": {
+                  "annotations": {
+                    "minItems": 1,
+                    "maxItems": 200,
+                    "type": "array",
+                    "items": {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "start": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 20000
+                            },
+                            "end": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 20000
+                            },
+                            "licence": {
+                              "type": "string",
+                              "enum": [
+                                "public-domain",
+                                "cc0",
+                                "cc-by-4.0",
+                                "cc-by-3.0",
+                                "cc-by-sa-4.0",
+                                "cc-by-sa-3.0",
+                                "cc-by-nc-4.0",
+                                "cc-by-nc-3.0",
+                                "cc-by-nc-sa-4.0",
+                                "cc-by-nc-sa-3.0",
+                                "cc-by-nd-4.0",
+                                "cc-by-nd-3.0",
+                                "cc-by-nc-nd-4.0",
+                                "cc-by-nc-nd-3.0"
+                              ]
+                            },
+                            "author": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200
+                            },
+                            "source": {
+                              "type": "string",
+                              "maxLength": 2000
+                            },
+                            "kind": {
+                              "type": "string",
+                              "const": "audio"
+                            },
+                            "data": {
+                              "type": "object",
+                              "properties": {
+                                "url": {
+                                  "type": "string",
+                                  "maxLength": 2000,
+                                  "format": "uri"
+                                }
+                              },
+                              "required": [
+                                "url"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "required": [
+                            "start",
+                            "end",
+                            "licence",
+                            "kind",
+                            "data"
+                          ]
                         },
-                        "required": [
-                          "url"
-                        ],
-                        "additionalProperties": false
-                      }
-                    },
-                    "required": [
-                      "start",
-                      "end",
-                      "licence",
-                      "kind",
-                      "data"
-                    ]
-                  },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "start": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "maximum": 20000
-                      },
-                      "end": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "maximum": 20000
-                      },
-                      "licence": {
-                        "type": "string",
-                        "enum": [
-                          "public-domain",
-                          "cc0",
-                          "cc-by-4.0",
-                          "cc-by-3.0",
-                          "cc-by-sa-4.0",
-                          "cc-by-sa-3.0",
-                          "cc-by-nc-4.0",
-                          "cc-by-nc-3.0",
-                          "cc-by-nc-sa-4.0",
-                          "cc-by-nc-sa-3.0",
-                          "cc-by-nd-4.0",
-                          "cc-by-nd-3.0",
-                          "cc-by-nc-nd-4.0",
-                          "cc-by-nc-nd-3.0"
-                        ]
-                      },
-                      "author": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 200
-                      },
-                      "source": {
-                        "type": "string",
-                        "maxLength": 2000
-                      },
-                      "kind": {
-                        "type": "string",
-                        "const": "text"
-                      },
-                      "data": {
-                        "type": "object",
-                        "properties": {
-                          "text": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 2000
-                          }
-                        },
-                        "required": [
-                          "text"
-                        ],
-                        "additionalProperties": false
-                      }
-                    },
-                    "required": [
-                      "start",
-                      "end",
-                      "licence",
-                      "kind",
-                      "data"
-                    ]
+                        {
+                          "type": "object",
+                          "properties": {
+                            "start": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 20000
+                            },
+                            "end": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 20000
+                            },
+                            "licence": {
+                              "type": "string",
+                              "enum": [
+                                "public-domain",
+                                "cc0",
+                                "cc-by-4.0",
+                                "cc-by-3.0",
+                                "cc-by-sa-4.0",
+                                "cc-by-sa-3.0",
+                                "cc-by-nc-4.0",
+                                "cc-by-nc-3.0",
+                                "cc-by-nc-sa-4.0",
+                                "cc-by-nc-sa-3.0",
+                                "cc-by-nd-4.0",
+                                "cc-by-nd-3.0",
+                                "cc-by-nc-nd-4.0",
+                                "cc-by-nc-nd-3.0"
+                              ]
+                            },
+                            "author": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200
+                            },
+                            "source": {
+                              "type": "string",
+                              "maxLength": 2000
+                            },
+                            "kind": {
+                              "type": "string",
+                              "const": "text"
+                            },
+                            "data": {
+                              "type": "object",
+                              "properties": {
+                                "text": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 2000
+                                }
+                              },
+                              "required": [
+                                "text"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "required": [
+                            "start",
+                            "end",
+                            "licence",
+                            "kind",
+                            "data"
+                          ]
+                        }
+                      ]
+                    }
                   }
+                },
+                "required": [
+                  "annotations"
                 ]
               }
             }

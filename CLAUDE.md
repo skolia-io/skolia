@@ -1,6 +1,6 @@
 # Notes for Claude
 
-- Open items and follow-ups go in git-bug (`git bug bug`, `git bug bug new --non-interactive -t … -m …`), as the current identity. Bugs are local refs: don't `git bug push` unless asked. A running `git bug webui` holds the lock; ask rather than stop it.
+- Open items and follow-ups are GitHub issues on the private repo skolia-io/tracking (`gh issue list -R skolia-io/tracking`, `gh issue create -R skolia-io/tracking -t … -b … -l …`). A PR that finishes one says so in its description, `Closes skolia-io/tracking#N` (or `Fixes`, `Resolves`), so merging it closes the issue. git-bug is no longer used.
 - Start each piece of work in a new git worktree, `~/dev/skolia-<name>` beside this checkout (`git worktree add ../skolia-<name> -b <branch> origin/main`), never in this checkout.
 - main moves quickly. Fetch and branch from `origin/main`, and rebase before pushing more work onto an open PR.
 - `just fmt` formats everything (Biome for TypeScript, JSON and Svelte; ruff; terraform fmt), and `just check` runs what CI's check job does: the format checks, ruff's lints, tsc, svelte-check, pyright, redocly's lint of api/openapi.json and terraform validate. Run `just fmt` before committing. Biome's settings are in biome.json; its linter is off.

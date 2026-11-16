@@ -19,6 +19,9 @@ export const ANNOTATION_PAGE: PageSize = { fallback: 500, max: 1000 };
 
 /** Most annotations an entry has. */
 export const MAX_ANNOTATIONS = 2000;
+/** Most annotations one request adds: D1 runs one batch of at most 1,000 statements, two per
+ * annotation at most. */
+export const ANNOTATION_BATCH = 200;
 
 export const LANGS = ["en", "fr", "pl"] as const;
 export type Lang = (typeof LANGS)[number];
@@ -417,6 +420,9 @@ export type Annotation = z.output<typeof schemas.Annotation>;
 export type AnnotationId = z.output<typeof schemas.AnnotationId>;
 /** What the reader sends to add one. */
 export type NewAnnotation = z.input<typeof schemas.NewAnnotation>;
+/** Several to add at once, and what adding them gives back. */
+export type NewAnnotations = z.input<typeof schemas.NewAnnotations>;
+export type Annotated = z.output<typeof schemas.Annotated>;
 /** Where an annotation is in its entry's list: where it starts, then its id. */
 export type AnnotationKey = z.output<typeof schemas.AnnotationKey>;
 
