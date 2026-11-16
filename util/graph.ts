@@ -1,128 +1,56 @@
-// A dependency graph: nodes, and edges from a node to the nodes that wait for it. runGraph
-// runs its nodes, each once those it depends on are done, as many at once as the limit
-// allows, so what doesn't depend on each other runs side by side.
+// A dependency graph, and running it: each node once those it depends on are done, as many
+// at once as the limit allows, so what doesn't depend on each other runs side by side.
+import { Semaphore } from "./semaphore.ts";
 
 declare const nodeBrand: unique symbol;
-/** A node of one graph, as Graph.add gave it. */
+/** A node of a graph: its index in nodes. */
 export type NodeId = number & { readonly [nodeBrand]: true };
 
-export class Graph<T> {
-  readonly #values: T[] = [];
-  /** By node, the nodes it depends on */
-  readonly #before: NodeId[][] = [];
-  /** By node, the nodes that depend on it */
-  readonly #after: NodeId[][] = [];
+/** Nodes, and by node, the nodes it depends on, which come before it: so it has no cycles. */
+export type Graph<T> = { readonly nodes: readonly T[]; readonly deps: readonly (readonly NodeId[])[] };
 
-  /** A new node, depending on nothing yet. */
-  add(value: T): NodeId {
-    const id = this.#values.length as NodeId;
-    this.#values.push(value);
-    this.#before.push([]);
-    this.#after.push([]);
+/** Builds a graph a node at a time, each depending on nodes already added. */
+export class GraphBuilder<T> {
+  readonly #nodes: T[] = [];
+  readonly #deps: (readonly NodeId[])[] = [];
+
+  add(value: T, deps: readonly NodeId[] = []): NodeId {
+    const id = this.#nodes.length as NodeId;
+    if (deps.some((dep) => !(dep >= 0 && dep < id))) throw new Error(`node ${id} depends on a node not added before it`);
+    this.#nodes.push(value);
+    this.#deps.push([...new Set(deps)]);
     return id;
   }
 
-  /** after depends on before: it runs once before is done. */
-  edge(before: NodeId, after: NodeId): void {
-    if (!this.has(before) || !this.has(after)) throw new Error(`no node ${this.has(before) ? after : before}`);
-    if (this.#before[after]?.includes(before)) return;
-    this.#before[after]?.push(before);
-    this.#after[before]?.push(after);
-  }
-
-  has(id: NodeId): boolean {
-    return Number.isInteger(id) && id >= 0 && id < this.#values.length;
-  }
-
-  get size(): number {
-    return this.#values.length;
-  }
-
-  /** Every node, in the order they were added. */
-  ids(): NodeId[] {
-    return this.#values.map((_, i) => i as NodeId);
-  }
-
-  value(id: NodeId): T {
-    if (!this.has(id)) throw new Error(`no node ${id}`);
-    return this.#values[id] as T;
-  }
-
-  /** The nodes it depends on. */
-  before(id: NodeId): readonly NodeId[] {
-    return this.#before[id] ?? [];
-  }
-
-  /** The nodes that depend on it. */
-  after(id: NodeId): readonly NodeId[] {
-    return this.#after[id] ?? [];
-  }
-
-  /** Every node, each after those it depends on. Throws if some depend on each other. */
-  order(): NodeId[] {
-    const waiting = this.ids().map((id) => this.before(id).length);
-    const ready = this.ids().filter((id) => waiting[id] === 0);
-    for (let i = 0; i < ready.length; i++) {
-      for (const after of this.after(ready[i] as NodeId)) {
-        waiting[after] = (waiting[after] ?? 0) - 1;
-        if (waiting[after] === 0) ready.push(after);
-      }
-    }
-    if (ready.length < this.size) throw new Error(`${this.size - ready.length} nodes depend on each other`);
-    return ready;
+  build(): Graph<T> {
+    return { nodes: [...this.#nodes], deps: [...this.#deps] };
   }
 }
 
-/** Runs each node's value once those it depends on are done, at most limit at once. Throws,
- * running none, if some depend on each other. After a failure no more start, and once
- * those running have ended it rejects with the first error. */
-export async function runGraph<T>(graph: Graph<T>, limit: number, run: (value: T) => Promise<void>): Promise<void> {
-  if (!(limit >= 1)) throw new Error(`the limit must be at least 1, not ${limit}`);
-  graph.order();
-  const waiting = graph.ids().map((id) => graph.before(id).length);
-  const ready = graph.ids().filter((id) => waiting[id] === 0);
-
-  await new Promise<void>((resolve, reject) => {
-    let running = 0;
-    let done = 0;
-    let failure: { readonly error: unknown } | undefined;
-
-    const next = (): void => {
-      if (failure) {
-        if (running === 0) reject(failure.error);
-        return;
-      }
-      if (done === graph.size) return resolve();
-      while (running < limit) {
-        const id = ready.shift();
-        if (id === undefined) return;
-        start(id);
-      }
-    };
-
-    const start = (id: NodeId): void => {
-      running++;
-      // A run that throws before it returns a promise fails like one that rejects
-      Promise.resolve()
-        .then(() => run(graph.value(id)))
-        .then(
-          () => {
-            running--;
-            done++;
-            for (const after of graph.after(id)) {
-              waiting[after] = (waiting[after] ?? 0) - 1;
-              if (waiting[after] === 0) ready.push(after);
-            }
-            next();
-          },
-          (error: unknown) => {
-            running--;
-            failure ??= { error };
-            next();
-          },
-        );
-    };
-
-    next();
-  });
+/** Runs each node once those it depends on are done, at most limit at once. The first
+ * failure aborts the signal run is given, so no more start and those running can stop;
+ * once they have, it rejects with that failure. */
+export async function runGraph<T>(graph: Graph<T>, limit: number, run: (value: T, signal: AbortSignal) => Promise<void>): Promise<void> {
+  for (const [id, deps] of graph.deps.entries()) {
+    if (deps.some((dep) => !(dep >= 0 && dep < id))) throw new Error(`node ${id} depends on a node not before it`);
+  }
+  const semaphore = new Semaphore(limit);
+  const abort = new AbortController();
+  /** By node, when it's done. A node's deps come before it, so theirs are here already. */
+  const done: Promise<void>[] = [];
+  const runNode = async (id: number, value: T): Promise<void> => {
+    await Promise.all((graph.deps[id] ?? []).map((dep) => done[dep]));
+    using _permit = await semaphore.acquire();
+    abort.signal.throwIfAborted();
+    try {
+      await run(value, abort.signal);
+    } catch (error) {
+      // Before the permit passes on, so the next to hold it sees the abort
+      if (!abort.signal.aborted) abort.abort(error);
+      throw error;
+    }
+  };
+  for (const [id, value] of graph.nodes.entries()) done[id] = runNode(id, value);
+  await Promise.allSettled(done);
+  if (abort.signal.aborted) throw abort.signal.reason;
 }

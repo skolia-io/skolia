@@ -46,8 +46,8 @@ function label(change: Change): string {
 }
 
 /** Each change, and the changes it depends on */
-const edges = (graph: Graph<Change>) =>
-  graph.ids().map((id) => [label(graph.value(id)), graph.before(id).map((before) => label(graph.value(before)))]);
+const edges = ({ nodes, deps }: Graph<Change>) =>
+  nodes.map((change, id) => [label(change), (deps[id] ?? []).map((dep) => label(nodes[dep] as Change))]);
 
 test("a text imported now gets all its annotations once it's imported, and other texts don't wait", async () => {
   const text = await toCurated("pl/a.yaml", "pl", { ...TEXT, annotations: [KOT, ALA] });
@@ -67,7 +67,7 @@ test("an imported text's annotations not in its file are removed, and those miss
   const [edited] = after.annotations;
   assert.ok(kot && ala && edited);
   const had = new Map<DocumentId, readonly Annotation[]>([[before.id, [kot, ala].map(stored)]]);
-  assert.equal(plan([before], [summary(before)], had).size, 0);
+  assert.deepEqual(plan([before], [summary(before)], had).nodes, []);
   assert.deepEqual(edges(plan([after], [summary(after)], had)), [
     [`unannotate ${kot.id}`, []],
     [`annotate ${edited.id}`, [`unannotate ${kot.id}`]],
@@ -84,11 +84,8 @@ test("a text's new annotations go in batches of ANNOTATION_BATCH, and a document
   const gone = await toCurated("pl/gone.yaml", "pl", { ...TEXT, text: "Nie ma.", annotations: [] });
   const graph = plan([{ ...text, request: { ...text.request, title: "B" } }], [summary(text), summary(gone)], new Map());
   assert.deepEqual(
-    graph.ids().map((id) => {
-      const change = graph.value(id);
-      return change.kind === "annotate" ? change.annotations.length : change.kind;
-    }),
+    graph.nodes.map((change) => (change.kind === "annotate" ? change.annotations.length : change.kind)),
     ["update", ANNOTATION_BATCH, 1, "delete"],
   );
-  assert.ok(graph.ids().every((id) => graph.before(id).length === 0));
+  assert.ok(graph.deps.every((deps) => deps.length === 0));
 });

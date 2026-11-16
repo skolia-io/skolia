@@ -7,10 +7,12 @@
 // With --check, only lists what it would do, and fails if that's anything.
 // curated/{lang}/{name}.yaml: one text, of a kind (curated-kinds.ts) that has it inline or
 // names where to fetch it.
-// usage: SYNC_CURATED_API_KEY=<key> node src/sync-curated.ts <base url> <curated dir> [--check]
+// With --concurrency, makes that many changes at once (default CONCURRENCY).
+// usage: SYNC_CURATED_API_KEY=<key> node src/sync-curated.ts <base url> <curated dir> [--check] [--concurrency <n>]
 import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
-import { hc } from "hono/client";
+import { parseArgs } from "node:util";
+import { hc, type ClientRequestOptions } from "hono/client";
 import { parse as parseYaml } from "yaml";
 import * as z from "zod";
 import {
@@ -33,7 +35,7 @@ import { annotationId } from "@skolia/shared/annotations";
 import { docId } from "@skolia/shared/keys";
 import { allPages, type Cursor } from "@skolia/shared/page";
 import * as schemas from "@skolia/shared/schemas";
-import { Graph, runGraph } from "@skolia/util/graph";
+import { GraphBuilder, runGraph, type Graph } from "@skolia/util/graph";
 import type { AppType } from "./app.ts";
 import { API_KEY_HEADER } from "./auth.ts";
 import { CuratedSpec, resolve, type Fetch, type Resolved } from "./curated-kinds.ts";
@@ -69,7 +71,7 @@ export type Change =
   | { kind: "annotate"; text: Curated; annotations: readonly CuratedAnnotation[] }
   | { kind: "unannotate"; text: Curated; annotation: Annotation };
 
-/** How many changes are made at once */
+/** How many changes are made at once, unless --concurrency says */
 const CONCURRENCY = 8;
 
 /** A curated file's YAML, checked against its kind. Throws, naming the file, if it isn't one. */
@@ -162,18 +164,18 @@ export function plan(
   mine: readonly DocumentSummary[],
   annotations: ReadonlyMap<DocumentId, readonly Annotation[]>,
 ): Graph<Change> {
-  const graph = new Graph<Change>();
+  const graph = new GraphBuilder<Change>();
   const byId = new Map(mine.map((d) => [d.id, d]));
   for (const text of texts) planText(graph, text, byId.get(text.id), annotations.get(text.id) ?? []);
   const wanted = new Set(texts.map((t) => t.id));
   for (const document of mine) if (!wanted.has(document.id)) graph.add({ kind: "delete", document });
-  return graph;
+  return graph.build();
 }
 
 /** A text's changes: its import or update, the annotations it has that its file hasn't, and
  * those its file has that it hasn't, in batches. A batch depends on the import, and on the
  * removals, which make room under MAX_ANNOTATIONS. */
-function planText(graph: Graph<Change>, text: Curated, document: DocumentSummary | undefined, had: readonly Annotation[]): void {
+function planText(graph: GraphBuilder<Change>, text: Curated, document: DocumentSummary | undefined, had: readonly Annotation[]): void {
   const imported = document === undefined ? [graph.add({ kind: "import", text })] : [];
   const update = document === undefined ? {} : updateOf(text, document);
   if (Object.keys(update).length > 0) graph.add({ kind: "update", text, id: text.id, update });
@@ -182,8 +184,7 @@ function planText(graph: Graph<Change>, text: Curated, document: DocumentSummary
   const hadIds = new Set(had.map((a) => a.id));
   const missing = text.annotations.filter((a) => !hadIds.has(a.id));
   for (let i = 0; i < missing.length; i += ANNOTATION_BATCH) {
-    const batch = graph.add({ kind: "annotate", text, annotations: missing.slice(i, i + ANNOTATION_BATCH) });
-    for (const before of [...imported, ...removed]) graph.edge(before, batch);
+    graph.add({ kind: "annotate", text, annotations: missing.slice(i, i + ANNOTATION_BATCH) }, [...imported, ...removed]);
   }
 }
 
@@ -233,7 +234,7 @@ export type Api = ReturnType<typeof hc<AppType>>["api"];
 
 /** Lists, then unless check is set makes, the changes that make the signed-in user's
  * documents match the texts. */
-export async function sync(api: Api, texts: readonly Curated[], { check = false } = {}): Promise<Change[]> {
+export async function sync(api: Api, texts: readonly Curated[], { check = false, concurrency = CONCURRENCY } = {}): Promise<Change[]> {
   // Every page: a document missing from the list would be imported again, and one in
   // the list but not in curated/ deleted
   const listStart = performance.now();
@@ -254,14 +255,14 @@ export async function sync(api: Api, texts: readonly Curated[], { check = false 
     ms: since(annotationsStart),
   });
   const graph = plan(texts, mine, annotations);
-  const changes = graph.ids().map((id) => graph.value(id));
+  const changes = [...graph.nodes];
   if (check) {
     for (const change of changes) log.info("to {change}", describe(change));
     return changes;
   }
-  await runGraph(graph, CONCURRENCY, async (change) => {
+  await runGraph(graph, concurrency, async (change, signal) => {
     const start = performance.now();
-    const made = await make(api, change);
+    const made = await make(api, change, { init: { signal } });
     log.info("{change}", { ...describe(change), ...made, ms: since(start) });
   });
   return changes;
@@ -277,26 +278,33 @@ function annotationsOf(api: Api, id: DocumentId): Promise<readonly Annotation[]>
 }
 
 /** Makes the change, giving what's worth logging of the response. */
-async function make(api: Api, change: Change): Promise<Readonly<Record<string, unknown>>> {
+/** options: the client's, for each request, e.g. to abort it */
+async function make(api: Api, change: Change, options: ClientRequestOptions): Promise<Readonly<Record<string, unknown>>> {
   switch (change.kind) {
     case "import":
-      return made(await api.documents.$post({ json: change.text.request }), change);
+      return made(await api.documents.$post({ json: change.text.request }, options), change);
     case "update":
-      return made(await api.documents[":id"].$patch({ param: { id: change.id }, json: change.update }), change);
+      return made(await api.documents[":id"].$patch({ param: { id: change.id }, json: change.update }, options), change);
     case "delete":
-      return made(await api.documents[":id"].$delete({ param: { id: change.document.id } }), change);
+      return made(await api.documents[":id"].$delete({ param: { id: change.document.id } }, options), change);
     case "unannotate":
       return made(
-        await api.documents[":id"].annotations[":annotationId"].$delete({
-          param: { id: change.text.id, annotationId: change.annotation.id },
-        }),
+        await api.documents[":id"].annotations[":annotationId"].$delete(
+          {
+            param: { id: change.text.id, annotationId: change.annotation.id },
+          },
+          options,
+        ),
         change,
       );
     case "annotate": {
-      const response = await api.documents[":id"].annotations.$post({
-        param: { id: change.text.id },
-        json: { annotations: change.annotations.map((a) => a.request) },
-      });
+      const response = await api.documents[":id"].annotations.$post(
+        {
+          param: { id: change.text.id },
+          json: { annotations: change.annotations.map((a) => a.request) },
+        },
+        options,
+      );
       if (!response.ok) throw await refused(response, change);
       return { added: (await response.json()).added };
     }
@@ -313,24 +321,40 @@ async function made(
 }
 
 async function main(): Promise<void> {
-  const [, , url, dir, flag] = process.argv;
-  const key = process.env["SYNC_CURATED_API_KEY"];
-  if (!url || !dir || !key || (flag !== undefined && flag !== "--check")) {
-    console.error("usage: SYNC_CURATED_API_KEY=<key> node src/sync-curated.ts <base url> <curated dir> [--check]");
+  const usage = (): never => {
+    console.error("usage: SYNC_CURATED_API_KEY=<key> node src/sync-curated.ts <base url> <curated dir> [--check] [--concurrency <n>]");
     process.exit(2);
+  };
+  let args: ReturnType<typeof parseArguments>;
+  try {
+    args = parseArguments();
+  } catch {
+    return usage();
   }
+  const { check, concurrency: given } = args.values;
+  const [url, dir] = args.positionals;
+  const key = process.env["SYNC_CURATED_API_KEY"];
+  const concurrency = Number(given ?? CONCURRENCY);
+  if (!url || !dir || !key || args.positionals.length > 2 || !Number.isInteger(concurrency) || concurrency < 1) return usage();
   const api = hc<AppType>(url.replace(/\/$/u, ""), { headers: { [API_KEY_HEADER]: key } }).api;
   const start = performance.now();
   const texts = await resolveCurated(await readCurated(dir));
   log.info("resolved {texts} texts", { texts: texts.length, ms: since(start) });
-  const check = flag === "--check";
-  const changes = await sync(api, texts, { check });
+  const changes = await sync(api, texts, { check, concurrency });
   log.info(check ? "{changes} changes to make" : "made {changes} changes", {
     texts: texts.length,
+    concurrency,
     changes: changes.length,
     ms: since(start),
   });
   if (check && changes.length > 0) process.exitCode = 1;
+}
+
+function parseArguments() {
+  return parseArgs({
+    allowPositionals: true,
+    options: { check: { type: "boolean", default: false }, concurrency: { type: "string" } },
+  });
 }
 
 if (import.meta.main) await runScript(log, main);

@@ -6,7 +6,8 @@
     "./checks": "./checks.ts",
     "./sql": "./sql.ts",
     "./query": "./query.ts",
-    "./graph": "./graph.ts"
+    "./graph": "./graph.ts",
+    "./semaphore": "./semaphore.ts"
   },
   "scripts": {
     "test": "node --test \"*.test.ts\""
