@@ -14,6 +14,6 @@
   "vars": {
     "BASE_URL": "https://oauth-proxy.skolia.io",
     // The previews' origins (infra/preview.py), the only ones it redirects to
-    "PREVIEWS": "^https://skolia-pr-[0-9]+\\.andyyu2004\\.workers\\.dev$"
+    "PREVIEWS": "^https://skolia-pr-[0-9]+\\.skolia-io\\.workers\\.dev$"
   }
 }
