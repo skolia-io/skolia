@@ -7,8 +7,8 @@
 #   deploy-ingest.sh <env> deploy         deploy the ingest Worker with every language's
 #                                          image, which must be in the registry
 #   deploy-ingest.sh <env>                both, every language in turn
-# env is staging, production or pr-N. deploy runs after tf.sh apply (it reads the R2
-# credentials from Terraform). Each image is tagged with its Nix hash, which nix eval
+# env is staging, production or pr-N. deploy runs after tf.sh apply (the queue and bucket
+# must exist). Each image is tagged with its Nix hash, which nix eval
 # gives without building anything, so an image whose inputs are unchanged is neither
 # rebuilt, pushed nor redeployed, and a push sends only the layers the registry lacks.
 set -euo pipefail
@@ -24,7 +24,6 @@ else
   exit 2
 fi
 root=$(cd "$(dirname "$0")/.." && pwd)
-tf() { "$root/infra/tf.sh" "$env" "$@"; }
 wrangler() { "$root/infra/wrangler.sh" "$env" "$@"; }
 # The registry is the account's, whichever environment; a preview's config may not be
 # made yet when its images are built
@@ -87,7 +86,7 @@ build_lang() {
 }
 
 deploy() {
-  local lang tag digest images=() pair config secrets copies
+  local lang tag digest images=() pair config copies
   for lang in "${langs[@]}"; do
     tag=$(tag_of "$lang")
     if ! in_registry "skolia-ingest-$lang" "$tag"; then
@@ -105,9 +104,8 @@ deploy() {
   # The committed config builds analysis/image/Dockerfile (for wrangler dev); deploy the
   # pushed images, each under its language's name in images
   config=wrangler.ingest.deploy.jsonc
-  secrets=$(mktemp)
   # Expanded now: the trap runs at exit, after deploy's locals are gone
-  trap "rm -f '$secrets' '$root/api/$config'" EXIT
+  trap "rm -f '$root/api/$config'" EXIT
   if [[ $env == pr-* ]]; then
     # A preview's config is JSON (infra/preview.py) and holds only the preview
     [ -f "$root/api/wrangler.ingest.$env.json" ] || "$root/infra/preview.py" config "$env" >&2
@@ -140,12 +138,7 @@ deploy() {
     fi
   done
 
-  chmod 600 "$secrets"
-  # JSON: wrangler (4.158) overrides a dotenv secrets file's values with the environment's,
-  # which has api/.env's local credentials loaded
-  jq -n --arg id "$(tf output -raw ingest_s3_access_key_id)" --arg key "$(tf output -raw ingest_s3_secret_access_key)" \
-    '{S3_ACCESS_KEY_ID: $id, S3_SECRET_ACCESS_KEY: $key}' > "$secrets"
-  wrangler deploy -c "$config" --var "S3_ENDPOINT:$(tf output -raw r2_s3_endpoint)" --secrets-file "$secrets"
+  wrangler deploy -c "$config"
 }
 
 case $mode in

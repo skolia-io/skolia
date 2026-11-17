@@ -1,9 +1,6 @@
 // skolia-ingest: the queue consumer and its analysis containers, one per language and image
 // (src/worker/ingest.ts). Deployed with wrangler, since Terraform's Cloudflare provider
-// has no container resource. The queue itself is created by Terraform (infra/).
-//
-// Secrets (from terraform output): S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY. See
-// infra/README.md for the deploy command.
+// has no container resource. The queue and bucket are created by Terraform (infra/).
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "skolia-ingest",
@@ -45,9 +42,8 @@
   "queues": {
     "consumers": [{ "queue": "skolia-ingest", "max_batch_size": 10, "max_retries": 10 }]
   },
-  // S3_ENDPOINT is passed at deploy (--var, terraform output r2_s3_endpoint) and
-  // locally in .env
-  "vars": { "S3_BUCKET": "skolia" },
+  // The containers' blobs, served to them through an intercept (src/worker/blob-http.ts)
+  "r2_buckets": [{ "binding": "BLOBS", "bucket_name": "skolia" }],
   // Deployed as skolia-ingest-staging. Bindings and containers aren't inherited.
   "env": {
     "staging": {
@@ -71,7 +67,7 @@
       "queues": {
         "consumers": [{ "queue": "skolia-ingest-staging", "max_batch_size": 10, "max_retries": 10 }]
       },
-      "vars": { "S3_BUCKET": "skolia-staging" }
+      "r2_buckets": [{ "binding": "BLOBS", "bucket_name": "skolia-staging" }]
     }
   }
 }

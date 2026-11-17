@@ -1,7 +1,7 @@
 // skolia-ingest on Cloudflare (api/wrangler.ingest.jsonc): consumes the ingest queue
 // and hands each job to its language's analysis container (analysis/flake.nix, one
 // image per language, served by analysis/src/skolia_analysis/ingest/http.py), which
-// writes status and blobs to R2.
+// reads and writes status and blobs in R2 through this Worker's binding (blob-http.ts).
 //
 // A message is acked once the container has accepted the job, not when the analysis
 // is done: a queue consumer may run for at most 15 minutes, and a long text can take
@@ -12,22 +12,18 @@
 // image it starts. Jobs go to the Ingester named after their language's image: when a
 // deploy changes an image, new jobs start a container with the new one while the old
 // container finishes its jobs and stops.
-import { DurableObject } from "cloudflare:workers";
+import { DurableObject, WorkerEntrypoint } from "cloudflare:workers";
 import { isLang, type Lang } from "@skolia/shared/api";
 import type { IngestJob } from "@skolia/shared/schema";
 import { log } from "../log.ts";
+import { BLOBS_HOST, serveBlob } from "./blob-http.ts";
 import type { IngestJobs } from "../ports.ts";
 
 const logger = log("ingest");
 
 interface Env {
   INGESTER: DurableObjectNamespace<Ingester>;
-  S3_ENDPOINT: string;
-  S3_BUCKET: string;
-  S3_ACCESS_KEY_ID: string;
-  S3_SECRET_ACCESS_KEY: string;
-  /** The Host header for S3_ENDPOINT; wrangler dev only (api/.env) */
-  S3_HOST?: string;
+  BLOBS: R2Bucket;
   /** How long the container stays up once idle; 1m by default, about what a start
    * costs (the models took 17 to 99 s to load, median 45 s, in 42 starts) */
   SLEEP_AFTER?: string;
@@ -48,6 +44,9 @@ const INACTIVITY_MARGIN_MS = 5 * 60 * 1000;
 // blockConcurrencyWhile's 30 s
 const STOP_TIMEOUT_MS = 10 * 1000;
 const SIGTERM = 15;
+
+/** ctx.exports' loopback bindings for this module's exports */
+type Exports = { readonly Blobs?: Fetcher };
 
 /** What became of a job handed to the container */
 type Outcome = "accepted" | "malformed" | "failed";
@@ -71,6 +70,7 @@ function milliseconds(duration: string): number {
  */
 export class Ingester extends DurableObject<Env> {
   private readonly sleepAfterMs = milliseconds(this.env.SLEEP_AFTER ?? "1m");
+  private starting: Promise<void> | null = null;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -116,30 +116,11 @@ export class Ingester extends DurableObject<Env> {
   async run(image: string, jobs: IngestJob[]): Promise<Outcome[]> {
     const container = this.container();
     if (!container.running) {
-      // Synchronous from the check on, so a concurrent call can't start it twice
-      container.start({
-        image,
-        instance: INSTANCE,
-        // R2
-        enableInternet: true,
-        env: {
-          SKOLIA_S3_ENDPOINT: this.env.S3_ENDPOINT,
-          SKOLIA_S3_BUCKET: this.env.S3_BUCKET,
-          AWS_ACCESS_KEY_ID: this.env.S3_ACCESS_KEY_ID,
-          AWS_SECRET_ACCESS_KEY: this.env.S3_SECRET_ACCESS_KEY,
-          AWS_DEFAULT_REGION: "auto",
-          // An undefined value would reach the container as the string "undefined"
-          ...(this.env.S3_HOST === undefined ? {} : { SKOLIA_S3_HOST: this.env.S3_HOST }),
-        },
+      // One start for concurrent calls: registering the intercept is async
+      this.starting ??= this.start(container, image).finally(() => {
+        this.starting = null;
       });
-      logger.info("starting ingest", { image });
-      this.ctx.waitUntil(
-        container.monitor().then(
-          () => logger.info("ingest exited", { image }),
-          (error: unknown) => logger.error("ingest failed", { image, error }),
-        ),
-      );
-      await container.setInactivityTimeout(this.inactivityTimeoutMs());
+      await this.starting;
     }
     await this.ready(container);
     await this.ctx.storage.setAlarm(Date.now() + this.sleepAfterMs);
@@ -167,6 +148,31 @@ export class Ingester extends DurableObject<Env> {
         await container.destroy();
       }
     });
+  }
+
+  private async start(container: Container, image: string): Promise<void> {
+    // Before start: an intercept lasts until the container stops
+    await container.interceptOutboundHttp(BLOBS_HOST, this.blobs());
+    container.start({
+      image,
+      instance: INSTANCE,
+      enableInternet: false,
+      env: { SKOLIA_BLOBS: `http://${BLOBS_HOST}` },
+    });
+    logger.info("starting ingest", { image });
+    this.ctx.waitUntil(
+      container.monitor().then(
+        () => logger.info("ingest exited", { image }),
+        (error: unknown) => logger.error("ingest failed", { image, error }),
+      ),
+    );
+    await container.setInactivityTimeout(this.inactivityTimeoutMs());
+  }
+
+  private blobs(): Fetcher {
+    const blobs = (this.ctx.exports as Exports).Blobs;
+    if (blobs === undefined) throw new Error("ctx.exports has no Blobs");
+    return blobs;
   }
 
   private container(): Container {
@@ -263,6 +269,13 @@ export default {
     await Promise.all([...byLang].map(([lang, messages]) => handOver(env, lang, messages)));
   },
 } satisfies ExportedHandler<Env, IngestJob>;
+
+/** The container's blob store (blob-http.ts), reached through the intercept on BLOBS_HOST */
+export class Blobs extends WorkerEntrypoint<Env> {
+  override async fetch(request: Request): Promise<Response> {
+    return await serveBlob(this.env.BLOBS, request);
+  }
+}
 
 /** One container per image: its jobs wait in its memory and run one at a time. */
 async function handOver(env: Env, lang: Lang, messages: Message<IngestJob>[]): Promise<void> {

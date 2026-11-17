@@ -2,11 +2,7 @@
 wrangler dev and on Cloudflare.
 
   SKOLIA_HTTP_PORT     takes jobs as POST /jobs on this port (see http.py)
-  SKOLIA_S3_BUCKET     blob bucket
-  SKOLIA_S3_ENDPOINT   S3 endpoint (R2, or wrangler dev's local R2); unset for AWS
-  SKOLIA_S3_HOST       Host header for the endpoint; optional, for wrangler dev
-                       (see S3Blobs)
-  AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_DEFAULT_REGION   S3 credentials
+  SKOLIA_BLOBS         the blob store's base URL (see HttpBlobs)
   SKOLIA_LANGS         languages to ingest, comma-separated, e.g. pl,en
   SKOLIA_DATA          the languages' data directory: {lang}.sqlite (skolia-build-lexicon)
                        and each plugin's own files (pl: pl-valency.json)
@@ -22,7 +18,7 @@ from types import FrameType
 from .. import lang
 from ..lexicon.store import Lexicon
 from ..plugin import Options, lexicon_path
-from .blobs import S3Blobs
+from .blobs import HttpBlobs
 from .http import HttpJobs, serve
 from .worker import Ingester, Pipeline
 
@@ -75,11 +71,7 @@ def main() -> None:
     # Cloudflare container would never stop it
     signal.signal(signal.SIGTERM, stop_on_sigterm)
     queue = job_source()
-    blobs = S3Blobs(
-        env("SKOLIA_S3_BUCKET"),
-        os.environ.get("SKOLIA_S3_ENDPOINT") or None,
-        os.environ.get("SKOLIA_S3_HOST") or None,
-    )
+    blobs = HttpBlobs(env("SKOLIA_BLOBS"))
     data = Path(env("SKOLIA_DATA"))
     codes = [c.strip() for c in env("SKOLIA_LANGS").split(",") if c.strip()]
     unknown = set(codes) - set(lang.LANGS)

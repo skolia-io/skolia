@@ -69,7 +69,7 @@ flowchart LR
 
 Locally, `wrangler dev` runs both Workers and the ingest containers, with local D1, R2 and Queue. The API reaches them through small interfaces (`api/src/ports.ts`, faked in the tests); ingest reaches R2 over its S3 API, which wrangler dev also serves for the local bucket. Ingest writes `doc/{doc}/status.json` as it goes (analysing, ready, failed), the API writes queued whenever it queues a document, and the API reads it to tell the reader.
 
-On Cloudflare: Terraform (`infra/`) manages what wrangler doesn't: R2, D1, the queue, ingest's R2 token and billing alerts. Both Workers are deployed with wrangler: `skolia` with the reader as static assets on workers.dev and skolia.io (`api/wrangler.jsonc`), and `skolia-ingest` with its containers, one per language (`api/wrangler.ingest.jsonc`). Wrangler also applies their Durable Object migrations, which the Terraform provider can't do on an update (it resends the first migration and Cloudflare refuses it). The consumer hands each job to its language's container over HTTP and acks it once accepted: a consumer may run 15 minutes and an analysis can take longer. The container keeps jobs in memory, sleeps when idle (the Durable Object asks ingest whether it's busy before stopping it), and has the models and lexicon in its image. A job lost with its container is re-queued by the stuck rule below.
+On Cloudflare: Terraform (`infra/`) manages what wrangler doesn't: R2, D1, the queue and billing alerts. Both Workers are deployed with wrangler: `skolia` with the reader as static assets on workers.dev and skolia.io (`api/wrangler.jsonc`), and `skolia-ingest` with its containers, one per language (`api/wrangler.ingest.jsonc`). Wrangler also applies their Durable Object migrations, which the Terraform provider can't do on an update (it resends the first migration and Cloudflare refuses it). The consumer hands each job to its language's container over HTTP and acks it once accepted: a consumer may run 15 minutes and an analysis can take longer. The container keeps jobs in memory, sleeps when idle (the Durable Object asks ingest whether it's busy before stopping it), and has the models and lexicon in its image. It has no internet access or R2 credentials: the Durable Object intercepts its requests to `blobs.internal` and serves them from the ingest Worker's R2 binding (`api/src/worker/blob-http.ts`). A job lost with its container is re-queued by the stuck rule below.
 
 ```mermaid
 flowchart TB
@@ -99,7 +99,7 @@ flowchart TB
   CX[("Cachix")]
   REG[("Cloudflare registry")]
   subgraph CF["Cloudflare"]
-    TFR["Terraform: R2, D1 skolia, a lexicon D1 per language, queue, ingest's R2 token, alerts"]
+    TFR["Terraform: R2, D1 skolia, a lexicon D1 per language, queue, alerts"]
     LXDB[("D1 skolia-lexicon-{lang}")]
     INGD["skolia-ingest Worker, containers"]
     WEBD["skolia Worker, reader assets"]
