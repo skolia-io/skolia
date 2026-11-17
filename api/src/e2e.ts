@@ -45,21 +45,38 @@ const TEXTS: Record<Lang, string> = {
  * (wordfreq's 3,000 most common words), with a paradigm. */
 const WORDS: Record<Lang, LemmaId> = { en: "en:dog:NOUN", fr: "fr:chien:NOUN", pl: "pl:pies:NOUN" };
 
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Whether a response is Cloudflare's own 404 page, which says no Worker answered, rather
+ * than one of the API's, which aren't HTML. */
+const isEdge404 = (response: Response) => response.status === 404 && (response.headers.get("content-type") ?? "").startsWith("text/html");
+
+/** fetch, trying Cloudflare's 404 again for up to VERSION_TIMEOUT_MS. A new Worker's
+ * workers.dev name answers on some of Cloudflare's machines before others: a preview's
+ * /api/me gave that 404 10 s after its /api/version had answered. */
+async function retryingFetch(input: string | URL | Request, init?: RequestInit): Promise<Response> {
+  const deadline = Date.now() + VERSION_TIMEOUT_MS;
+  for (;;) {
+    const response = await fetch(input, init);
+    if (!isEdge404(response) || Date.now() > deadline) return response;
+    log.info("Cloudflare's 404; trying again", { url: String(input instanceof Request ? input.url : input) });
+    await sleep(POLL_MS);
+  }
+}
+
 type Api = ReturnType<typeof hc<AppType>>["api"];
 
 function client(base: string, key?: string): Api {
-  return hc<AppType>(base, key === undefined ? {} : { headers: { [API_KEY_HEADER]: key } }).api;
+  return hc<AppType>(base, { fetch: retryingFetch, ...(key === undefined ? {} : { headers: { [API_KEY_HEADER]: key } }) }).api;
 }
 
 /** A URL the typed client doesn't describe (text and blobs, which aren't JSON), as the
  * key's user if given. */
 async function fetchOk(what: string, url: string, key?: string): Promise<Response> {
-  const response = await fetch(url, key === undefined ? {} : { headers: { [API_KEY_HEADER]: key } });
+  const response = await retryingFetch(url, key === undefined ? {} : { headers: { [API_KEY_HEADER]: key } });
   if (!response.ok) throw new Error(`${what}: ${response.status}: ${await response.text()}`);
   return response;
 }
-
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // A new Worker's workers.dev name can take a while to answer (24 s for a preview's), so
 // errors are retried until the deadline too
@@ -112,7 +129,7 @@ async function documents(base: string, key: string, lang: Lang): Promise<void> {
       if (!summary.reading) throw new Error(`${lang}: ready without analysis and bundle names`);
       const text = await (await fetchOk(`${lang} text`, `${base}/api/documents/${id}/text`, key)).text();
       assert.equal(text, request.text, `${lang}: the text isn't the one imported`);
-      assert.equal((await fetch(`${base}/api/documents/${id}/text`)).status, 404, `${lang}: a private text is readable signed out`);
+      assert.equal((await retryingFetch(`${base}/api/documents/${id}/text`)).status, 404, `${lang}: a private text is readable signed out`);
       for (const [part, name] of Object.entries(summary.reading)) {
         const blob = await fetchOk(`${lang} ${part}`, `${base}/api/documents/${id}/${part}/${name}`, key);
         log.info("{lang}: {part} {name}", { lang, doc: id, part, name, bytes: (await blob.arrayBuffer()).byteLength });
