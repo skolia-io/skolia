@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -34,33 +33,25 @@ class Blobs(Protocol):
 
 
 class HttpBlobs:
-    """Blobs over plain HTTP: GET, HEAD and PUT {base}/{key}. In the container, base is the
-    ingest Worker's intercepted host, which serves them from its R2 binding
-    (api/src/worker/blob-http.ts), so the container holds no credentials."""
+    """GET and PUT {base}/{key}. In the container, base is a host the ingest Worker
+    intercepts and serves from its R2 binding (Blobs in api/src/worker/ingest.ts), so the
+    container holds no credentials. Not retried here: the worker loop backs off on
+    BlobError and puts the job back."""
 
-    ENCODING = "x-blob-content-encoding"
-    """The PUT header for Content-Encoding (blob-http.ts BLOB_ENCODING)"""
-
-    def __init__(
-        self, base: str, attempts: int = 3, timeout: float = 60, backoff: float = 1
-    ) -> None:
+    def __init__(self, base: str, timeout: float = 60) -> None:
         self._base = base.rstrip("/")
-        self._attempts = attempts
         self._timeout = timeout
-        self._backoff = backoff
 
     def get(self, key: str) -> bytes | None:
-        status, body = self._request("GET", key)
-        return None if status == 404 else body
+        return self._request("GET", key)
 
     def exists(self, key: str) -> bool:
-        status, _ = self._request("HEAD", key)
-        return status != 404
+        return self.get(key) is not None
 
     def put(self, key: str, data: bytes, content_type: str, encoding: str | None = None) -> None:
         headers = {"Content-Type": content_type}
         if encoding is not None:
-            headers[self.ENCODING] = encoding
+            headers["Content-Encoding"] = encoding
         self._request("PUT", key, data, headers)
 
     def _request(
@@ -69,24 +60,20 @@ class HttpBlobs:
         key: str,
         data: bytes | None = None,
         headers: dict[str, str] | None = None,
-    ) -> tuple[int, bytes]:
-        """The status and body of a 2xx or 404; anything else is retried, then a BlobError."""
-        url = f"{self._base}/{quote(key)}"
-        error: Exception | None = None
-        for attempt in range(self._attempts):
-            if attempt > 0:
-                time.sleep(self._backoff * 2**attempt)
-            request = urllib.request.Request(url, data, headers or {}, method=method)
-            try:
-                with urllib.request.urlopen(request, timeout=self._timeout) as response:
-                    return response.status, response.read()
-            except urllib.error.HTTPError as failure:
-                if failure.code == 404:
-                    return 404, b""
-                error = failure
-            except (urllib.error.URLError, OSError) as failure:
-                error = failure
-        raise BlobError(f"{method.lower()} {key}: {error}") from error
+    ) -> bytes | None:
+        """The body, or None for a 404"""
+        request = urllib.request.Request(
+            f"{self._base}/{quote(key)}", data, headers or {}, method=method
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=self._timeout) as response:
+                return response.read()
+        except urllib.error.HTTPError as error:
+            if error.code == 404:
+                return None
+            raise BlobError(f"{method.lower()} {key}: {error}") from error
+        except OSError as error:
+            raise BlobError(f"{method.lower()} {key}: {error}") from error
 
 
 class DirBlobs:

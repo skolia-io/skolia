@@ -42,7 +42,7 @@
   "queues": {
     "consumers": [{ "queue": "skolia-ingest", "max_batch_size": 10, "max_retries": 10 }]
   },
-  // The containers' blobs, served to them through an intercept (src/worker/blob-http.ts)
+  // The containers' blobs, served to them through an intercept (Blobs in src/worker/ingest.ts)
   "r2_buckets": [{ "binding": "BLOBS", "bucket_name": "skolia" }],
   // Deployed as skolia-ingest-staging. Bindings and containers aren't inherited.
   "env": {

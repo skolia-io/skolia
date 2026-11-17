@@ -1,7 +1,7 @@
 // skolia-ingest on Cloudflare (api/wrangler.ingest.jsonc): consumes the ingest queue
 // and hands each job to its language's analysis container (analysis/flake.nix, one
 // image per language, served by analysis/src/skolia_analysis/ingest/http.py), which
-// reads and writes status and blobs in R2 through this Worker's binding (blob-http.ts).
+// reads and writes status and blobs in R2 through this Worker's binding (Blobs).
 //
 // A message is acked once the container has accepted the job, not when the analysis
 // is done: a queue consumer may run for at most 15 minutes, and a long text can take
@@ -16,7 +16,6 @@ import { DurableObject, WorkerEntrypoint } from "cloudflare:workers";
 import { isLang, type Lang } from "@skolia/shared/api";
 import type { IngestJob } from "@skolia/shared/schema";
 import { log } from "../log.ts";
-import { BLOBS_HOST, serveBlob } from "./blob-http.ts";
 import type { IngestJobs } from "../ports.ts";
 
 const logger = log("ingest");
@@ -45,8 +44,8 @@ const INACTIVITY_MARGIN_MS = 5 * 60 * 1000;
 const STOP_TIMEOUT_MS = 10 * 1000;
 const SIGTERM = 15;
 
-/** ctx.exports' loopback bindings for this module's exports */
-type Exports = { readonly Blobs?: Fetcher };
+/** The container's blob store, served by Blobs */
+const BLOBS_HOST = "blobs.internal";
 
 /** What became of a job handed to the container */
 type Outcome = "accepted" | "malformed" | "failed";
@@ -152,7 +151,7 @@ export class Ingester extends DurableObject<Env> {
 
   private async start(container: Container, image: string): Promise<void> {
     // Before start: an intercept lasts until the container stops
-    await container.interceptOutboundHttp(BLOBS_HOST, this.blobs());
+    await container.interceptOutboundHttp(BLOBS_HOST, (this.ctx.exports as { Blobs: Fetcher }).Blobs);
     container.start({
       image,
       instance: INSTANCE,
@@ -167,12 +166,6 @@ export class Ingester extends DurableObject<Env> {
       ),
     );
     await container.setInactivityTimeout(this.inactivityTimeoutMs());
-  }
-
-  private blobs(): Fetcher {
-    const blobs = (this.ctx.exports as Exports).Blobs;
-    if (blobs === undefined) throw new Error("ctx.exports has no Blobs");
-    return blobs;
   }
 
   private container(): Container {
@@ -270,10 +263,16 @@ export default {
   },
 } satisfies ExportedHandler<Env, IngestJob>;
 
-/** The container's blob store (blob-http.ts), reached through the intercept on BLOBS_HOST */
+/** GET and PUT /{key} on BLOBS_HOST for the container, from the R2 binding */
 export class Blobs extends WorkerEntrypoint<Env> {
   override async fetch(request: Request): Promise<Response> {
-    return await serveBlob(this.env.BLOBS, request);
+    const key = decodeURIComponent(new URL(request.url).pathname.slice(1));
+    if (request.method === "PUT") {
+      await this.env.BLOBS.put(key, await request.arrayBuffer(), { httpMetadata: request.headers });
+      return new Response(null, { status: 204 });
+    }
+    const object = await this.env.BLOBS.get(key);
+    return new Response(object?.body ?? null, { status: object ? 200 : 404 });
   }
 }
 
