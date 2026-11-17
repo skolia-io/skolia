@@ -61,8 +61,6 @@
     <p class="muted">Sign in to see your cards.</p>
     <Button variant="primary" onclick={() => void signIn()}>Sign in</Button>
   {:else if user && selected}
-    <p class="back"><a href="#/review/{selected}">Back to review</a></p>
-
     {#if !list.data}
       {#if !failure}
         <p class="muted">Loading…</p>
@@ -116,11 +114,6 @@
 </Page>
 
 <style>
-  .back {
-    margin: 0 0 0.5rem;
-    font-size: 0.9rem;
-  }
-
   .cards {
     list-style: none;
     margin: 0 0 1rem;

@@ -9,7 +9,6 @@
     type CardCounts,
     type CardGroup,
     type Cloze,
-    type Due,
     type DueCard,
     type Lang,
     type Rating,
@@ -29,13 +28,14 @@
   import { clue, keyTarget, shortcut } from "../lib/review.ts";
   import { createMarkKnown } from "../lib/words.ts";
 
-  /** lang and group are the URL's (#/review/pl/forms); without a language, the one with the
-   * most to review. group only counts when the settings review forms on their own: without
-   * one, words, unless only forms have something. */
+  /** lang and group are the URL's (#/review/pl/forms); without a language, the languages to
+   * choose from, and with one, only its cards. group only counts when the settings review forms
+   * on their own: without one, words, unless only forms have something. */
   let { user, lang, group: wanted }: { user: User | null | undefined; lang: Lang | null; group: CardGroup | null } = $props();
 
   const GRADE_LABELS: Record<Rating, string> = { 1: "Again", 2: "Hard", 3: "Good", 4: "Easy" };
   const GROUP_LABELS: Record<CardGroup, string> = { words: "Words", forms: "Forms" };
+  const LANGUAGES_PAGE = "#/review";
   const SHOWN_SENSES = 3;
 
   const client = useQueryClient();
@@ -54,17 +54,18 @@
   const markWordKnown = createMarkKnown();
   const deleteCloze = createRemoveCloze();
 
-  /** Cards to review in one group, or with none in both. */
-  function toReview(c: CardCounts, group: CardGroup | null = null): number {
+  /** New or due cards in one group, or with none in both. */
+  function sum(c: CardCounts, group: CardGroup | null, which: "new" | "due"): number {
     const groups: readonly CardGroup[] = group ? [group] : CARD_GROUPS;
-    return groups.reduce((n, g) => n + c[g].due + c[g].new, 0);
+    return groups.reduce((n, g) => n + c[g][which], 0);
   }
 
-  const busiest = $derived(
-    counts?.reduce<CardCounts | null>((best, c) => (toReview(c) > (best ? toReview(best) : 0) ? c : best), null)?.lang ?? null,
-  );
-  const selected = $derived(lang ?? busiest);
-  const withCards = $derived((counts ?? []).filter((c) => toReview(c) > 0));
+  /** Cards to review in one group, or with none in both. */
+  function toReview(c: CardCounts, group: CardGroup | null = null): number {
+    return sum(c, group, "new") + sum(c, group, "due");
+  }
+
+  const selected = $derived(lang);
   const selectedCounts = $derived(counts?.find((c) => c.lang === selected) ?? null);
   const group = $derived<CardGroup | null>(
     split
@@ -76,7 +77,6 @@
   /** The session's cards not yet reviewed; null while they load. */
   const due = $derived(dueCards.data ?? null);
   const card = $derived(due?.cards[0]);
-  const left = $derived(due?.cards.length ?? 0);
   const revealed = $derived(card !== undefined && card.id === revealedId);
   const failure = $derived(error ?? (cardCounts.error ?? settings.error ?? dueCards.error)?.message ?? null);
 
@@ -87,19 +87,6 @@
   /** Takes cards out of this session. */
   function drop(keep: (c: DueCard) => boolean): void {
     client.setQueryData(session.queryKey, (d) => d && { ...d, cards: d.cards.filter(keep) });
-  }
-
-  function refresh(): void {
-    error = null;
-    void cardCounts.refetch();
-    void settings.refetch();
-    if (selected && split !== null) void dueCards.refetch();
-  }
-
-  function newLeft(left: Due["newLeft"]): string {
-    if (group === "words") return `${left.words} new words left today`;
-    if (group === "forms") return `${left.forms} new forms left today`;
-    return `${left.words} new words and ${left.forms} new forms left today`;
   }
 
   async function reveal(): Promise<void> {
@@ -201,14 +188,23 @@
   }
 
   function onkeydown(event: KeyboardEvent): void {
-    if (!card || busy) return;
+    if (!selected) return;
     // KeyboardEvent's fields are getters on its prototype, which a spread wouldn't copy
     const { key, repeat, altKey, ctrlKey, metaKey } = event;
     const action = shortcut({ key, repeat, altKey, ctrlKey, metaKey, target: keyTarget(event.target) }, revealed);
-    if (action === null) return;
+    if (action === null || (action.kind !== "leave" && (!card || busy))) return;
     event.preventDefault();
-    if (action.kind === "reveal") void reveal();
-    else void grade(action.rating);
+    switch (action.kind) {
+      case "leave":
+        location.hash = LANGUAGES_PAGE;
+        break;
+      case "reveal":
+        void reveal();
+        break;
+      case "grade":
+        void grade(action.rating);
+        break;
+    }
   }
 </script>
 
@@ -289,68 +285,79 @@
   {/if}
 {/snippet}
 
-<Page title="Review">
-  {#snippet actions()}
-    {#if user && counts && (withCards.length > 0 || selected)}
-      <select
-        aria-label="Language"
-        value={selected ?? ""}
-        onchange={(event) => (location.hash = `#/review/${event.currentTarget.value}${wanted ? `/${wanted}` : ""}`)}
-      >
-        {#if !selected}
-          <option value="" disabled>Choose a language</option>
-        {:else if !withCards.some((c) => c.lang === selected)}
-          <option value={selected}>{LANGUAGE_INFO[selected].flag} {LANGUAGE_INFO[selected].endonym}</option>
-        {/if}
-        {#each withCards as c (c.lang)}
-          <option value={c.lang}
-            >{LANGUAGE_INFO[c.lang].flag} {LANGUAGE_INFO[c.lang].endonym} · {c.words.due + c.forms.due} due ·
-            {c.words.new + c.forms.new}
-            new</option
-          >
-        {/each}
-      </select>
-    {/if}
-  {/snippet}
-  <div class="review">
+{#snippet tally(c: CardCounts, group: CardGroup | null)}
+  {@const fresh = sum(c, group, "new")}
+  {@const due = sum(c, group, "due")}
+  {#if fresh + due === 0}
+    <span class="muted">Done for today</span>
+  {:else}
+    <span class="tally"
+      >{#if fresh > 0}
+        <span class="new">{fresh} new</span>
+      {/if}{#if fresh > 0 && due > 0}
+        {" "}·{" "}
+      {/if}{#if due > 0}
+        <span class="due">{due} due</span>
+      {/if}</span
+    >
+  {/if}
+{/snippet}
+
+{#if !selected}
+  <Page title="Review">
     {#if user === null}
       <p class="muted">Sign in to review your words.</p>
       <Button variant="primary" onclick={() => void signIn()}>Sign in</Button>
-    {:else if !counts}
-      {#if !failure}
-        <p class="muted">Loading…</p>
-      {/if}
-    {/if}
-    {#if user && counts && !selected}
-      <p>Nothing to review right now. Words you look up in the reader turn into cards here.</p>
-      <Button variant="quiet" onclick={refresh}>Check again</Button>
-    {/if}
-    {#if user && selected && group}
-      <nav class="groups" aria-label="Cards to review">
-        {#each CARD_GROUPS as g (g)}
-          <a href="#/review/{selected}/{g}" aria-current={g === group ? "page" : undefined}
-            >{GROUP_LABELS[g]}{#if selectedCounts}
-              {" "}<span class="count">{toReview(selectedCounts, g)}</span>
-            {/if}</a
-          >
-        {/each}
-      </nav>
-    {/if}
-    {#if user && selected && !due}
-      {#if !failure}
-        <p class="muted">Loading…</p>
-      {/if}
-    {:else if user && due}
-      <p class="counts muted">{left} to go · {newLeft(due.newLeft)} · <a href="#/settings">Settings</a></p>
-      {#if card}
-        <section class="flashcard" aria-live="polite" aria-atomic="true">
-          <div class="known">
-            {#if card.kind === "cloze"}
-              <Button variant="quiet" small disabled={busy} title="Delete this card and its reviews" onclick={removeCloze}>Delete</Button>
+    {:else if counts && counts.length === 0}
+      <p class="muted">Nothing to review yet. Words you look up in the reader turn into cards here.</p>
+    {:else if counts && split !== null}
+      <ul class="languages">
+        {#each counts as c (c.lang)}
+          {@const info = LANGUAGE_INFO[c.lang]}
+          <li class={{ done: toReview(c) === 0 }}>
+            {#if split}
+              <p class="language" lang={c.lang}><span class="flag" aria-hidden="true">{info.flag}</span> {info.endonym}</p>
+              {#each CARD_GROUPS as g (g)}
+                <a class="group" href="#/review/{c.lang}/{g}"><span>{GROUP_LABELS[g]}</span> {@render tally(c, g)}</a>
+              {/each}
             {:else}
-              <Button variant="quiet" small disabled={busy} title="You know this word: stop reviewing it" onclick={markKnown}>Known</Button>
+              <a class="whole" href="#/review/{c.lang}">
+                <span class="language" lang={c.lang}><span class="flag" aria-hidden="true">{info.flag}</span> {info.endonym}</span>
+                {@render tally(c, null)}
+              </a>
             {/if}
-          </div>
+          </li>
+        {/each}
+      </ul>
+    {/if}
+    {#if failure}
+      <p class="error" role="alert">{failure}</p>
+    {/if}
+  </Page>
+{:else}
+  <main class="session">
+    <h1 class="visually-hidden">
+      Review {LANGUAGE_INFO[selected].name}{#if group}
+        , {GROUP_LABELS[group].toLowerCase()}
+      {/if}
+    </h1>
+    <div class="bar">
+      <a class="leave" href={LANGUAGES_PAGE} aria-label="Stop reviewing" aria-keyshortcuts="Escape">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8M12 4l-8 8" /></svg>
+      </a>
+      {#if card?.kind === "cloze"}
+        <Button variant="quiet" small disabled={busy} title="Delete this card and its reviews" onclick={removeCloze}>Delete</Button>
+      {:else if card}
+        <Button variant="quiet" small disabled={busy} title="You know this word: stop reviewing it" onclick={markKnown}>Known</Button>
+      {/if}
+    </div>
+
+    <div class="stage">
+      {#if user === null}
+        <p class="muted">Sign in to review your words.</p>
+        <Button variant="primary" onclick={() => void signIn()}>Sign in</Button>
+      {:else if card}
+        <section class="flashcard" aria-live="polite" aria-atomic="true">
           {#if card.kind === "cloze"}
             {@render sentence(card, card.data, revealed)}
           {:else if card.kind === "recognition"}
@@ -369,6 +376,17 @@
             {@render answer(card)}
           {/if}
         </section>
+      {:else if due}
+        <p class="muted">Nothing more to review for now.</p>
+        <a href={LANGUAGES_PAGE}>Back</a>
+      {/if}
+      {#if failure}
+        <p class="error" role="alert">{failure}</p>
+      {/if}
+    </div>
+
+    {#if card}
+      <div class="controls">
         {#if revealed}
           <div class="grades">
             {#each RATINGS as rating (rating)}
@@ -388,78 +406,18 @@
               {/if}
             {/each}
           </div>
-          <p class="hint">Keys 1 to 4 grade the card.</p>
         {:else}
           <Button variant="primary" disabled={busy} aria-keyshortcuts="Space Enter" bind:element={showButton} onclick={reveal}
             >Show answer</Button
           >
-          <p class="hint">Space or Enter shows the answer.</p>
         {/if}
-      {:else}
-        <p>Nothing to review right now. Words you look up in the reader turn into cards here.</p>
-        <Button variant="quiet" disabled={busy || dueCards.isFetching} onclick={refresh}>Check again</Button>
-      {/if}
+      </div>
     {/if}
-    {#if failure}
-      <p class="error" role="alert">{failure}</p>
-    {/if}
-    {#if user && selected}
-      <p class="manage"><a href="#/cards/{selected}">Manage cards</a></p>
-    {/if}
-  </div>
-</Page>
+  </main>
+{/if}
 
 <style>
-  .review {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-  }
-
-  .counts,
-  .hint {
-    margin: 0;
-  }
-
-  .groups {
-    display: flex;
-    gap: 1.25rem;
-    border-bottom: 1px solid var(--line);
-  }
-
-  .groups a {
-    margin-bottom: -1px;
-    padding: 0.55rem 0.1rem;
-    border-bottom: 2px solid transparent;
-    color: var(--muted);
-    text-decoration: none;
-  }
-
-  .groups a:hover {
-    color: var(--text);
-  }
-
-  .groups a[aria-current="page"] {
-    border-bottom-color: var(--accent);
-    color: var(--text);
-  }
-
-  .groups .count {
-    color: var(--muted);
-    font-size: 0.85em;
-  }
-
   .muted {
-    color: var(--muted);
-  }
-
-  .manage {
-    margin: 2rem 0 0;
-    font-size: 0.85rem;
-    text-align: center;
-  }
-
-  .manage a {
     color: var(--muted);
   }
 
@@ -467,17 +425,137 @@
     color: var(--error);
   }
 
-  .hint {
+  /* The languages, like a deck list: each a tile to start its review from */
+  .languages {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
+    gap: 0.75rem;
+    margin: 1.5rem 0 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .languages li {
+    display: flex;
+    flex-direction: column;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    box-shadow: var(--card-shadow);
+    overflow: hidden;
+  }
+
+  .language {
+    margin: 0;
+    font-family: var(--reading);
+    font-size: 1.25rem;
+  }
+
+  .languages a {
+    color: var(--text);
+    text-decoration: none;
+  }
+
+  .languages a:hover,
+  .languages a:focus-visible {
+    background: var(--current);
+    outline: none;
+  }
+
+  .whole {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    padding: 1rem 1.1rem;
+  }
+
+  li > .language {
+    padding: 1rem 1.1rem 0.5rem;
+  }
+
+  .group {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.5rem 1.1rem;
+    border-top: 1px solid var(--line);
+  }
+
+  .tally {
+    font-size: 0.9rem;
     color: var(--muted);
-    font-size: 0.85rem;
+  }
+
+  .new {
+    color: var(--accent);
+  }
+
+  .due {
+    color: var(--trigger);
+  }
+
+  .done .language {
+    color: var(--muted);
+  }
+
+  /* A language's review: only the card, centred, with its controls at the bottom */
+  .session {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 100dvh;
+    max-width: 40rem;
+    margin: 0 auto;
+    padding: 0 var(--gutter);
+  }
+
+  .bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: var(--nav-height);
+    color: var(--muted);
+  }
+
+  .leave {
+    display: grid;
+    place-items: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    margin-left: -0.5rem;
+    border-radius: 6px;
+    color: var(--muted);
+  }
+
+  .leave:hover,
+  .leave:focus-visible {
+    background: var(--current);
+    color: var(--text);
+    outline: none;
+  }
+
+  .leave svg {
+    width: 1.1rem;
+    height: 1.1rem;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.6;
+    stroke-linecap: round;
+  }
+
+  .stage {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    padding: 1rem 0 2rem;
     text-align: center;
   }
 
-  /* No keyboard to press them on */
-  @media (pointer: coarse), (max-width: 639px) {
-    .hint {
-      display: none;
-    }
+  .stage > p {
+    margin: 0;
   }
 
   .flashcard {
@@ -485,20 +563,20 @@
     flex-direction: column;
     align-items: center;
     gap: 0.5rem;
-    padding: 2rem var(--gutter);
-    min-height: 12rem;
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: 10px;
-    text-align: center;
-    position: relative;
+    width: 100%;
   }
 
-  .known {
-    position: absolute;
-    top: 0.5rem;
-    right: 0.5rem;
-    color: var(--muted);
+  .controls {
+    position: sticky;
+    bottom: 0;
+    display: flex;
+    justify-content: center;
+    padding: 0.75rem 0 calc(1rem + env(safe-area-inset-bottom));
+    background: var(--bg);
+  }
+
+  .controls > :global(button) {
+    min-width: min(16rem, 100%);
   }
 
   .prompt {
@@ -582,6 +660,7 @@
     display: grid;
     grid-template-columns: repeat(4, 1fr);
     gap: 0.5rem;
+    width: 100%;
   }
 
   .grades :global(button) {

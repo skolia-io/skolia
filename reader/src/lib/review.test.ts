@@ -17,6 +17,12 @@ test("Space or Enter shows the answer, and 1 to 4 grade it only once it's shown"
   assert.equal(shortcut(press(" "), true), null);
 });
 
+test("Escape leaves, before or after the answer, but not from a field", () => {
+  assert.deepEqual(shortcut(press("Escape"), false), { kind: "leave" });
+  assert.deepEqual(shortcut(press("Escape", { target: "control" }), true), { kind: "leave" });
+  assert.equal(shortcut(press("Escape", { target: "field" }), true), null);
+});
+
 test("keys with a modifier, held keys, and keys in a field aren't shortcuts", () => {
   assert.equal(shortcut(press("1", { ctrlKey: true }), true), null);
   assert.equal(shortcut(press("1", { metaKey: true }), true), null);
