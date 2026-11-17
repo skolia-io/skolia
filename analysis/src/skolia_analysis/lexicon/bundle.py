@@ -137,9 +137,15 @@ def pronounce(lexicon: Lexicon, word: str, upos: Upos) -> list[Pronunciation]:
 def record(lexicon: Lexicon, word: str, upos: Upos) -> list[Recording]:
     """The recordings filed with the pronunciation pronounce picks: the noun lead, /lɛd/,
     has none of its own, and the verb's, /liːd/, would be wrong. Only a word without a
-    pronunciation falls back by its recordings."""
+    pronunciation falls back by its recordings. Without any, Commons' recordings of the
+    spelling, which only a language whose spelling gives the sound has (Polish)."""
     found = _find(lexicon.pronunciations, word, upos) or _find(lexicon.recordings, word, upos)
-    return lexicon.recordings(found[0]).get(found[1], []) if found else []
+    if found and (heard := lexicon.recordings(found[0]).get(found[1], [])):
+        return heard
+    for spelling in dict.fromkeys([word, word.lower()]):
+        if heard := lexicon.word_recordings(spelling):
+            return heard
+    return []
 
 
 def _find[T](

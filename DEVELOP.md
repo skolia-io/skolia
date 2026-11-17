@@ -172,12 +172,21 @@ zstd -19 -T0 -c ../data/kaikki/kaikki.org-dictionary-Polish.jsonl | pnpm --dir .
 # then put $sha on the kaikki line of inputs.sha256
 ```
 
+Polish words' recordings come from Wikimedia Commons as well as Wiktionary (`lexicon/commons.py`): a snapshot of the file names in its Lingua Libre and Polish pronunciation categories, pinned the same way. To take a newer snapshot (a few minutes, since Commons rate-limits):
+
+```fish
+uv run skolia-fetch-commons pl ../data/inputs/commons-recordings-pl.txt
+set -l sha (shasum -a 256 ../data/inputs/commons-recordings-pl.txt | cut -d' ' -f1)
+zstd -19 -c ../data/inputs/commons-recordings-pl.txt | pnpm --dir ../api exec wrangler r2 object put skolia-lexicon-sources/$sha-commons-recordings-pl.txt.zst --pipe --remote
+# then put $sha on the commons-recordings-pl.txt line of inputs.sha256
+```
+
 `wrangler r2 object put` takes at most 300 MiB. The English extract is over that at `zstd -19` (320 MB) and under it at `zstd --ultra -22 --long=27` (281 MB, about 6 minutes); `zstd -d` reads a 2^27 window without any flag, so `fetch_inputs.sh` needs none.
 
 Or build from a local extract (about 10 s):
 
 ```fish
-uv run skolia-build-lexicon pl ../data/kaikki/kaikki.org-dictionary-Polish.jsonl ../data/lexicon/pl.sqlite
+uv run skolia-build-lexicon pl ../data/kaikki/kaikki.org-dictionary-Polish.jsonl ../data/lexicon/pl.sqlite --commons ../data/inputs/commons-recordings-pl.txt
 uv run skolia-build-lexicon en ../data/kaikki/kaikki.org-dictionary-English.jsonl ../data/lexicon/en.sqlite
 uv run skolia-build-lexicon fr ../data/kaikki/kaikki.org-dictionary-French.jsonl ../data/lexicon/fr.sqlite
 ```
