@@ -213,18 +213,18 @@ url env:
       *) infra/preview.py url {{ env }} ;;
     esac
 
-# Runs the SQL a script prints (its API keys) on the environment's D1
+# Runs the SQL a script prints (its API keys) on the environment's D1. --command, not --file:
+# a file goes through D1's import, which refuses every other query meanwhile, such as the
+# end-to-end tests' while sync-curated writes its key
 [private]
 d1-sql env script:
     #!/usr/bin/env bash
     set -euo pipefail
-    dir=$(mktemp -d)
-    trap 'rm -rf "$dir"' EXIT
-    node {{ script }} > "$dir/keys.sql"
+    sql=$(node {{ script }})
     if [ {{ env }} = local ]; then
-      pnpm --dir api exec wrangler d1 execute DB --local --env='' --file "$dir/keys.sql" >/dev/null
+      pnpm --dir api exec wrangler d1 execute DB --local --env='' --command "$sql" >/dev/null
     else
-      infra/wrangler.sh {{ env }} d1 execute DB --remote --yes --file "$dir/keys.sql" >/dev/null
+      infra/wrangler.sh {{ env }} d1 execute DB --remote --yes --command "$sql" >/dev/null
     fi
 
 # Add infra/.terraform.lock.hcl's providers to skolia-tf-providers, which CI installs them from (infra/terraformrc)

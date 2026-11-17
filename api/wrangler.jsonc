@@ -46,17 +46,7 @@
       "migrations_dir": "lexicon-migrations"
     }
   ],
-  "r2_buckets": [
-    {
-      "binding": "BLOBS",
-      "bucket_name": "skolia",
-      // wrangler dev serves the local bucket over S3 for the ingest container, at
-      // /cdn-cgi/local/r2/s3/skolia, with these credentials (api/.env)
-      "local_dev": {
-        "experimental_s3_credentials": { "accessKeyId": "skolia-dev", "secretAccessKey": "skolia-dev" }
-      }
-    }
-  ],
+  "r2_buckets": [{ "binding": "BLOBS", "bucket_name": "skolia" }],
   // wrangler dev takes BASE_URL from api/.env, and the auth secrets from api/.env.local (DEVELOP.md); deployed, they're wrangler secrets.
   "vars": { "BASE_URL": "https://skolia.io" },
   "queues": {

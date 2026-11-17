@@ -100,7 +100,7 @@ def config(env: str) -> None:
         "OAUTH_PROXY_URL": proxy,
     }
     ingest = promote("wrangler.ingest.jsonc", env)
-    ingest["vars"] = {**as_object(ingest.get("vars"), "vars"), "SLEEP_AFTER": PREVIEW_SLEEP_AFTER}
+    ingest["vars"] = {**as_object(ingest.get("vars", {}), "vars"), "SLEEP_AFTER": PREVIEW_SLEEP_AFTER}
     configs = {f"wrangler.{env}.json": web, f"wrangler.ingest.{env}.json": ingest}
     for file, content in configs.items():
         text = json.dumps(content, indent=2)
