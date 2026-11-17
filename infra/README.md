@@ -2,17 +2,15 @@
 
 Terraform for what wrangler doesn't deploy: per environment, an R2 bucket, D1 databases (the app's, and a lexicon per language), and a queue; and once for the account (`infra/shared/`), billing usage alerts, the provider mirror and the lexicon's sources (`skolia-lexicon-sources`). Both Workers are deployed with wrangler: `skolia` (reader + API, on workers.dev and skolia.io) from `api/wrangler.jsonc`, and `skolia-ingest` with its containers from `api/wrangler.ingest.jsonc`. Wrangler applies their Durable Object migrations; the provider resends the first migration on every update, which Cloudflare refuses ([cloudflare/terraform-provider-cloudflare#5701](https://github.com/cloudflare/terraform-provider-cloudflare/issues/5701)).
 
-Account `1d3ca537bca3f2918d2778118d23f0a8`. Secrets in `pass` under `cloudflare/andyyu2004@gmail.com/1d3ca537bca3f2918d2778118d23f0a8/`. Terraform comes from `flake.nix` (`nix develop`).
+Account `22d39fac63e580576e28d9ed133ab62d` (skolia-io, owned by admin@skolia.io). Tokens in `pass` under `cloudflare/skolia-io/22d39fac63e580576e28d9ed133ab62d/`. Terraform comes from `flake.nix` (`nix develop`).
 
-## One-time setup (done 2026-11-05)
+## One-time setup (done 2026-11-17)
 
 1. Dashboard: enable R2 and subscribe to Workers Paid (Containers need it).
-2. Dashboard: an account API token for Terraform, in `pass` as `skolia-terraform`:
-   - Account: Workers Scripts Edit, Workers Containers Edit, Workers R2 Storage Edit, D1 Edit, Queues Edit, Account API Tokens Edit, Notifications Edit
-   - Zone skolia.io: Zone Read, Workers Routes Edit
-3. Dashboard: an R2 token for the state bucket, in `pass` as `skolia-tfstate-access-id` and `skolia-tfstate-secret-access-key`.
-4. The state bucket `skolia-tfstate`, created once through the API with the Terraform token (Terraform can't create its own state bucket).
-5. skolia.io bought through Cloudflare Registrar, so its zone is on the account.
+2. Dashboard: the bootstrap token, an account API token with Account API Tokens Edit and Workers R2 Storage Edit only, in `pass` as `tf-bootstrap`. It's used only for `infra/tf.sh tokens apply`, by hand.
+3. The state bucket `skolia-tfstate`, made with the bootstrap token (Terraform can't create its own state bucket).
+4. `infra/tf.sh tokens apply` with the bootstrap token: `tokens/` makes the deploy token, which everything else uses, CI and local runs alike. Store it with `infra/tf.sh tokens output -raw deploy_token | pass insert -m cloudflare/skolia-io/<account>/deploy`. A token made by a token can't make tokens, so nothing else here makes any.
+5. skolia.io, moved from the account it was bought on (Registrar, Manage domain, Configuration), so its zone is on the account.
 6. Dashboard (Notifications): a Billing Budget alert in dollars. `shared/alerts.tf` covers per-product usage, but Containers have no usage alert and the provider has no budget alert type.
 7. Google Cloud project `skolia` (andyyu2004@gmail.com), Google Auth Platform: External audience, scopes `openid`, `userinfo.email`, `userinfo.profile`, authorised domain `skolia.io`. One OAuth client (Web application, no JavaScript origins) per environment, each in `pass` under `gcp/andyyu2004@gmail.com/<client>/{client-id,client-secret}`:
 
@@ -30,7 +28,7 @@ Account `1d3ca537bca3f2918d2778118d23f0a8`. Secrets in `pass` under `cloudflare/
 | | production | staging | preview of pull request N |
 |---|---|---|---|
 | Env | `production` | `staging` | `pr-N` |
-| URL | https://skolia.io | https://staging.skolia.io | https://skolia-pr-N.andyyu2004.workers.dev |
+| URL | https://skolia.io | https://staging.skolia.io | https://skolia-pr-N.skolia-io.workers.dev |
 | Names | `skolia`, `skolia-ingest` | `skolia-staging`, `skolia-ingest-staging` | `skolia-pr-N`, `skolia-ingest-pr-N` |
 | Terraform state | `skolia.tfstate` | `skolia-staging.tfstate` | `skolia-pr-N.tfstate` |
 | Wrangler | top level of `api/wrangler*.jsonc` | `env.staging` | `api/wrangler.pr-N.json`, `api/wrangler.ingest.pr-N.json` (generated) |
@@ -54,20 +52,19 @@ Google sends a sign-in only to a redirect URI its client lists exactly, so a pre
 ## Credentials
 
 ```fish
-set -l p cloudflare/andyyu2004@gmail.com/1d3ca537bca3f2918d2778118d23f0a8
-set -x CLOUDFLARE_ACCOUNT_ID 1d3ca537bca3f2918d2778118d23f0a8
-set -x CLOUDFLARE_API_TOKEN (pass show $p/skolia-terraform)
+set -x CLOUDFLARE_ACCOUNT_ID 22d39fac63e580576e28d9ed133ab62d
+set -x CLOUDFLARE_API_TOKEN (pass show cloudflare/skolia-io/$CLOUDFLARE_ACCOUNT_ID/deploy)
 set -x TF_VAR_alert_email andyyu2004@gmail.com
-set -x AWS_ACCESS_KEY_ID (pass show $p/skolia-tfstate-access-id)
-set -x AWS_SECRET_ACCESS_KEY (pass show $p/skolia-tfstate-secret-access-key)
 ```
+
+The state bucket's S3 credentials are the token's own, which `tf.sh` works out: its id (`tokens/verify`) and the SHA-256 of its value.
 
 ## Deploy
 
 A push to main deploys staging and runs the end-to-end tests against it (`api/src/e2e.ts`), through the API: in each language it imports a new text and waits until it's ready, and meanwhile checks auth, both languages' lexicon entries, and a new user's cards (add a word, review it, mark it known). Production deploys are tested the same way. It writes two API keys to D1 first (`api/src/e2e-keys.ts`): the system user's, which imports privately, so its two texts per deploy stay out of the library; and a new user's, `e2e-<time>`, whose cards start empty (the last run's user is deleted). `deploy-web` waits for `load-lexicon`, since the journeys read the lexicon. After `deploy-web`, two jobs run side by side: `e2e`, the tests, and `sync-curated` (`sync-curated.yml`), where `just sync-curated <env>` makes the library's curated texts match `curated/`, fetching those whose kind names a source (`api/src/curated-kinds.ts`): it imports them publicly as the curated user, a system user, with its own key (`api/src/sync-curated-key.ts`), updates their titles and licences, and deletes the curated user's texts that are no longer there (`just sync-curated <env> --check` lists what it would do). Pushing a `v*` tag on a commit in main deploys staging, then production once staging passes (`git tag v0.1.0 && git push origin v0.1.0`; `.github/workflows/ci.yml`, `deploy.yml`). The ingest Worker is deployed before the skolia Worker, since it consumes the queue the skolia Worker feeds: an API that sends a new kind of job never goes live before the ingest that handles it. Rolling back goes the other way: the skolia Worker first. Every deploy runs `deploy-ingest`: each language's image (`skolia-ingest-{lang}`) is tagged with its Nix hash, so it's built and pushed only when that tag isn't in the registry yet, and wrangler leaves an unchanged image deployed as it is. Pull requests get a `terraform plan` for staging and production (Terraform's resources only, not the Workers). GitHub needs:
 
 - variable `CLOUDFLARE_ACCOUNT_ID`
-- secrets `CLOUDFLARE_API_TOKEN` (the Terraform token above), `TFSTATE_ACCESS_KEY_ID`, `TFSTATE_SECRET_ACCESS_KEY`, `ALERT_EMAIL`, `CACHIX_AUTH_TOKEN`
+- secrets `CLOUDFLARE_API_TOKEN` (the deploy token above), `ALERT_EMAIL`, `CACHIX_AUTH_TOKEN`
 - in the `staging` and `production` environments, secrets `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` (the OAuth clients above)
 - in the `preview` and `oauth-proxy` environments, the `skolia-preview` client's `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, and the same `OAUTH_PROXY_SECRET`
 - environments `staging`, `production`, `preview` (every pull request's) and `oauth-proxy`

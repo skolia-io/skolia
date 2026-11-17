@@ -17,7 +17,7 @@ check:
     redocly lint api/openapi.json
     cd analysis && uv run ruff check . && uv run ruff format --check . && uv run pyright
     terraform -chdir=infra fmt -check -recursive
-    for dir in infra infra/shared; do TF_DATA_DIR=.terraform-validate terraform -chdir=$dir init -backend=false -input=false >/dev/null; TF_DATA_DIR=.terraform-validate terraform -chdir=$dir validate; done
+    for dir in infra infra/shared infra/tokens; do TF_DATA_DIR=.terraform-validate terraform -chdir=$dir init -backend=false -input=false >/dev/null; TF_DATA_DIR=.terraform-validate terraform -chdir=$dir validate; done
 
 # Format everything just check checks the format of
 fmt:
