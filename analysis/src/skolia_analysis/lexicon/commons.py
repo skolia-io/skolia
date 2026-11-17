@@ -82,7 +82,9 @@ def _get(url: str) -> dict[str, Any]:
         except urllib.error.HTTPError as e:
             if e.code != 429:
                 raise
-            time.sleep(int(e.headers.get("Retry-After", "30")))
+            after = e.headers.get("Retry-After", "")
+            # Seconds, though HTTP also allows a date
+            time.sleep(int(after) if after.isdigit() else 30)
     raise RuntimeError(f"still rate-limited after 20 tries: {url}")
 
 
@@ -90,8 +92,8 @@ def word(lang: str, name: str) -> str | None:
     """The word a file records, or None for a name this doesn't parse."""
     if name.startswith(prefix := _LINGUA_LIBRE[lang]):
         stem = name.removeprefix(prefix).rsplit(".", 1)[0]
-        # The speaker's name can't be told from a hyphenated word by the name alone, but
-        # Lingua Libre's speakers' names rarely have a hyphen and words often do
+        # The name alone can't tell a hyphenated speaker from a hyphenated word, but none of
+        # the Polish speakers' names had a hyphen (November 2026) and words do
         # (biało-czerwony), so the speaker ends at the first
         _, sep, said = stem.partition("-")
         return said if sep and said else None
