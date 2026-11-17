@@ -16,15 +16,14 @@ check:
     pnpm check
     redocly lint api/openapi.json
     cd analysis && uv run ruff check . && uv run ruff format --check . && uv run pyright
-    terraform -chdir=infra fmt -check
-    TF_DATA_DIR=.terraform-validate terraform -chdir=infra init -backend=false -input=false >/dev/null
-    TF_DATA_DIR=.terraform-validate terraform -chdir=infra validate
+    terraform -chdir=infra fmt -check -recursive
+    for dir in infra infra/shared; do TF_DATA_DIR=.terraform-validate terraform -chdir=$dir init -backend=false -input=false >/dev/null; TF_DATA_DIR=.terraform-validate terraform -chdir=$dir validate; done
 
 # Format everything just check checks the format of
 fmt:
     pnpm exec biome format --write
     cd analysis && uv run ruff format .
-    terraform -chdir=infra fmt
+    terraform -chdir=infra fmt -recursive
 
 # Unit tests, and the built Worker's Durable Object in workerd
 test: build
@@ -105,7 +104,7 @@ dev-reader: install
 images:
     analysis/scripts/load_images.sh
 
-# What a deploy would change in Terraform's resources (env: staging, production or pr-<N>)
+# What a deploy would change in Terraform's resources (env: shared, staging, production or pr-<N>)
 plan env:
     infra/tf.sh {{ env }} plan -input=false
 
@@ -131,7 +130,7 @@ load-lexicon env *flags:
       infra/load-lexicon.py {{ env }} "$out/$lang.cards.sqlite" --built-from "$out" $sample {{ flags }}
     done
 
-# Terraform: storage, queue, ingest's R2 token, billing alerts
+# Terraform: an environment's storage, queue and ingest's R2 token; shared: the account's billing alerts, provider mirror and lexicon sources
 apply env:
     infra/tf.sh {{ env }} apply -input=false
 
