@@ -2,7 +2,7 @@
 # Puts the lexicon inputs pinned in analysis/inputs.sha256 in the Nix store,
 # where the flake finds them by hash, unless the lexicon itself can be fetched from Cachix:
 #   fetch_inputs.sh [lang...]   every language when none is given
-# Each input is kept in R2 as skolia-tfstate/inputs/{sha256}-{name}.zst, since kaikki.org
+# Each input is kept in R2 as skolia-lexicon-sources/{sha256}-{name}.zst, since kaikki.org
 # overwrites its extract in place. Needs zstd and wrangler credentials.
 set -euo pipefail
 
@@ -28,7 +28,7 @@ for lang in "$@"; do
     fi
     file=$root/data/inputs/$name
     pnpm --dir "$root/api" exec wrangler r2 object get \
-      "skolia-tfstate/inputs/$sha-$name.zst" --file "$file.zst" --remote
+      "skolia-lexicon-sources/$sha-$name.zst" --file "$file.zst" --remote
     zstd -d -q -f --rm "$file.zst" -o "$file"
     echo "$sha  $file" | shasum -a 256 -c --quiet
     # The English one is 3.4 GB: one copy, in the store
