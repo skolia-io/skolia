@@ -28,10 +28,8 @@ export async function runScript(log: Logger, main: () => Promise<void>): Promise
   try {
     await main();
   } catch (error) {
-    log.fatal("{error}", {
-      error: error instanceof Error ? error.message : String(error),
-      stack: error instanceof Error ? error.stack : undefined,
-    });
+    if (error instanceof Error) log.fatal(error);
+    else log.fatal("{error}", { error });
     process.exitCode = 1;
   }
 }

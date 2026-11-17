@@ -39,7 +39,8 @@ import * as schemas from "@skolia/shared/schemas";
 import { GraphBuilder, runGraph, type Graph } from "@skolia/util/graph";
 import type { AppType } from "./app.ts";
 import { API_KEY_HEADER } from "./auth.ts";
-import { CuratedSpec, resolve, type Fetch, type Resolved } from "./curated-kinds.ts";
+import { CuratedSpec, resolve, TransientFetchError, type Fetch, type Resolved } from "./curated-kinds.ts";
+import { describeError } from "./errors.ts";
 import { trimSpans } from "./curated-spans.ts";
 import { runScript, scriptLog, since } from "./script-log.ts";
 
@@ -150,22 +151,30 @@ export function sampleCurated(files: readonly CuratedFile[], n: number): Curated
     .slice(0, n);
 }
 
-/** The files' texts, fetching those their kind names a source for. Throws, naming the
- * file, if one can't be had or two are the same text. */
-export async function resolveCurated(files: readonly CuratedFile[], fetch: Fetch = globalThis.fetch): Promise<Curated[]> {
-  const texts = await Promise.all(
+/** How long to wait before each retry of a file whose fetch may work if tried again */
+const RETRY_MS = [1_000, 5_000, 15_000] as const;
+
+/** The files' texts, fetching those their kind names a source for, and trying again, after
+ * each of retryMs, a fetch that may work then. Throws, naming each file, if any can't be had
+ * or two are the same text. */
+export async function resolveCurated(
+  files: readonly CuratedFile[],
+  fetch: Fetch = globalThis.fetch,
+  retryMs: readonly number[] = RETRY_MS,
+): Promise<Curated[]> {
+  const settled = await Promise.allSettled(
     files.map(async ({ path, lang, spec }) => {
       const start = performance.now();
-      let resolved: Resolved;
-      try {
-        resolved = await resolve(spec, lang, fetch);
-      } catch (error) {
-        throw new Error(`${path}: ${error instanceof Error ? error.message : String(error)}`);
-      }
+      const resolved = await resolveRetrying(path, () => resolve(spec, lang, fetch), retryMs);
       log.info("resolved {path}", { path, kind: spec.kind, ms: since(start) });
       return toCurated(path, lang, resolved);
     }),
   );
+  const failed = settled.flatMap((result) => (result.status === "rejected" ? [result.reason] : []));
+  if (failed.length === 1) throw failed[0];
+  if (failed.length > 1)
+    throw new AggregateError(failed, `${failed.length} files couldn't be had: ${failed.map(describeError).join("; ")}`);
+  const texts = settled.flatMap((result) => (result.status === "fulfilled" ? [result.value] : []));
   const seen = new Map<DocumentId, string>();
   for (const text of texts) {
     const other = seen.get(text.id);
@@ -173,6 +182,19 @@ export async function resolveCurated(files: readonly CuratedFile[], fetch: Fetch
     seen.set(text.id, text.path);
   }
   return texts;
+}
+
+async function resolveRetrying(path: string, attempt: () => Promise<Resolved>, retryMs: readonly number[]): Promise<Resolved> {
+  try {
+    return await attempt();
+  } catch (error) {
+    const [wait, ...rest] = retryMs;
+    if (!(error instanceof TransientFetchError) || wait === undefined)
+      throw new Error(`${path}: ${describeError(error)}`, { cause: error });
+    log.warning("retrying {path} in {waitMs} ms: {error}", { path, waitMs: wait, retries: rest.length + 1, error: describeError(error) });
+    await new Promise((done) => setTimeout(done, wait));
+    return resolveRetrying(path, attempt, rest);
+  }
 }
 
 /** The changes that make the curated user's documents, and the annotations on those already
