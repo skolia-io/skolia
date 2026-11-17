@@ -155,9 +155,11 @@ async function ingestHistory(api: Api, anonymous: Api, lang: Lang, id: DocumentI
       (j) => j.document?.id === id && j.result?.outcome === "ready",
     );
     if (job?.result) {
+      // Not necessarily analysing: on a preview's second run the text's analysis and bundle are
+      // already stored, so the job only reads the text
       assert.ok(
-        job.result.stages.some((s) => s.stage === "analysing"),
-        `${lang}: the job has no analysing stage`,
+        job.result.stages.some((s) => s.stage === "reading"),
+        `${lang}: the job has no reading stage`,
       );
       const hidden = (await body(`${lang} ingest signed out`, anonymous.ingest.$get())).recent.find((j) => j.id === job.id);
       assert.ok(hidden, `${lang}: the job isn't in the ingest history signed out`);
