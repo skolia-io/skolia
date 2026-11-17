@@ -105,7 +105,7 @@
   {:else if route.page === "about"}
     <About />
   {:else if route.page === "ingest"}
-    <Ingest />
+    <Ingest {user} />
   {:else}
     <Explore {user} />
   {/if}

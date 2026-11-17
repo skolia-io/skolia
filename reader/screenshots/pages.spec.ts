@@ -64,7 +64,7 @@ test("about", async ({ page }) => {
 });
 
 test("analysis", async ({ page }) => {
-  await open(page, "#/analysis", { signedIn: false });
+  await open(page, "#/analysis");
   await page.getByText("took 6.0 s").click();
   await expect(page).toHaveScreenshot("analysis.png", { fullPage: true });
 });
