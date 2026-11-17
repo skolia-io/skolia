@@ -177,7 +177,7 @@ Polish words' recordings come from Wikimedia Commons as well as Wiktionary (`lex
 ```fish
 uv run skolia-fetch-commons pl ../data/inputs/commons-recordings-pl.txt
 set -l sha (shasum -a 256 ../data/inputs/commons-recordings-pl.txt | cut -d' ' -f1)
-zstd -19 -c ../data/inputs/commons-recordings-pl.txt | pnpm --dir ../api exec wrangler r2 object put skolia-tfstate/inputs/$sha-commons-recordings-pl.txt.zst --pipe --remote
+zstd -19 -c ../data/inputs/commons-recordings-pl.txt | pnpm --dir ../api exec wrangler r2 object put skolia-lexicon-sources/$sha-commons-recordings-pl.txt.zst --pipe --remote
 # then put $sha on the commons-recordings-pl.txt line of inputs.sha256
 ```
 
