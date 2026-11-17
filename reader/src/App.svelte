@@ -5,6 +5,7 @@
   import About from "./pages/About.svelte";
   import Cards from "./pages/Cards.svelte";
   import Explore from "./pages/Explore.svelte";
+  import Ingest from "./pages/Ingest.svelte";
   import { userQuery } from "./lib/queries.ts";
   import Button from "./components/Button.svelte";
   import Nav from "./components/Nav.svelte";
@@ -22,6 +23,7 @@
     | { page: "cards"; lang: Lang | null }
     | { page: "settings" }
     | { page: "about" }
+    | { page: "ingest" }
     | { page: "reader"; id: DocumentId };
 
   function parse(hash: string): Route {
@@ -37,6 +39,7 @@
     if (cards !== undefined && isLang(cards)) return { page: "cards", lang: cards };
     if (hash === "#/settings") return { page: "settings" };
     if (hash === "#/about") return { page: "about" };
+    if (hash === "#/analysis") return { page: "ingest" };
     // After the id, a word in the text (lib/link.ts), which Reader reads
     const [, doc] = /^#\/doc\/([^?]+)(?:\?.*)?$/.exec(hash) ?? [];
     const id = schemas.DocumentId.safeParse(doc);
@@ -101,6 +104,8 @@
     <Settings {user} />
   {:else if route.page === "about"}
     <About />
+  {:else if route.page === "ingest"}
+    <Ingest />
   {:else}
     <Explore {user} />
   {/if}

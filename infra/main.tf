@@ -16,6 +16,20 @@ resource "cloudflare_d1_database" "lexicon" {
   name       = "skolia-lexicon-${each.key}${local.suffix}"
 }
 
+# The ingest Worker's job history (api/ingest-migrations), apart from skolia so that one
+# stays small and the ingest Worker binds no user data
+resource "cloudflare_d1_database" "ingest" {
+  account_id = var.account_id
+  name       = "skolia-ingest${local.suffix}"
+}
+
+# What the ingest containers send as each job starts and ends: the ingest Worker puts them
+# here (its IngestEvents entrypoint) and stores them in skolia-ingest
+resource "cloudflare_queue" "ingest_events" {
+  account_id = var.account_id
+  queue_name = "skolia-ingest-events${local.suffix}"
+}
+
 # The consumer is the ingest Worker (skolia-ingest[-env]); wrangler attaches it.
 resource "cloudflare_queue" "ingest" {
   account_id = var.account_id

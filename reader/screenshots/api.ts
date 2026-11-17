@@ -397,12 +397,133 @@ function deps(signedIn: boolean, annotations: readonly Annotation[]): Deps {
     },
     queue: {
       send: async () => {},
-      jobs: async () => ({ loading: false, running: [], waiting: [NOTATKI.id] }),
+      jobs: async (lang) => INGEST[lang],
     },
+    ingestHistory: { recent: async () => INGEST_HISTORY },
     version: "screenshots",
     now: () => NOW,
   };
 }
+
+/** NOW less some seconds */
+const before = (seconds: number) => Timestamp.parse(new Date(NOW.getTime() - seconds * 1000).toISOString());
+
+type IngestJobs = NonNullable<Awaited<ReturnType<Deps["queue"]["jobs"]>>>;
+type IngestJobRecord = Awaited<ReturnType<Deps["ingestHistory"]["recent"]>>[number];
+
+/** Polish analysing someone's private text with Lalka waiting, French starting, English idle */
+const INGEST: Readonly<Record<Lang, IngestJobs | null>> = {
+  en: null,
+  fr: { loading: true, running: [], waiting: [], startedAt: before(38), jobs: [] },
+  pl: {
+    loading: false,
+    running: [NOTATKI.id],
+    waiting: [LALKA],
+    startedAt: before(300),
+    jobs: [
+      {
+        id: "a1",
+        doc: NOTATKI.id,
+        lang: "pl",
+        acceptedAt: before(130),
+        startedAt: before(52),
+        stage: "analysing",
+        stageStartedAt: before(51),
+        chars: 4210,
+        words: 702,
+        stages: [{ stage: "reading", ms: 140 }],
+      },
+      {
+        id: "a2",
+        doc: LALKA,
+        lang: "pl",
+        acceptedAt: before(20),
+        startedAt: null,
+        stage: null,
+        stageStartedAt: null,
+        chars: null,
+        words: null,
+        stages: [],
+      },
+    ],
+  },
+};
+
+/** Lalka analysed, a private text too long, a French one whose container stopped mid-job,
+ * and Le Petit Prince bundled again from its stored analysis */
+const INGEST_HISTORY: readonly IngestJobRecord[] = [
+  {
+    id: "f1",
+    doc: LALKA,
+    lang: "pl",
+    image: "skolia-ingest-pl:9a2b7f1",
+    acceptedAt: before(400),
+    startedAt: before(360),
+    result: {
+      finishedAt: before(354),
+      outcome: "ready",
+      error: null,
+      chars: 412,
+      words: 72,
+      stages: [
+        { stage: "reading", ms: 90 },
+        { stage: "analysing", ms: 4310 },
+        { stage: "bundling", ms: 820 },
+        { stage: "compressing-analysis", ms: 310 },
+        { stage: "uploading-analysis", ms: 120 },
+        { stage: "compressing-bundle", ms: 260 },
+        { stage: "uploading-bundle", ms: 95 },
+      ],
+    },
+  },
+  {
+    id: "f2",
+    doc: NOTATKI.id,
+    lang: "pl",
+    image: "skolia-ingest-pl:9a2b7f1",
+    acceptedAt: before(1900),
+    startedAt: before(1880),
+    result: {
+      finishedAt: before(1879),
+      outcome: "failed",
+      error: "text is longer than 200000 characters",
+      chars: 210_400,
+      words: 33_012,
+      stages: [{ stage: "reading", ms: 610 }],
+    },
+  },
+  {
+    id: "f3",
+    doc: PETIT_PRINCE.id,
+    lang: "fr",
+    image: "skolia-ingest-fr:2b8e113",
+    acceptedAt: before(3700),
+    startedAt: before(3650),
+    result: null,
+  },
+  {
+    id: "f4",
+    doc: PETIT_PRINCE.id,
+    lang: "fr",
+    image: "skolia-ingest-fr:4c1d9e0",
+    acceptedAt: before(7400),
+    startedAt: before(7340),
+    result: {
+      finishedAt: before(7338),
+      outcome: "ready",
+      error: null,
+      chars: 2380,
+      words: 412,
+      stages: [
+        { stage: "reading", ms: 70 },
+        { stage: "loading-analysis", ms: 400 },
+        { stage: "bundling", ms: 1100 },
+        { stage: "compressing-bundle", ms: 290 },
+        { stage: "uploading-bundle", ms: 110 },
+      ],
+    },
+  },
+];
 
 const CONTENT_TYPES: Readonly<Record<string, string>> = {
   ".html": "text/html",

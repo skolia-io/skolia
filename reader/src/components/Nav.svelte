@@ -10,7 +10,7 @@
     user,
     onerror,
   }: {
-    page: "explore" | "list" | "upload" | "review" | "cards" | "settings" | "about" | "reader";
+    page: "explore" | "list" | "upload" | "review" | "cards" | "settings" | "about" | "ingest" | "reader";
     user: User | null | undefined;
     onerror: (message: string) => void;
   } = $props();
@@ -44,13 +44,14 @@
     }
   }
 
-  /** The drawer's icons, drawn in 16 by 16 with strokes: a compass, an open book, an arrow up out of a tray, a stack of cards, an i in a circle. */
+  /** The drawer's icons, drawn in 16 by 16 with strokes: a compass, an open book, an arrow up out of a tray, a stack of cards, an i in a circle, bars. */
   const ICONS = {
     explore: "M8 1.5a6.5 6.5 0 1 0 0 13a6.5 6.5 0 1 0 0-13ZM10.5 5.5 9 9 5.5 10.5 7 7Z",
     list: "M2 3h4a2 2 0 0 1 2 2v8a1.5 1.5 0 0 0-1.5-1.5H2ZM14 3h-4a2 2 0 0 0-2 2v8a1.5 1.5 0 0 1 1.5-1.5H14Z",
     upload: "M8 11V2.5M4.5 6 8 2.5 11.5 6M2.5 10.5v3h11v-3",
     review: "M3 5h8v8.5H3ZM5.5 2.5H13V11",
     about: "M8 1.5a6.5 6.5 0 1 0 0 13a6.5 6.5 0 1 0 0-13ZM8 7.5V11M8 5h.01",
+    ingest: "M2 13.5h12M4 13.5V9M8 13.5V4M12 13.5V7",
   } as const;
 
   function initial(name: string): string {
@@ -85,6 +86,7 @@
       {@render link("#/upload", "Upload", page === "upload", ICONS.upload, false)}
       {@render link("#/review", "Review", page === "review", ICONS.review, false)}
     {/if}
+    {@render link("#/analysis", "Analysis", page === "ingest", ICONS.ingest, true)}
     {@render link("#/about", "About", page === "about", ICONS.about, true)}
   </nav>
   <div class="account">

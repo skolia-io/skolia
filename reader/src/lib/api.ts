@@ -27,6 +27,7 @@ import {
   type AvailableTag,
   type DocumentUpdate,
   type ImportRequest,
+  type IngestOverview,
   type Lang,
   type LemmaId,
   type Lookup,
@@ -130,6 +131,13 @@ export function listTags(): Promise<readonly AvailableTag[]> {
 
 export async function getDocument(id: DocumentId): Promise<DocumentSummary> {
   const response = await api.documents[":id"].$get({ param: { id } });
+  if (!response.ok) throw await failure(response);
+  return response.json();
+}
+
+/** What analysis is doing: each language's analyser and the jobs finished most recently. */
+export async function getIngest(): Promise<IngestOverview> {
+  const response = await api.ingest.$get();
   if (!response.ok) throw await failure(response);
   return response.json();
 }

@@ -28,14 +28,19 @@ flowchart LR
     DB[("D1 skolia: document, auth tables")]
     LX[("D1 skolia-lexicon-{lang}, one per language: entry, featureset, loaded")]
     R2[("R2 skolia: doc/{id}/..., versions/{lang}.json")]
+    IDB[("D1 skolia-ingest: ingest_job, 30 days")]
     Q[["Queue skolia-ingest"]]
+    QE[["Queue skolia-ingest-events"]]
     subgraph INGW["skolia-ingest Worker"]
       CON["queue consumer"]
-      IDO["Ingester DO, one per image"]
+      EVE["IngestEvents entrypoint"]
+      ECON["events consumer"]
+      IDO["Ingester DO, one per language and one per image"]
     end
-    subgraph CTR["containers (Python)"]
+    subgraph CTR["containers (Python), one per language"]
       CPL["ingest-pl: COMBO, Morfeusz, pl.sqlite"]
       CEN["ingest-en: Stanza, en.sqlite"]
+      CFR["ingest-fr: Stanza, fr.sqlite"]
     end
   end
 
@@ -43,6 +48,7 @@ flowchart LR
   RD -->|"set a word's status"| API
   RD -->|"cards due, reviews"| API
   RD -->|"import"| API
+  RD -->|"GET /api/ingest, every 5 s"| API
   API --> BA
   BA -->|"users, sessions, API keys"| DB
   BA -->|"sign-in"| G
@@ -51,23 +57,53 @@ flowchart LR
   API -->|"job"| Q
   API -->|"RPC: words, cards, clozes, reviews, settings"| UDO
   API -->|"entries for due cards"| LX
-  API -->|"RPC: a document's place in the queue"| IDO
+  API -->|"RPC: a document's place in the queue, each container's jobs"| IDO
+  API -->|"recent jobs"| IDB
   Q --> CON
   CON --> IDO
-  IDO -->|"POST /jobs, GET /busy, GET /jobs"| CPL
-  IDO -->|"POST /jobs, GET /busy, GET /jobs"| CEN
-  CPL -->|"S3 API"| R2
-  CEN -->|"S3 API"| R2
+  EVE -->|"event"| QE
+  QE --> ECON
+  ECON -->|"insert or update, prune"| IDB
+  IDO -->|"POST /jobs, GET /busy, GET /jobs"| CTR
+  CTR -->|"GET, PUT http://blobs.internal/{key}, served from the Worker's R2 binding (interceptOutboundHttp)"| R2
+  CTR -->|"POST http://events.internal/, routed to the Worker (interceptOutboundHttp)"| EVE
+```
+
+A job's events never leave the machine: the Ingester routes its container's requests to `events.internal` to the ingest Worker's `IngestEvents` entrypoint, which puts them on a queue the same Worker consumes. The queue holds them until D1 has them, and one consumer makes every write to `skolia-ingest`.
+
+```mermaid
+sequenceDiagram
+  participant API as skolia Worker
+  participant Q as Queue skolia-ingest
+  participant DO as Ingester DO (skolia-ingest)
+  participant C as container
+  participant EV as IngestEvents entrypoint (skolia-ingest)
+  participant QE as Queue skolia-ingest-events
+  participant ECON as events consumer (skolia-ingest)
+  participant IDB as D1 skolia-ingest
+  API->>Q: job
+  Q->>DO: batch
+  DO->>DO: interceptOutboundHttp(events.internal, IngestEvents) and blobs.internal, on each start
+  DO->>C: POST /jobs
+  C->>EV: POST http://events.internal/ (started)
+  EV->>QE: send
+  C->>EV: POST http://events.internal/ (finished)
+  EV->>QE: send
+  QE->>ECON: batch, up to 5 s later
+  ECON->>IDB: insert or update, prune
+  API->>IDB: GET /api/ingest reads recent jobs
+  API->>DO: and each container's live jobs (GET /jobs)
 ```
 
 - **Open a document:** D1 has its metadata and R2's `status.json` the names of its current analysis and bundle, which the reader then fetches from R2 through the API, as stored. Browsers cache them by HTTP (`no-cache` with the blob's key as its ETag), asking before each use, so the API checks the viewer may still see the text and answers 304 without reading R2; there's no IndexedDB yet.
 - **Tap a word:** local, from the bundle already loaded (`shared/lexicon`, `shared/paradigm`). Setting a word's status goes to the User DO.
 - **Review:** the User DO gives the due cards and the API adds their entries from its language's lexicon D1. The DO never reads the lexicon, and the reader's word sheet never reads the lexicon D1s, so the two can show different lexicon versions until a document is re-bundled.
 - **Import:** the API puts the text in R2, the metadata in D1, a queued `status.json` and the job on the queue. The consumer hands it to the Ingester named after its language's image, so a deploy that changes an image starts a new container. While it waits, the importer's summary says where it is: the API asks the language's Ingester (a Durable Object binding to the ingest Worker), which asks a running container for its jobs (`GET /jobs`) and never starts one.
-- The ingest Worker has no R2 or D1 binding: containers reach R2 over its S3 API, with a token Terraform makes.
+- The ingest Worker's only D1 is `skolia-ingest`, and its R2 binding serves the containers' blobs: they have no R2 credentials.
+- **Analysis page:** each container reports its jobs' stages (`GET /jobs`), and sends an event as each job starts and ends to the ingest Worker, which stores them in `skolia-ingest`, its own D1 so the main one stays small. The API shows both, without the texts the viewer can't see.
 - Lexicon lookups only see the rows of each language's version in `loaded`.
 
-Locally, `wrangler dev` runs both Workers and the ingest containers, with local D1, R2 and Queue. The API reaches them through small interfaces (`api/src/ports.ts`, faked in the tests); ingest reaches R2 over its S3 API, which wrangler dev also serves for the local bucket. Ingest writes `doc/{doc}/status.json` as it goes (analysing, ready, failed), the API writes queued whenever it queues a document, and the API reads it to tell the reader.
+Locally, `wrangler dev` runs both Workers and the ingest containers, with local D1, R2 and Queue. The API reaches them through small interfaces (`api/src/ports.ts`, faked in the tests); ingest reaches the local bucket through the same `blobs.internal` intercept. Ingest writes `doc/{doc}/status.json` as it goes (analysing, ready, failed), the API writes queued whenever it queues a document, and the API reads it to tell the reader.
 
 On Cloudflare: Terraform (`infra/`) manages what wrangler doesn't: R2, D1, the queue and billing alerts. Both Workers are deployed with wrangler: `skolia` with the reader as static assets on workers.dev and skolia.io (`api/wrangler.jsonc`), and `skolia-ingest` with its containers, one per language (`api/wrangler.ingest.jsonc`). Wrangler also applies their Durable Object migrations, which the Terraform provider can't do on an update (it resends the first migration and Cloudflare refuses it). The consumer hands each job to its language's container over HTTP and acks it once accepted: a consumer may run 15 minutes and an analysis can take longer. The container keeps jobs in memory, sleeps when idle (the Durable Object asks ingest whether it's busy before stopping it), and has the models and lexicon in its image. It has no internet access or R2 credentials: the Durable Object intercepts its requests to `blobs.internal` and serves them from the ingest Worker's R2 binding (`Blobs` in `api/src/worker/ingest.ts`). A job lost with its container is re-queued by the stuck rule below.
 

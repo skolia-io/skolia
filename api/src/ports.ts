@@ -40,6 +40,9 @@ import type {
   Visibility,
   Tags,
   CardState,
+  ContainerJobs,
+  IngestEvent,
+  IngestJobRecord,
 } from "@skolia/shared/api";
 import type { PageRequest } from "@skolia/shared/page";
 import type { IngestJob } from "@skolia/shared/schema";
@@ -90,7 +93,7 @@ export interface DocumentStore {
    * for a text that's unknown or private to others. */
   visible(id: DocumentId, viewer: UserId | null): Promise<StoredDocument | null>;
   /** visible's entry for each of the texts that has one. */
-  visibleAll(ids: readonly DocumentId[], viewer: UserId): Promise<ReadonlyMap<DocumentId, StoredDocument>>;
+  visibleAll(ids: readonly DocumentId[], viewer: UserId | null): Promise<ReadonlyMap<DocumentId, StoredDocument>>;
   /** Whether the text is stored, whoever imported it. */
   has(id: DocumentId): Promise<boolean>;
   /** Insert the entry, and the content unless it's already there. An existing entry is kept. */
@@ -130,18 +133,19 @@ export interface BlobStore {
 }
 
 /** A language's ingest container's jobs (analysis/src/skolia_analysis/ingest/http.py
- * JobsState): whether its pipelines are still loading, and the documents running and
- * waiting, in the order they'll run. */
-export interface IngestJobs {
-  loading: boolean;
-  running: string[];
-  waiting: string[];
-}
+ * JobsState) */
+export type IngestJobs = ContainerJobs;
 
 export interface JobQueue {
   send(job: IngestJob): Promise<void>;
   /** Null when no container is running for the language, or it can't be asked. */
   jobs(lang: Lang): Promise<IngestJobs | null>;
+}
+
+/** The jobs the ingest containers ran, from their events (worker/ingest-history.ts) */
+export interface IngestHistory {
+  /** Those started most recently, newest first */
+  recent(limit: number): Promise<readonly IngestJobRecord[]>;
 }
 
 export interface DueCards {
@@ -210,6 +214,7 @@ export interface Deps {
   documents: DocumentStore;
   blobs: BlobStore;
   queue: JobQueue;
+  ingestHistory: IngestHistory;
   /** git describe of the build */
   version: string;
   now: () => Date;

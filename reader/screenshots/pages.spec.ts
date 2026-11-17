@@ -63,6 +63,12 @@ test("about", async ({ page }) => {
   await expect(page).toHaveScreenshot("about.png");
 });
 
+test("analysis", async ({ page }) => {
+  await open(page, "#/analysis", { signedIn: false });
+  await page.getByText("took 6.0 s").click();
+  await expect(page).toHaveScreenshot("analysis.png", { fullPage: true });
+});
+
 test("upload", async ({ page }) => {
   await open(page, "#/upload");
   await page.getByLabel("Licence", { exact: true }).selectOption("all-rights-reserved");

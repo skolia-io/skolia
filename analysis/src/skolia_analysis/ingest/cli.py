@@ -6,6 +6,8 @@ wrangler dev and on Cloudflare.
   SKOLIA_LANGS         languages to ingest, comma-separated, e.g. pl,en
   SKOLIA_DATA          the languages' data directory: {lang}.sqlite (skolia-build-lexicon)
                        and each plugin's own files (pl: pl-valency.json)
+  SKOLIA_EVENTS_URL    where to POST job events (events.py); unset, they're only logged
+  SKOLIA_IMAGE         the container's image, named in events; optional
 """
 
 import logging
@@ -19,10 +21,13 @@ from .. import lang
 from ..lexicon.store import Lexicon
 from ..plugin import Options, lexicon_path
 from .blobs import HttpBlobs
+from .events import Events, HttpEvents, LoggedEvents
 from .http import HttpJobs, serve
 from .worker import Ingester, Pipeline
 
 log = logging.getLogger("skolia_analysis.ingest")
+
+EVENTS_FLUSH_SECONDS = 5.0
 
 
 def env(name: str) -> str:
@@ -52,11 +57,19 @@ def stop_on_sigterm(_signum: int, _frame: FrameType | None) -> None:
     sys.exit(0)
 
 
-def job_source() -> HttpJobs:
+def event_sink() -> Events:
+    url = os.environ.get("SKOLIA_EVENTS_URL")
+    if not url:
+        log.info("SKOLIA_EVENTS_URL unset: job events are only logged")
+        return LoggedEvents()
+    return HttpEvents(url)
+
+
+def job_source(events: Events) -> HttpJobs:
     """Listening starts before the pipeline loads (which takes a while), so the container
     counts as started and jobs wait in memory meanwhile."""
     port = int(env("SKOLIA_HTTP_PORT"))
-    jobs = HttpJobs()
+    jobs = HttpJobs(events, os.environ.get("SKOLIA_IMAGE") or "unknown")
     serve(jobs, "0.0.0.0", port)
     log.info("accepting jobs on port %s", port)
     return jobs
@@ -70,7 +83,14 @@ def main() -> None:
     # In a container ingest is PID 1, which ignores SIGTERM unless it handles it: the
     # Cloudflare container would never stop it
     signal.signal(signal.SIGTERM, stop_on_sigterm)
-    queue = job_source()
+    events = event_sink()
+    try:
+        ingest(job_source(events))
+    finally:
+        events.close(EVENTS_FLUSH_SECONDS)
+
+
+def ingest(queue: HttpJobs) -> None:
     blobs = HttpBlobs(env("SKOLIA_BLOBS"))
     data = Path(env("SKOLIA_DATA"))
     codes = [c.strip() for c in env("SKOLIA_LANGS").split(",") if c.strip()]

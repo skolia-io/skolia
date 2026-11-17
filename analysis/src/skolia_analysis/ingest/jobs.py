@@ -5,19 +5,57 @@ from __future__ import annotations
 
 import json
 from collections import deque
-from typing import Protocol, cast
+from typing import Literal, Protocol, cast
 
-from .schema import IngestJob
+from .schema import IngestJob, Status
+
+Stage = Literal[
+    "reading",
+    "loading-analysis",
+    "analysing",
+    "bundling",
+    "compressing-analysis",
+    "uploading-analysis",
+    "compressing-bundle",
+    "uploading-bundle",
+]
 
 
 class InvalidJob(ValueError):
     pass
 
 
+class Progress(Protocol):
+    """Told how a job is getting on, so the queue can show it."""
+
+    def text(self, chars: int, words: int) -> None: ...
+
+    def stage_started(self, stage: Stage) -> None: ...
+
+    def stage_finished(self, stage: Stage, ms: int) -> None:
+        """Called whether the stage succeeded or failed."""
+        ...
+
+
+class NoProgress:
+    def text(self, chars: int, words: int) -> None:
+        pass
+
+    def stage_started(self, stage: Stage) -> None:
+        pass
+
+    def stage_finished(self, stage: Stage, ms: int) -> None:
+        pass
+
+
+NO_PROGRESS = NoProgress()
+
+
 class Received:
-    def __init__(self, job: IngestJob, raw: str) -> None:
+    def __init__(self, job: IngestJob, raw: str, progress: Progress = NO_PROGRESS) -> None:
         self.job = job
         self.raw = raw
+        self.progress = progress
 
 
 class JobQueue(Protocol):
@@ -25,12 +63,12 @@ class JobQueue(Protocol):
         """The next job, waiting up to timeout seconds. None if there's none."""
         ...
 
-    def ack(self, received: Received) -> None:
-        """Done with the job (whether it succeeded or failed): don't deliver it again."""
+    def ack(self, received: Received, status: Status) -> None:
+        """Done with the job, ready or failed as status says: don't deliver it again."""
         ...
 
-    def release(self, received: Received) -> None:
-        """Not done: deliver the job again later."""
+    def release(self, received: Received, error: str) -> None:
+        """Not done, for the reason given: deliver the job again later."""
         ...
 
 
@@ -62,9 +100,9 @@ class MemoryQueue:
         raw = self.pending.popleft()
         return Received(parse_job(raw), raw)
 
-    def ack(self, received: Received) -> None:
+    def ack(self, received: Received, status: Status) -> None:
         self.acked.append(received.job)
 
-    def release(self, received: Received) -> None:
+    def release(self, received: Received, error: str) -> None:
         self.released.append(received.job)
         self.pending.append(received.raw)

@@ -28,6 +28,7 @@ export interface TestEnv extends LexiconBindings {
   USER: DurableObjectNamespace<UserObject>;
   BLOBS: R2Bucket;
   INGEST: Queue<IngestJob | Flush>;
+  INGEST_DB: D1Database;
 }
 
 export function authConfig(database: D1Database): AuthConfig {
@@ -64,6 +65,7 @@ export async function startLocal(): Promise<Local> {
   const worker = server.getWorker<TestEnv>();
   await worker.applyD1Migrations("DB");
   for (const lang of LANGS) await worker.applyD1Migrations(lexiconBinding(lang));
+  await worker.applyD1Migrations("INGEST_DB");
   const env = await worker.getEnv();
   const recorder = await server.getWorker<object, { default: typeof IngestRecorder }>("skolia-ingest").getExport();
   const options = authOptions(authConfig(env.DB));
@@ -107,6 +109,7 @@ export async function startLocal(): Promise<Local> {
       for (const db of Object.values(lexiconsOf(env))) {
         await db.batch(["entry", "featureset", "loaded"].map((t) => prepare(db, sql`DELETE FROM ${sql.id(t)}`)));
       }
+      await prepare(env.INGEST_DB, sql`DELETE FROM ingest_job`).run();
       const { objects } = await env.BLOBS.list();
       if (objects.length > 0) await env.BLOBS.delete(objects.map((o) => o.key));
       await takeQueued();

@@ -30,6 +30,8 @@
   "durable_objects": {
     "bindings": [{ "name": "INGESTER", "class_name": "Ingester" }]
   },
+  // The jobs the containers finished; its migrations are applied with wrangler.jsonc's
+  "d1_databases": [{ "binding": "INGEST_DB", "database_name": "skolia-ingest" }],
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["Ingest"] },
     // Ingest was Polish's before there were other languages; its container application
@@ -40,10 +42,17 @@
     { "tag": "v3", "deleted_classes": ["IngestPl", "IngestEn"], "new_sqlite_classes": ["Ingester"] }
   ],
   "queues": {
-    "consumers": [{ "queue": "skolia-ingest", "max_batch_size": 10, "max_retries": 10 }]
+    // INGEST_EVENTS: the containers' events (the IngestEvents entrypoint), which this Worker
+    // consumes into INGEST_DB a batch at a time
+    "producers": [{ "binding": "INGEST_EVENTS", "queue": "skolia-ingest-events" }],
+    "consumers": [
+      { "queue": "skolia-ingest", "max_batch_size": 10, "max_retries": 10 },
+      { "queue": "skolia-ingest-events", "max_batch_size": 100, "max_batch_timeout": 5, "max_retries": 10 }
+    ]
   },
   // The containers' blobs, served to them through an intercept (Blobs in src/worker/ingest.ts)
   "r2_buckets": [{ "binding": "BLOBS", "bucket_name": "skolia" }],
+  "vars": { "INGEST_EVENTS_QUEUE": "skolia-ingest-events" },
   // Deployed as skolia-ingest-staging. Bindings and containers aren't inherited.
   "env": {
     "staging": {
@@ -64,10 +73,16 @@
       "durable_objects": {
         "bindings": [{ "name": "INGESTER", "class_name": "Ingester" }]
       },
+      "d1_databases": [{ "binding": "INGEST_DB", "database_name": "skolia-ingest-staging" }],
       "queues": {
-        "consumers": [{ "queue": "skolia-ingest-staging", "max_batch_size": 10, "max_retries": 10 }]
+        "producers": [{ "binding": "INGEST_EVENTS", "queue": "skolia-ingest-events-staging" }],
+        "consumers": [
+          { "queue": "skolia-ingest-staging", "max_batch_size": 10, "max_retries": 10 },
+          { "queue": "skolia-ingest-events-staging", "max_batch_size": 100, "max_batch_timeout": 5, "max_retries": 10 }
+        ]
       },
-      "r2_buckets": [{ "binding": "BLOBS", "bucket_name": "skolia-staging" }]
+      "r2_buckets": [{ "binding": "BLOBS", "bucket_name": "skolia-staging" }],
+      "vars": { "INGEST_EVENTS_QUEUE": "skolia-ingest-events-staging" }
     }
   }
 }

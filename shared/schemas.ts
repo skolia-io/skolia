@@ -452,6 +452,152 @@ export const QueuePlace = z.object({ starting: z.boolean(), ahead: z.number().in
     "ahead: how many texts it analyses before this one, the one it's analysing included; null when it hasn't been handed this one yet.",
 });
 
+/** A stage of an ingest job, in the order they run (analysis/src/skolia_analysis/ingest/worker.py) */
+export const IngestStage = z
+  .enum([
+    "reading",
+    "loading-analysis",
+    "analysing",
+    "bundling",
+    "compressing-analysis",
+    "uploading-analysis",
+    "compressing-bundle",
+    "uploading-bundle",
+  ])
+  .meta({ id: "IngestStage" });
+
+export const IngestOutcome = z.enum(["ready", "failed", "retried"]).meta({
+  id: "IngestOutcome",
+  description: "retried: storage failed and the job went back in line, to run again as another job.",
+});
+
+export const StageTime = z.object({ stage: IngestStage, ms: z.number().int().min(0) }).meta({ id: "StageTime" });
+
+const IngestJobId = z.string().min(1).max(64);
+/** The longest error a job can have, in UTF-16 code units (http.py MAX_ERROR), so an event fits a queue message */
+export const MAX_INGEST_ERROR = 2000;
+const Size = z.number().int().min(0).nullable();
+
+/** A job in an ingest container (http.py ContainerJob): running, or waiting its turn */
+export const ContainerJob = z.object({
+  id: IngestJobId,
+  doc: DocumentId,
+  lang: Lang,
+  acceptedAt: Timestamp,
+  startedAt: Timestamp.nullable(),
+  stage: IngestStage.nullable(),
+  stageStartedAt: Timestamp.nullable(),
+  chars: Size,
+  words: Size,
+  stages: z.array(StageTime),
+});
+
+/** GET /jobs of a language's ingest container (http.py JobsState). Older containers lack
+ * what comes after waiting. */
+export const ContainerJobs = z.object({
+  loading: z.boolean(),
+  running: z.array(z.string()),
+  waiting: z.array(z.string()),
+  startedAt: Timestamp.optional(),
+  jobs: z.array(ContainerJob).default([]),
+});
+
+/** How a job ended. chars and words are null for one that failed before it read the text. */
+export const IngestResult = z
+  .object({
+    finishedAt: Timestamp,
+    outcome: IngestOutcome,
+    error: z.string().max(MAX_INGEST_ERROR).nullable(),
+    chars: Size,
+    words: Size,
+    stages: z.array(StageTime).max(32).describe("The stages it ran, in order, the one it failed in included."),
+  })
+  .meta({ id: "IngestResult" });
+
+const StartedFields = {
+  id: IngestJobId,
+  doc: DocumentId,
+  lang: Lang,
+  image: z.string().min(1).max(200),
+  acceptedAt: Timestamp,
+  startedAt: Timestamp,
+};
+
+/** What an ingest container sends as a job starts and as it ends, to the ingest Worker,
+ * which stores them (api/ingest-migrations). */
+export const IngestEvent = z
+  .discriminatedUnion("kind", [
+    z.object({ kind: z.literal("started"), ...StartedFields }),
+    z.object({ kind: z.literal("finished"), ...StartedFields, ...IngestResult.shape }),
+  ])
+  .refine((event) => event.kind === "started" || event.outcome !== "ready" || event.error === null, {
+    message: "a ready job has no error",
+  })
+  .meta({ id: "IngestEvent" });
+
+const JsonStages = z.string().transform((stages, ctx) => {
+  const parsed = z.array(StageTime).safeParse(JSON.parse(stages));
+  if (parsed.success) return parsed.data;
+  ctx.addIssue({ code: "custom", message: "stages isn't a list of stage times" });
+  return z.NEVER;
+});
+
+/** An ingest_job row (api/ingest-migrations): its result is null until it's finished */
+export const IngestJobRow = z
+  .object({
+    ...StartedFields,
+    finishedAt: Timestamp.nullable(),
+    outcome: IngestOutcome.nullable(),
+    error: z.string().nullable(),
+    chars: Size,
+    words: Size,
+    stages: JsonStages.nullable(),
+  })
+  .transform(({ finishedAt, outcome, error, chars, words, stages, ...started }) => ({
+    ...started,
+    result: finishedAt === null || outcome === null || stages === null ? null : { finishedAt, outcome, error, chars, words, stages },
+  }));
+
+export const IngestedDocument = z
+  .object({ id: DocumentId, title: z.string() })
+  .nullable()
+  .meta({ id: "IngestedDocument", description: "The text, with the title the viewer sees; null for one the viewer can't see." });
+
+export const LiveIngestJob = ContainerJob.omit({ doc: true }).extend({ document: IngestedDocument }).meta({ id: "LiveIngestJob" });
+
+export const PastIngestJob = z
+  .object({
+    id: IngestJobId,
+    document: IngestedDocument,
+    lang: Lang,
+    image: z.string().describe("The analysis image that ran it."),
+    acceptedAt: Timestamp,
+    startedAt: Timestamp,
+    result: IngestResult.nullable().describe(
+      "Null for a job that started and hasn't finished, and that no analyser is running: its container stopped first, or its result is on its way. The error is null for a text the viewer can't see.",
+    ),
+  })
+  .meta({ id: "PastIngestJob" });
+
+export const IngestContainer = z
+  .object({
+    startedAt: Timestamp.nullable(),
+    loading: z.boolean().describe("Whether it's still loading its models; jobs wait till it's done."),
+    jobs: z.array(LiveIngestJob).describe("Running, then waiting, in the order they run."),
+  })
+  .meta({ id: "IngestContainer" });
+
+export const IngestLanguage = z
+  .object({ lang: Lang, container: IngestContainer.nullable().describe("Null when none is running.") })
+  .meta({ id: "IngestLanguage" });
+
+export const IngestOverview = z
+  .object({
+    languages: z.array(IngestLanguage),
+    recent: z.array(PastIngestJob).describe("The jobs started most recently, newest first, but those an analyser is running."),
+  })
+  .meta({ id: "IngestOverview" });
+
 export const ReadingNames = z.object({ analysis: z.string(), bundle: z.string() }).meta({ id: "ReadingNames" });
 
 export const DocumentSummary = z
