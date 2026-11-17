@@ -3,6 +3,7 @@
 // which the Workers' log.ts doesn't configure, so a test that calls a script's functions
 // stays quiet.
 import { configureSync, getConsoleSink, getLogger, jsonLinesFormatter, logfmtFormatter, type Logger } from "@logtape/logtape";
+import { describeError, errorFields } from "./errors.ts";
 
 /** A script's logger, e.g. scriptLog("sync-curated") for skolia-script.sync-curated */
 export function scriptLog(name: string): Logger {
@@ -28,10 +29,7 @@ export async function runScript(log: Logger, main: () => Promise<void>): Promise
   try {
     await main();
   } catch (error) {
-    log.fatal("{error}", {
-      error: error instanceof Error ? error.message : String(error),
-      stack: error instanceof Error ? error.stack : undefined,
-    });
+    log.with({ error: errorFields(error) }).fatal`${describeError(error)}`;
     process.exitCode = 1;
   }
 }

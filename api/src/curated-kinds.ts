@@ -5,6 +5,7 @@ import * as z from "zod";
 import { LICENCES, type Lang, type Licence, type NewAnnotation, type Tags } from "@skolia/shared/api";
 import * as schemas from "@skolia/shared/schemas";
 import { LABEL, parseSpans } from "./curated-spans.ts";
+import { describeError } from "./errors.ts";
 
 /** A curated text, its credits and its annotations, as sync-curated imports them. */
 export type Resolved = {
@@ -122,10 +123,20 @@ const Book = z.object({
 /** Wolne Lektury's ISO 639-2 language codes, for the languages skolia has. */
 const WOLNE_LEKTURY_LANGS: Readonly<Record<string, Lang>> = { pol: "pl", eng: "en", fre: "fr", fra: "fr" };
 
+/** Thrown for a fetch that may work if tried again: the network failed, or the server
+ * answered 429 or 5xx. */
+export class TransientFetchError extends Error {}
+
 async function fetched(fetch: Fetch, url: string): Promise<Response> {
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`${url}: ${response.status}`);
-  return response;
+  let response: Response;
+  try {
+    response = await fetch(url);
+  } catch (error) {
+    throw new TransientFetchError(`${url}: ${describeError(error)}`, { cause: error });
+  }
+  if (response.ok) return response;
+  const message = `${url}: ${response.status}`;
+  throw response.status === 429 || response.status >= 500 ? new TransientFetchError(message) : new Error(message);
 }
 
 async function wolneLektury(spec: z.output<typeof WolneLektury>, lang: Lang, fetch: Fetch): Promise<Resolved> {

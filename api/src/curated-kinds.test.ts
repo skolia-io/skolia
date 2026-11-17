@@ -250,6 +250,33 @@ test("a wolnelektury file that can't be had, or is in another language, is refus
   );
 });
 
+test("a wolnelektury fetch that fails on the network or with a 5xx is tried again", async () => {
+  const file = parseCurated("pl/o.yaml", "pl", "kind: wolnelektury\nslug: fredro-osiolkowi-w-zloby-dano\n");
+  const failing = (failures: readonly (() => Promise<Response>)[]): Fetch => {
+    const left = [...failures];
+    return async (url) => (left.shift() ?? (() => wolneLektury().fetch(url)))();
+  };
+  const reset = async () => {
+    throw new TypeError("fetch failed", { cause: new Error("read ECONNRESET") });
+  };
+  const unavailable = async () => new Response("", { status: 503 });
+  const [text] = await resolveCurated([file], failing([reset, unavailable]), [0, 0]);
+  assert.equal(text?.request.title, "Osiołkowi w żłoby dano");
+  await assert.rejects(
+    resolveCurated([file], failing([reset, reset]), [0]),
+    /pl\/o\.yaml: https:\/\/wolnelektury\.pl\/api\/books\/fredro-osiolkowi-w-zloby-dano\/: fetch failed: read ECONNRESET/u,
+  );
+});
+
+test("every file that can't be had is named", async () => {
+  const file = (path: string) => parseCurated(path, "pl", "kind: wolnelektury\nslug: nie-ma-takiej\n");
+  await assert.rejects(resolveCurated([file("pl/a.yaml"), file("pl/b.yaml")], wolneLektury().fetch, []), (error) => {
+    assert.ok(error instanceof AggregateError);
+    assert.match(error.message, /^2 files couldn't be had: pl\/a\.yaml: .*: 404; pl\/b\.yaml: .*: 404$/u);
+    return true;
+  });
+});
+
 test("two files with the same text are refused", async () => {
   const same = (path: string) => parseCurated(path, "pl", "kind: inline\ntitle: A\nlicence: cc0\ntext: Ten sam tekst.\n");
   await assert.rejects(resolveCurated([same("pl/a.yaml"), same("pl/b.yaml")], noFetch), /pl\/b\.yaml: the same text as pl\/a\.yaml/u);
