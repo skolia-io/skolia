@@ -16,7 +16,7 @@ resource "cloudflare_d1_database" "lexicon" {
   name       = "skolia-lexicon-${each.key}${local.suffix}"
 }
 
-# The ingest Worker's job history (api/ingest-migrations), apart from skolia so that one
+# The ingest Worker's job history (ingest/migrations), apart from skolia so that one
 # stays small and the ingest Worker binds no user data
 resource "cloudflare_d1_database" "ingest" {
   account_id = var.account_id

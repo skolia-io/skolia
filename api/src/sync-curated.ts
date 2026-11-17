@@ -40,7 +40,7 @@ import { GraphBuilder, runGraph, type Graph } from "@skolia/util/graph";
 import type { AppType } from "./app.ts";
 import { API_KEY_HEADER } from "./auth.ts";
 import { CuratedSpec, resolve, TransientFetchError, type Fetch, type Resolved } from "./curated-kinds.ts";
-import { describeError } from "./errors.ts";
+import { describeError } from "@skolia/util/errors";
 import { trimSpans } from "./curated-spans.ts";
 import { runScript, scriptLog, since } from "./script-log.ts";
 

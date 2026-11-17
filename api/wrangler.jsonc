@@ -2,7 +2,7 @@
 // Deployed with wrangler (infra/wrangler.sh <env> deploy), which also applies the
 // Durable Object migrations. Terraform (infra/) makes the D1 database, R2 bucket and
 // queue it binds. The top level is production and wrangler dev; staging is env.staging.
-// Ingest is a separate Worker: wrangler.ingest.jsonc.
+// Ingest is a separate Worker: ingest/wrangler.jsonc.
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "skolia",
@@ -48,7 +48,7 @@
     {
       "binding": "INGEST_DB",
       "database_name": "skolia-ingest",
-      "migrations_dir": "ingest-migrations"
+      "migrations_dir": "../ingest/migrations"
     }
   ],
   "r2_buckets": [{ "binding": "BLOBS", "bucket_name": "skolia" }],
@@ -57,7 +57,7 @@
   "queues": {
     "producers": [{ "binding": "INGEST", "queue": "skolia-ingest" }]
   },
-  // INGESTER: the ingest Worker's (wrangler.ingest.jsonc), asked where a document is in
+  // INGESTER: the ingest Worker's (ingest/wrangler.jsonc), asked where a document is in
   // its queue
   "durable_objects": {
     "bindings": [{ "name": "USER", "class_name": "User" }, { "name": "INGESTER", "class_name": "Ingester", "script_name": "skolia-ingest" }]
@@ -94,7 +94,7 @@
         {
           "binding": "INGEST_DB",
           "database_name": "skolia-ingest-staging",
-          "migrations_dir": "ingest-migrations"
+          "migrations_dir": "../ingest/migrations"
         }
       ],
       "r2_buckets": [{ "binding": "BLOBS", "bucket_name": "skolia-staging" }],

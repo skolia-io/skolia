@@ -524,7 +524,7 @@ const StartedFields = {
 };
 
 /** What an ingest container sends as a job starts and as it ends, to the ingest Worker,
- * which stores them (api/ingest-migrations). */
+ * which stores them (ingest/migrations). */
 export const IngestEvent = z
   .discriminatedUnion("kind", [
     z.object({ kind: z.literal("started"), ...StartedFields }),
@@ -542,7 +542,7 @@ const JsonStages = z.string().transform((stages, ctx) => {
   return z.NEVER;
 });
 
-/** An ingest_job row (api/ingest-migrations): its result is null until it's finished */
+/** An ingest_job row (ingest/migrations): its result is null until it's finished */
 export const IngestJobRow = z
   .object({
     ...StartedFields,

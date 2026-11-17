@@ -30,7 +30,7 @@ wrangler() { "$root/infra/wrangler.sh" "$env" "$@"; }
 registry_wrangler() { "$root/infra/wrangler.sh" account "$@"; }
 cd "$root"
 
-# One image per language, each named after it in wrangler.ingest.jsonc's images. CI's
+# One image per language, each named after it in ingest/wrangler.jsonc's images. CI's
 # matrix in .github/workflows/ci.yml lists them too.
 langs=(pl en fr)
 repo=registry.cloudflare.com/$CLOUDFLARE_ACCOUNT_ID
@@ -103,17 +103,17 @@ deploy() {
 
   # The committed config builds analysis/image/Dockerfile (for wrangler dev); deploy the
   # pushed images, each under its language's name in images
-  config=wrangler.ingest.deploy.jsonc
+  config=$root/ingest/wrangler.deploy.jsonc
   # Expanded now: the trap runs at exit, after deploy's locals are gone
-  trap "rm -f '$root/api/$config'" EXIT
+  trap "rm -f '$config'" EXIT
   if [[ $env == pr-* ]]; then
     # A preview's config is JSON (infra/preview.py) and holds only the preview
-    [ -f "$root/api/wrangler.ingest.$env.json" ] || "$root/infra/preview.py" config "$env" >&2
+    [ -f "$root/ingest/wrangler.$env.json" ] || "$root/infra/preview.py" config "$env" >&2
     jq --argjson image "$(jq -n '$ARGS.positional | map(split("=") | {(.[0]): .[1]}) | add' --args "${images[@]}")" '
       .containers |= map(.images |= with_entries(
         if $image[.key] then .value = {image: $image[.key]}
         else error("no image for \(.key)") end))
-    ' "$root/api/wrangler.ingest.$env.json" > "$root/api/$config"
+    ' "$root/ingest/wrangler.$env.json" > "$config"
     copies=1
   else
     # Each language's image is on one line: "pl": { "dockerfile": ..., "build_vars": ... },
@@ -127,12 +127,12 @@ deploy() {
         next
       }
       { print }
-    ' "$root/api/wrangler.ingest.jsonc" > "$root/api/$config"
+    ' "$root/ingest/wrangler.jsonc" > "$config"
     # Production and staging
     copies=2
   fi
   for pair in "${images[@]}"; do
-    if [ "$(grep -c "\"image\": \"${pair#*=}\"" "$root/api/$config")" != "$copies" ]; then
+    if [ "$(grep -c "\"image\": \"${pair#*=}\"" "$config")" != "$copies" ]; then
       echo "expected ${pair#*=} $copies times in $config" >&2
       exit 1
     fi

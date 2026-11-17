@@ -6,7 +6,7 @@ import { authOptions } from "./auth.ts";
 import { ALICE, local, useLocal } from "./testing/app.ts";
 import { authConfig } from "./testing/harness.ts";
 import { DOCUMENT_QUERIES } from "./worker/adapters.ts";
-import { INGEST_QUERIES } from "./worker/ingest-history.ts";
+import { INGEST_QUERIES } from "@skolia/ingest/history";
 
 useLocal();
 

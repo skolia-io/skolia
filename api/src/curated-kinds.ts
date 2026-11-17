@@ -5,7 +5,7 @@ import * as z from "zod";
 import { LICENCES, type Lang, type Licence, type NewAnnotation, type Tags } from "@skolia/shared/api";
 import * as schemas from "@skolia/shared/schemas";
 import { LABEL, parseSpans } from "./curated-spans.ts";
-import { describeError } from "./errors.ts";
+import { describeError } from "@skolia/util/errors";
 
 /** A curated text, its credits and its annotations, as sync-curated imports them. */
 export type Resolved = {

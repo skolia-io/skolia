@@ -3,7 +3,8 @@
 | Folder | What | Language |
 |---|---|---|
 | `analysis/` | analyser, lexicon build, `skolia-ingest` (queue worker) | Python, uv |
-| `api/` | `skolia-api`: documents, import, serving analyses and bundles; `skolia-ingest`'s Worker | TypeScript, Hono on Workers |
+| `api/` | `skolia-api`: documents, import, serving analyses and bundles | TypeScript, Hono on Workers |
+| `ingest/` | `skolia-ingest`'s Worker: consumes the queue and runs the analysis containers | TypeScript, Workers |
 | `reader/` | the reader app (phone and desktop) | Svelte 5, TypeScript, Vite |
 | `shared/` | types and blob keys used by api and reader; `schema.gen.ts` is generated from the Python schemas | TypeScript |
 | `data/` | git-ignored: Kaikki extract, lexicon, local SQLite, sample texts | |
@@ -15,7 +16,7 @@ reader (Vite, :5173) → wrangler dev (:8787): skolia → local queue → skolia
                                               └── local D1, R2 ◄── S3 API ──────────┘
 ```
 
-`wrangler dev` runs both Workers from their configs, with local D1, R2 and Queue in `api/.wrangler/state`, and runs each language's ingest container in Docker from the image Nix builds (`analysis/flake.nix`), which `just images` loads as `skolia-ingest-{lang}:dev` (`analysis/image/Dockerfile` is just that image). The container reaches the local bucket through the ingest Worker, as deployed (`Blobs` in `api/src/worker/ingest.ts`). `api/.env` sets both Workers' local vars (wrangler dev loads it for both; `--env-file` would reach only the first config, and an `api/.dev.vars` would replace it).
+`wrangler dev` runs both Workers from their configs, with local D1, R2 and Queue in `api/.wrangler/state`, and runs each language's ingest container in Docker from the image Nix builds (`analysis/flake.nix`), which `just images` loads as `skolia-ingest-{lang}:dev` (`analysis/image/Dockerfile` is just that image). The container reaches the local bucket through the ingest Worker, as deployed (`Blobs` in `ingest/src/main.ts`). `api/.env` and `ingest/.env` set each Worker's local vars (wrangler dev loads the one beside each config; a `.dev.vars` there would replace it).
 
 Once: install Nix, direnv (with nix-direnv) and Docker, and run `direnv allow` in the repo. `.envrc` loads the flake's dev shell, which puts `just`, terraform, sops and age on PATH (`flake.nix`), and tells sops where your age key is. The images and lexicons are `x86_64-linux` builds. On a Mac that needs [Determinate Nix](https://docs.determinate.systems/), whose native Linux builder builds them: run `determinate-nixd login` (the builder needs a FlakeHub login). Everywhere, add the `andyyu2004` Cachix cache, which has everything but the models, to `/etc/nix/nix.custom.conf` (Determinate Nix) or `/etc/nix/nix.conf`, and restart the Nix daemon:
 

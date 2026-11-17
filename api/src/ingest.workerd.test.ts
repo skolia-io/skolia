@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { D1IngestHistory, receiveEvent } from "@skolia/ingest/history";
 import type { DocumentId, IngestEvent, IngestResult, Lang, Timestamp } from "@skolia/shared/api";
 import { ALICE, client, importer, ingestJobs, local, setup, useLocal, type App } from "./testing/app.ts";
 import { body, expectStatus } from "./testing/responses.ts";
-import { D1IngestHistory, receiveEvent } from "./worker/ingest-history.ts";
 
 useLocal();
 
