@@ -143,7 +143,7 @@ jobs:
   # A Gantt chart of the run's jobs and steps up to here, in its summary
   timeline:
     if: always()
-    needs: deploy-web
+    needs: [deploy-web, e2e, sync-curated]
     runs-on: ubuntu-24.04
     steps:
       - uses: Kesin11/actions-timeline@v3.2.1
