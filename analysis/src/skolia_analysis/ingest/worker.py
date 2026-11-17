@@ -7,7 +7,7 @@ from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import cast
+from typing import Literal, cast
 
 import brotli
 
@@ -15,7 +15,7 @@ from ..blob import SCHEMA
 from ..lexicon.schema import BUNDLE_SCHEMA, BUNDLER_VERSION, Bundle
 from ..schema import Blob
 from .blobs import BROTLI, BlobError, Blobs
-from .jobs import JobQueue, Received
+from .jobs import NO_PROGRESS, JobQueue, Progress, Received, Stage
 from .schema import (
     MAX_TEXT_LENGTH,
     IngestJob,
@@ -39,6 +39,12 @@ POLL_SECONDS = 5.0
 MAX_BACKOFF_SECONDS = 60.0
 # Highest quality: about 1.6 s for a 2,800-word story, paid once per import
 BROTLI_QUALITY = 11
+
+Stored = Literal["analysis", "bundle"]
+STORE_STAGES: dict[Stored, tuple[Stage, Stage]] = {
+    "analysis": ("compressing-analysis", "uploading-analysis"),
+    "bundle": ("compressing-bundle", "uploading-bundle"),
+}
 
 
 class JobError(Exception):
@@ -78,13 +84,21 @@ def compressed_json(value: object) -> bytes:
 
 
 @contextmanager
-def timed(doc: str, words: int, stage: str) -> Generator[None]:
-    """Log how long a stage of a job took, failed or not."""
+def timed(
+    progress: Progress, doc: str, words: int | None, stage: Stage, label: str
+) -> Generator[None]:
+    """Log how long a stage of a job took, failed or not, and tell progress."""
+    progress.stage_started(stage)
     start = time.perf_counter()
     try:
         yield
     finally:
-        log.info("%s (%d words): %s took %.2f s", doc, words, stage, time.perf_counter() - start)
+        seconds = time.perf_counter() - start
+        progress.stage_finished(stage, round(seconds * 1000))
+        if words is None:
+            log.info("%s: %s took %.2f s", doc, label, seconds)
+        else:
+            log.info("%s (%d words): %s took %.2f s", doc, words, label, seconds)
 
 
 class Ingester:
@@ -97,12 +111,12 @@ class Ingester:
         for lang, pipeline in self._pipelines.items():
             self._blobs.put(versions_key(lang), json.dumps(pipeline.versions()).encode(), JSON)
 
-    def process(self, job: IngestJob) -> Status:
+    def process(self, job: IngestJob, progress: Progress = NO_PROGRESS) -> Status:
         """Raises BlobError when storage fails: that's worth retrying, unlike a failed
         analysis, which would fail the same way again."""
         doc = job["doc"]
         try:
-            status = self._process(job)
+            status = self._process(job, progress)
         except BlobError:
             raise
         except JobError as error:
@@ -112,20 +126,22 @@ class Ingester:
             status = self._status(doc, "failed", error=f"{type(error).__name__}: {error}")
         return status
 
-    def _process(self, job: IngestJob) -> Status:
+    def _process(self, job: IngestJob, progress: Progress) -> Status:
         doc = job["doc"]
         pipeline = self._pipelines.get(job["lang"])
         if pipeline is None:
             raise JobError(f"no pipeline for language {job['lang']!r}")
-        raw = self._blobs.get(text_key(doc))
-        if raw is None:
-            raise JobError(f"no text at {text_key(doc)}")
-        text = raw.decode("utf-8")
-        if doc_id(job["lang"], text) != doc:
-            raise JobError("text and language don't match the document id")
-        if len(text) > MAX_TEXT_LENGTH:
-            raise JobError(f"text is longer than {MAX_TEXT_LENGTH} characters")
-        words = len(text.split())
+        with timed(progress, doc, None, "reading", "reading the text"):
+            raw = self._blobs.get(text_key(doc))
+            if raw is None:
+                raise JobError(f"no text at {text_key(doc)}")
+            text = raw.decode("utf-8")
+            words = len(text.split())
+            progress.text(len(text), words)
+            if doc_id(job["lang"], text) != doc:
+                raise JobError("text and language don't match the document id")
+            if len(text) > MAX_TEXT_LENGTH:
+                raise JobError(f"text is longer than {MAX_TEXT_LENGTH} characters")
         versions = pipeline.versions()
         a_key = analysis_key(doc, versions["analysis"])
         b_key = bundle_key(doc, versions["bundle"])
@@ -135,22 +151,22 @@ class Ingester:
             # A new bundler or lexicon with the same analyser: only the bundle is remade
             stored = self._blobs.get(a_key)
             if stored is not None:
-                with timed(doc, words, "reading the stored analysis"):
+                with timed(progress, doc, words, "loading-analysis", "reading the stored analysis"):
                     analysis = cast(Blob, json.loads(brotli.decompress(stored)))
             else:
                 self._status(doc, "analysing")
-                with timed(doc, words, "analysis"):
+                with timed(progress, doc, words, "analysing", "analysis"):
                     analysis = pipeline.analyze(text)
                 if analysis["analyzer"] != pipeline.analyzer:
                     # Otherwise the API would keep finding it out of date and queueing it
                     raise JobError(
                         f"analysed as {analysis['analyzer']!r}, but published {pipeline.analyzer!r}"
                     )
-            with timed(doc, words, "bundling"):
+            with timed(progress, doc, words, "bundling", "bundling"):
                 bundle = pipeline.bundle(analysis)
             if stored is None:
-                self._put_compressed(doc, words, "analysis", a_key, analysis)
-            self._put_compressed(doc, words, "bundle", b_key, bundle)
+                self._put_compressed(progress, doc, words, "analysis", a_key, analysis)
+            self._put_compressed(progress, doc, words, "bundle", b_key, bundle)
         else:
             log.info("%s (%d words): bundle %s already made", doc, words, versions["bundle"])
         return self._status(
@@ -162,10 +178,19 @@ class Ingester:
             bundle=b_key,
         )
 
-    def _put_compressed(self, doc: str, words: int, name: str, key: str, value: object) -> None:
-        with timed(doc, words, f"compressing the {name}"):
+    def _put_compressed(
+        self,
+        progress: Progress,
+        doc: str,
+        words: int,
+        name: Stored,
+        key: str,
+        value: object,
+    ) -> None:
+        compressing, uploading = STORE_STAGES[name]
+        with timed(progress, doc, words, compressing, f"compressing the {name}"):
             data = compressed_json(value)
-        with timed(doc, words, f"uploading the {name} ({len(data)} bytes)"):
+        with timed(progress, doc, words, uploading, f"uploading the {name} ({len(data)} bytes)"):
             self._blobs.put(key, data, JSON, BROTLI)
 
     def _status(
@@ -233,16 +258,16 @@ class Ingester:
             log.info("ingesting %s (%s)", received.job["doc"], received.job["lang"])
             start = time.perf_counter()
             try:
-                status = self.process(received.job)
-            except BlobError:
+                status = self.process(received.job, received.progress)
+            except BlobError as error:
                 # Storage is down: put the job back for later rather than fail the document
                 failures += 1
                 delay = min(MAX_BACKOFF_SECONDS, 2.0**failures)
                 log.exception("storage failed; job back on the queue, waiting %.0f s", delay)
-                queue.release(received)
+                queue.release(received, f"{type(error).__name__}: {error}")
                 sleep(delay)
                 continue
             failures = 0
-            queue.ack(received)
+            queue.ack(received, status)
             elapsed = time.perf_counter() - start
             log.info("%s: %s after %.2f s", received.job["doc"], status["state"], elapsed)

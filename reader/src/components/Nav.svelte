@@ -10,7 +10,7 @@
     user,
     onerror,
   }: {
-    page: "explore" | "list" | "upload" | "review" | "cards" | "settings" | "about" | "reader";
+    page: "explore" | "list" | "upload" | "review" | "cards" | "settings" | "about" | "ingest" | "reader";
     user: User | null | undefined;
     onerror: (message: string) => void;
   } = $props();
@@ -119,7 +119,14 @@
                 run(async () => {
                   menu?.hidePopover();
                   await signOut();
-                  if (page === "list" || page === "upload" || page === "review" || page === "cards" || page === "settings")
+                  if (
+                    page === "list" ||
+                    page === "upload" ||
+                    page === "review" ||
+                    page === "cards" ||
+                    page === "settings" ||
+                    page === "ingest"
+                  )
                     location.hash = "#/";
                   await forgetUser(client);
                 })}

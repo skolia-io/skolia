@@ -1508,6 +1508,351 @@
         ],
         "additionalProperties": false
       },
+      "IngestOverview": {
+        "type": "object",
+        "properties": {
+          "languages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IngestLanguage"
+            }
+          },
+          "recent": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PastIngestJob"
+            },
+            "description": "The jobs started most recently, newest first, but those an analyser is running."
+          }
+        },
+        "required": [
+          "languages",
+          "recent"
+        ],
+        "additionalProperties": false
+      },
+      "IngestLanguage": {
+        "type": "object",
+        "properties": {
+          "lang": {
+            "$ref": "#/components/schemas/Lang"
+          },
+          "container": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IngestContainer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null when none is running."
+          }
+        },
+        "required": [
+          "lang",
+          "container"
+        ],
+        "additionalProperties": false
+      },
+      "IngestContainer": {
+        "type": "object",
+        "properties": {
+          "startedAt": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Timestamp"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "loading": {
+            "type": "boolean",
+            "description": "Whether it's still loading its models; jobs wait till it's done."
+          },
+          "jobs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LiveIngestJob"
+            },
+            "description": "Running, then waiting, in the order they run."
+          }
+        },
+        "required": [
+          "startedAt",
+          "loading",
+          "jobs"
+        ],
+        "additionalProperties": false
+      },
+      "LiveIngestJob": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "lang": {
+            "$ref": "#/components/schemas/Lang"
+          },
+          "acceptedAt": {
+            "$ref": "#/components/schemas/Timestamp"
+          },
+          "startedAt": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Timestamp"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "stage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IngestStage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "stageStartedAt": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Timestamp"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "chars": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "words": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "stages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StageTime"
+            }
+          },
+          "document": {
+            "$ref": "#/components/schemas/IngestedDocument"
+          }
+        },
+        "required": [
+          "id",
+          "lang",
+          "acceptedAt",
+          "startedAt",
+          "stage",
+          "stageStartedAt",
+          "chars",
+          "words",
+          "stages",
+          "document"
+        ],
+        "additionalProperties": false
+      },
+      "IngestStage": {
+        "type": "string",
+        "enum": [
+          "reading",
+          "loading-analysis",
+          "analysing",
+          "bundling",
+          "compressing-analysis",
+          "uploading-analysis",
+          "compressing-bundle",
+          "uploading-bundle"
+        ]
+      },
+      "StageTime": {
+        "type": "object",
+        "properties": {
+          "stage": {
+            "$ref": "#/components/schemas/IngestStage"
+          },
+          "ms": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "stage",
+          "ms"
+        ],
+        "additionalProperties": false
+      },
+      "IngestedDocument": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "$ref": "#/components/schemas/DocumentId"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "title"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "description": "The text, with the title the viewer sees; null for one the viewer can't see."
+      },
+      "PastIngestJob": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "document": {
+            "$ref": "#/components/schemas/IngestedDocument"
+          },
+          "lang": {
+            "$ref": "#/components/schemas/Lang"
+          },
+          "image": {
+            "type": "string",
+            "description": "The analysis image that ran it."
+          },
+          "acceptedAt": {
+            "$ref": "#/components/schemas/Timestamp"
+          },
+          "startedAt": {
+            "$ref": "#/components/schemas/Timestamp"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IngestResult"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null for a job that started and hasn't finished, and that no analyser is running: its container stopped first, or its result is on its way. The error is null for a text the viewer can't see."
+          }
+        },
+        "required": [
+          "id",
+          "document",
+          "lang",
+          "image",
+          "acceptedAt",
+          "startedAt",
+          "result"
+        ],
+        "additionalProperties": false
+      },
+      "IngestResult": {
+        "type": "object",
+        "properties": {
+          "finishedAt": {
+            "$ref": "#/components/schemas/Timestamp"
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/IngestOutcome"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "chars": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "words": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "stages": {
+            "maxItems": 32,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StageTime"
+            },
+            "description": "The stages it ran, in order, the one it failed in included."
+          }
+        },
+        "required": [
+          "finishedAt",
+          "outcome",
+          "error",
+          "chars",
+          "words",
+          "stages"
+        ],
+        "additionalProperties": false
+      },
+      "IngestOutcome": {
+        "type": "string",
+        "enum": [
+          "ready",
+          "failed",
+          "retried"
+        ],
+        "description": "retried: storage failed and the job went back in line, to run again as another job."
+      },
       "Visibility": {
         "type": "string",
         "enum": [
@@ -3514,6 +3859,37 @@
             }
           }
         ]
+      }
+    },
+    "/api/ingest": {
+      "get": {
+        "operationId": "getApiIngest",
+        "tags": [
+          "Ingest"
+        ],
+        "summary": "What analysis is doing",
+        "description": "Each language's analyser, if one is running, with the jobs it's running and those waiting, and the jobs started most recently. A text the viewer can't see is shown without its id, title or error.",
+        "security": [
+          {},
+          {
+            "session": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The analysers and their jobs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IngestOverview"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/documents/{id}": {

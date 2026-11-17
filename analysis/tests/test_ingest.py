@@ -8,7 +8,7 @@ import pytest
 
 from skolia_analysis.blob import SCHEMA
 from skolia_analysis.ingest.blobs import BlobError, DirBlobs
-from skolia_analysis.ingest.jobs import InvalidJob, MemoryQueue, Received, parse_job
+from skolia_analysis.ingest.jobs import InvalidJob, MemoryQueue, Received, Stage, parse_job
 from skolia_analysis.ingest.schema import (
     MAX_TEXT_LENGTH,
     doc_id,
@@ -83,6 +83,7 @@ def test_each_stage_of_a_job_logs_its_time(
     ]
     assert stages == [
         f"ingesting {doc} (pl)",
+        f"{doc}: reading the text took N s",
         f"{doc} (3 words): analysis took N s",
         f"{doc} (3 words): bundling took N s",
         f"{doc} (3 words): compressing the analysis took N s",
@@ -90,6 +91,62 @@ def test_each_stage_of_a_job_logs_its_time(
         f"{doc} (3 words): compressing the bundle took N s",
         f"{doc} (3 words): uploading the bundle (N bytes) took N s",
         f"{doc}: ready after N s",
+    ]
+
+
+class Recorded:
+    def __init__(self) -> None:
+        self.events: list[tuple[str, Stage]] = []
+        self.ms: list[int] = []
+        self.counts: tuple[int, int] | None = None
+
+    def text(self, chars: int, words: int) -> None:
+        self.counts = (chars, words)
+
+    def stage_started(self, stage: Stage) -> None:
+        self.events.append(("started", stage))
+
+    def stage_finished(self, stage: Stage, ms: int) -> None:
+        self.events.append(("finished", stage))
+        self.ms.append(ms)
+
+
+def test_each_stage_is_reported_to_the_jobs_progress(tmp_path: Path) -> None:
+    blobs = DirBlobs(tmp_path)
+    doc = doc_id("pl", TEXT)
+    blobs.put(text_key(doc), TEXT.encode(), "text/plain")
+    progress = Recorded()
+    Ingester(blobs, pipelines()).process({"doc": doc, "lang": "pl"}, progress)
+    stages: list[Stage] = [
+        "reading",
+        "analysing",
+        "bundling",
+        "compressing-analysis",
+        "uploading-analysis",
+        "compressing-bundle",
+        "uploading-bundle",
+    ]
+    assert progress.events == [
+        event for stage in stages for event in (("started", stage), ("finished", stage))
+    ]
+    assert all(ms >= 0 for ms in progress.ms)
+    assert progress.counts == (len(TEXT), 3)
+
+
+def test_a_rebundle_reports_loading_the_stored_analysis(tmp_path: Path) -> None:
+    blobs = DirBlobs(tmp_path)
+    doc = doc_id("pl", TEXT)
+    blobs.put(text_key(doc), TEXT.encode(), "text/plain")
+    Ingester(blobs, pipelines()).process({"doc": doc, "lang": "pl"})
+    progress = Recorded()
+    newer = Pipeline("pl", fake_analysis, fake_bundle, "test/1", "lex/2")
+    Ingester(blobs, {"pl": newer}).process({"doc": doc, "lang": "pl"}, progress)
+    assert [stage for event, stage in progress.events if event == "finished"] == [
+        "reading",
+        "loading-analysis",
+        "bundling",
+        "compressing-bundle",
+        "uploading-bundle",
     ]
 
 

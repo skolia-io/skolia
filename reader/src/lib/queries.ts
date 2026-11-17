@@ -3,7 +3,7 @@
 import { QueryClient, queryOptions, skipToken, type QueryKey } from "@tanstack/svelte-query";
 import type { CardGroup, DocumentId, Lang } from "@skolia/shared/api";
 import { audioAnnotations } from "./annotations.ts";
-import { cardCounts, currentUser, dueCards, getSettings, listAnnotations, listTags } from "./api.ts";
+import { cardCounts, currentUser, dueCards, getIngest, getSettings, listAnnotations, listTags } from "./api.ts";
 import { shuffled } from "./review.ts";
 
 /** No retries and no refetch on focus: a failure shows at once, as the page's own error. */
@@ -17,6 +17,9 @@ export const userQuery = queryOptions({ queryKey: ["user"], queryFn: currentUser
 export const tagsQuery = queryOptions({ queryKey: ["tags"], queryFn: listTags, staleTime: Infinity });
 
 export const settingsQuery = queryOptions({ queryKey: ["me", "settings"], queryFn: getSettings });
+
+/** What analysis is doing, asked for again every few seconds while it's shown. */
+export const ingestQuery = queryOptions({ queryKey: ["ingest"], queryFn: getIngest, refetchInterval: 5000 });
 
 /** The text's audio annotations, from the entry the viewer sees for it. */
 export function audioQuery(id: DocumentId) {

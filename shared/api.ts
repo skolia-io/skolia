@@ -219,6 +219,18 @@ export type QueuePlace = z.output<typeof schemas.QueuePlace>;
 
 export type ReadingNames = z.output<typeof schemas.ReadingNames>;
 
+export type IngestStage = z.output<typeof schemas.IngestStage>;
+export type StageTime = z.output<typeof schemas.StageTime>;
+export type ContainerJobs = z.output<typeof schemas.ContainerJobs>;
+export type IngestResult = z.output<typeof schemas.IngestResult>;
+export type IngestEvent = z.output<typeof schemas.IngestEvent>;
+/** A job as stored, its result null until it's finished */
+export type IngestJobRecord = z.output<typeof schemas.IngestJobRow>;
+export type IngestedDocument = z.output<typeof schemas.IngestedDocument>;
+export type LiveIngestJob = z.output<typeof schemas.LiveIngestJob>;
+export type PastIngestJob = z.output<typeof schemas.PastIngestJob>;
+export type IngestOverview = z.output<typeof schemas.IngestOverview>;
+
 /** Which entries a list of documents keeps. mine: only the viewer's own, public or
  * private. title: those whose title has it, case aside (ASCII letters' case only). */
 export type DocumentFilter = {

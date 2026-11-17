@@ -1,13 +1,14 @@
 """Jobs over HTTP, for the Cloudflare container: a Worker takes each message off the
 queue and POSTs it here, then acks it once it's accepted. Jobs live in memory, so a
 container stopped mid-job loses them; the API queues a document again once it has
-been queued or analysing for too long.
+been queued or analysing for too long. Each attempt at a job sends a started and a
+finished event (events.py).
 
   POST /jobs   an IngestJob as JSON -> 202
   GET  /busy   {"busy": bool}: whether a job is waiting or running, so the container
                isn't put to sleep mid-analysis
-  GET  /jobs   JobsState: whether the pipelines are still loading, and the documents
-               running and waiting, in the order they'll run
+  GET  /jobs   JobsState: whether the pipelines are still loading, and the jobs running
+               and waiting in the order they'll run, with their stages so far
 """
 
 from __future__ import annotations
@@ -15,37 +16,147 @@ from __future__ import annotations
 import json
 import logging
 import threading
+import uuid
 from collections import deque
+from datetime import UTC, datetime
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import TypedDict, override
 
-from .jobs import InvalidJob, Received, parse_job
+from .events import Events, FinishedEvent, LoggedEvents, Outcome, StageTime, StartedEvent
+from .jobs import InvalidJob, Received, Stage, parse_job
+from .schema import IngestJob, Status
 
 log = logging.getLogger(__name__)
 
 MAX_BODY_BYTES = 4096
+# A finished event's error is cut to this many code points: at most 2 UTF-16 code units each,
+# within MAX_INGEST_ERROR (shared/schemas.ts)
+MAX_ERROR = 1000
+
+
+class ContainerJob(TypedDict):
+    id: str
+    doc: str
+    lang: str
+    acceptedAt: str
+    startedAt: str | None
+    stage: Stage | None
+    stageStartedAt: str | None
+    chars: int | None
+    words: int | None
+    stages: list[StageTime]
 
 
 class JobsState(TypedDict):
     loading: bool
     running: list[str]
     waiting: list[str]
+    startedAt: str
+    jobs: list[ContainerJob]
+
+
+def iso_now() -> str:
+    """Like SQLite's strftime('%Y-%m-%dT%H:%M:%fZ')."""
+    moment = datetime.now(UTC)
+    return f"{moment:%Y-%m-%dT%H:%M:%S}.{moment.microsecond // 1000:03d}Z"
+
+
+class _Job:
+    """One attempt at a job, from POST /jobs (or its release) until it's finished. It's
+    the Progress of its Received, called from the worker thread."""
+
+    def __init__(
+        self, lock: threading.Condition, job: IngestJob, raw: str, accepted_at: str
+    ) -> None:
+        self._lock = lock
+        self.id = uuid.uuid4().hex
+        self.accepted_at = accepted_at
+        self.received = Received(job, raw, self)
+        self.started_at: str | None = None
+        self._stage: Stage | None = None
+        self._stage_started_at: str | None = None
+        self._chars: int | None = None
+        self._words: int | None = None
+        self._stages: list[StageTime] = []
+
+    def text(self, chars: int, words: int) -> None:
+        with self._lock:
+            self._chars, self._words = chars, words
+
+    def stage_started(self, stage: Stage) -> None:
+        with self._lock:
+            self._stage, self._stage_started_at = stage, iso_now()
+
+    def stage_finished(self, stage: Stage, ms: int) -> None:
+        with self._lock:
+            self._stages.append({"stage": stage, "ms": ms})
+            self._stage, self._stage_started_at = None, None
+
+    def view(self) -> ContainerJob:
+        job = self.received.job
+        return {
+            "id": self.id,
+            "doc": job["doc"],
+            "lang": job["lang"],
+            "acceptedAt": self.accepted_at,
+            "startedAt": self.started_at,
+            "stage": self._stage,
+            "stageStartedAt": self._stage_started_at,
+            "chars": self._chars,
+            "words": self._words,
+            "stages": list(self._stages),
+        }
+
+    def started(self, image: str) -> StartedEvent:
+        job = self.received.job
+        assert self.started_at is not None, "not received yet"
+        return {
+            "kind": "started",
+            "id": self.id,
+            "doc": job["doc"],
+            "lang": job["lang"],
+            "image": image,
+            "acceptedAt": self.accepted_at,
+            "startedAt": self.started_at,
+        }
+
+    def finished(self, image: str, outcome: Outcome, error: str | None) -> FinishedEvent:
+        job = self.received.job
+        assert self.started_at is not None, "finished before it was received"
+        return {
+            "kind": "finished",
+            "id": self.id,
+            "doc": job["doc"],
+            "lang": job["lang"],
+            "image": image,
+            "acceptedAt": self.accepted_at,
+            "startedAt": self.started_at,
+            "finishedAt": iso_now(),
+            "outcome": outcome,
+            "error": None if error is None else error[:MAX_ERROR],
+            "chars": self._chars,
+            "words": self._words,
+            "stages": list(self._stages),
+        }
 
 
 class HttpJobs:
-    """A JobQueue fed by POST /jobs."""
+    """A JobQueue fed by POST /jobs. image names the container's image in events."""
 
-    def __init__(self) -> None:
-        self._pending: deque[Received] = deque()
-        self._running: list[Received] = []
+    def __init__(self, events: Events | None = None, image: str = "") -> None:
+        self._events = events or LoggedEvents()
+        self._image = image
+        self._started_at = iso_now()
+        self._pending: deque[_Job] = deque()
+        self._running: list[_Job] = []
         self._loading = True
         self._changed = threading.Condition()
 
     def add(self, raw: str) -> None:
-        received = Received(parse_job(raw), raw)
+        job = parse_job(raw)
         with self._changed:
-            self._pending.append(received)
+            self._pending.append(_Job(self._changed, job, raw, iso_now()))
             self._changed.notify()
 
     def loaded(self) -> None:
@@ -61,28 +172,40 @@ class HttpJobs:
         with self._changed:
             return {
                 "loading": self._loading,
-                "running": [r.job["doc"] for r in self._running],
-                "waiting": [r.job["doc"] for r in self._pending],
+                "running": [j.received.job["doc"] for j in self._running],
+                "waiting": [j.received.job["doc"] for j in self._pending],
+                "startedAt": self._started_at,
+                "jobs": [j.view() for j in (*self._running, *self._pending)],
             }
 
     def receive(self, timeout: float) -> Received | None:
         with self._changed:
             if not self._changed.wait_for(lambda: bool(self._pending), timeout):
                 return None
-            received = self._pending.popleft()
-            self._running.append(received)
-            return received
+            job = self._pending.popleft()
+            job.started_at = iso_now()
+            self._running.append(job)
+            self._events.send(job.started(self._image))
+            return job.received
 
-    def ack(self, received: Received) -> None:
+    def ack(self, received: Received, status: Status) -> None:
         with self._changed:
-            self._running.remove(received)
+            job = self._take(received)
+            outcome: Outcome = "ready" if status["state"] == "ready" else "failed"
+            self._events.send(job.finished(self._image, outcome, status.get("error")))
 
-    def release(self, received: Received) -> None:
-        # Back in line before it stops counting as running, so busy() never dips
+    def release(self, received: Received, error: str) -> None:
+        # The next attempt has its own id, since the finished one keeps the old
         with self._changed:
-            self._pending.append(received)
-            self._running.remove(received)
+            job = self._take(received)
+            self._pending.append(_Job(self._changed, received.job, received.raw, job.accepted_at))
+            self._events.send(job.finished(self._image, "retried", error))
             self._changed.notify()
+
+    def _take(self, received: Received) -> _Job:
+        job = next(j for j in self._running if j.received is received)
+        self._running.remove(job)
+        return job
 
 
 def serve(jobs: HttpJobs, host: str, port: int) -> ThreadingHTTPServer:

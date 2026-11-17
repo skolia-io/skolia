@@ -17,6 +17,7 @@ import {
   LANGS,
   type CardCounts,
   type CardKey,
+  type DocumentId,
   type Due,
   type ImportRequest,
   type Lang,
@@ -33,6 +34,8 @@ const log = scriptLog("e2e");
 
 const TIMEOUT_MS = 10 * 60 * 1000;
 const POLL_MS = 10 * 1000;
+// How long a finished job's event may take through the events queue (batched every 5 s)
+const EVENT_TIMEOUT_MS = 60 * 1000;
 const VERSION_TIMEOUT_MS = 2 * 60 * 1000;
 
 const TEXTS: Record<Lang, string> = {
@@ -134,10 +137,38 @@ async function documents(base: string, key: string, lang: Lang): Promise<void> {
         const blob = await fetchOk(`${lang} ${part}`, `${base}/api/documents/${id}/${part}/${name}`, key);
         log.info("{lang}: {part} {name}", { lang, doc: id, part, name, bytes: (await blob.arrayBuffer()).byteLength });
       }
+      await ingestHistory(api, anonymous, lang, id);
       return;
     }
     if (Date.now() > deadline) throw new Error(`${lang}: still ${summary.state} after ${TIMEOUT_MS / 60000} min`);
     await sleep(POLL_MS);
+  }
+}
+
+/** The analysis of a document just ready is in the ingest history once its container's
+ * event has been through the queue; signed out, the private text isn't. */
+async function ingestHistory(api: Api, anonymous: Api, lang: Lang, id: DocumentId): Promise<void> {
+  const deadline = Date.now() + EVENT_TIMEOUT_MS;
+  for (;;) {
+    // A retried attempt's job comes before the one that made it ready
+    const job = (await body(`${lang} ingest`, api.ingest.$get())).recent.find(
+      (j) => j.document?.id === id && j.result?.outcome === "ready",
+    );
+    if (job?.result) {
+      // Not necessarily analysing: on a preview's second run the text's analysis and bundle are
+      // already stored, so the job only reads the text
+      assert.ok(
+        job.result.stages.some((s) => s.stage === "reading"),
+        `${lang}: the job has no reading stage`,
+      );
+      const hidden = (await body(`${lang} ingest signed out`, anonymous.ingest.$get())).recent.find((j) => j.id === job.id);
+      assert.ok(hidden, `${lang}: the job isn't in the ingest history signed out`);
+      assert.equal(hidden.document, null, `${lang}: the ingest history shows a private text signed out`);
+      log.info("{lang}: ingest job {job}", { lang, doc: id, job: job.id, stages: job.result.stages });
+      return;
+    }
+    if (Date.now() > deadline) throw new Error(`${lang}: the job isn't ready in the ingest history after ${EVENT_TIMEOUT_MS / 1000} s`);
+    await sleep(1000);
   }
 }
 

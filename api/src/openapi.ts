@@ -81,6 +81,7 @@ export const TAGS = {
   annotations: "Annotations",
   reading: "Reading",
   lexicon: "Lexicon",
+  ingest: "Ingest",
 } as const;
 
 /** Signed in with Better Auth's session cookie (GET /api/auth/*), or an API key. */

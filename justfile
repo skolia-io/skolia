@@ -75,6 +75,7 @@ dev-api: install images env-local
     pnpm --filter @skolia/reader build
     pnpm exec wrangler d1 migrations apply DB --local --env='' </dev/null
     for lang in {{ langs }}; do pnpm exec wrangler d1 migrations apply "LEXICON_$(tr a-z A-Z <<<"$lang")" --local --env='' </dev/null; done
+    pnpm exec wrangler d1 migrations apply INGEST_DB --local --env='' </dev/null
     just load-lexicon local
     pnpm exec wrangler dev -c wrangler.jsonc -c wrangler.ingest.jsonc --port 8787
 
@@ -112,6 +113,7 @@ plan env:
 migrate env:
     infra/wrangler.sh {{ env }} d1 migrations apply DB --remote
     for lang in {{ langs }}; do infra/wrangler.sh {{ env }} d1 migrations apply "LEXICON_$(tr a-z A-Z <<<"$lang")" --remote; done
+    infra/wrangler.sh {{ env }} d1 migrations apply INGEST_DB --remote
 
 # Load each language's lexicon into its database (staging, production, pr-N or local), from its Nix build for cards.
 # A preview gets each language's entries for wordfreq's 3,000 most common words (infra/load-lexicon.py --sample).

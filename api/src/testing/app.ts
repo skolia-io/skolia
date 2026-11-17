@@ -6,7 +6,7 @@ import type { DocumentId, DocumentKey, DocumentSummary, Lang, NewClozeInput, Pag
 import { partKey, statusKey, versionsKey } from "@skolia/shared/keys";
 import { allPages, encodeCursor, type Cursor } from "@skolia/shared/page";
 import { createApp, type AppType } from "../app.ts";
-import type { Auth } from "../ports.ts";
+import type { Auth, IngestJobs } from "../ports.ts";
 import { sql } from "@skolia/util/sql";
 import {
   CloudflareQueue,
@@ -18,6 +18,7 @@ import {
   prepare,
   type JobsOf,
 } from "../worker/adapters.ts";
+import { D1IngestHistory } from "../worker/ingest-history.ts";
 import { ORIGIN, startLocal, type Local } from "./harness.ts";
 import { body, expectStatus } from "./responses.ts";
 
@@ -51,6 +52,7 @@ export function setup({ auth = local.auth, at = NOW, jobsOf = async () => null }
     documents: new D1Documents(env.DB),
     blobs: new R2Blobs(env.BLOBS),
     queue: new CloudflareQueue(env.INGEST, jobsOf),
+    ingestHistory: new D1IngestHistory(env.INGEST_DB),
     version: "v1.2.3",
     now: () => new Date(at),
     checkResponses: true,
@@ -58,6 +60,11 @@ export function setup({ auth = local.auth, at = NOW, jobsOf = async () => null }
 }
 
 export type App = ReturnType<typeof setup>;
+
+/** What a language's ingest container answers, idle unless given */
+export function ingestJobs(fields: Partial<IngestJobs> = {}): IngestJobs {
+  return { loading: false, running: [], waiting: [], jobs: [], ...fields };
+}
 
 export function putJson(key: string, value: unknown): Promise<void> {
   return new R2Blobs(local.env.BLOBS).put(key, JSON.stringify(value), "application/json");

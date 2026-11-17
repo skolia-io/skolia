@@ -13,22 +13,33 @@
 // deploy changes an image, new jobs start a container with the new one while the old
 // container finishes its jobs and stops.
 import { DurableObject, WorkerEntrypoint } from "cloudflare:workers";
-import { isLang, type Lang } from "@skolia/shared/api";
+import { isLang, timestamp, type IngestEvent, type Lang } from "@skolia/shared/api";
 import type { IngestJob } from "@skolia/shared/schema";
+import * as schemas from "@skolia/shared/schemas";
 import { log } from "../log.ts";
 import type { IngestJobs } from "../ports.ts";
+import { D1IngestHistory, receiveEvent } from "./ingest-history.ts";
 
 const logger = log("ingest");
 
 interface Env {
   INGESTER: DurableObjectNamespace<Ingester>;
   BLOBS: R2Bucket;
+  /** skolia-ingest's D1 database: the jobs the containers ran */
+  INGEST_DB: D1Database;
+  /** The containers' events (IngestEvents), which this Worker consumes into INGEST_DB */
+  INGEST_EVENTS: Queue<IngestEvent>;
+  /** INGEST_EVENTS's name, which tells its batches from the jobs' */
+  INGEST_EVENTS_QUEUE: string;
   /** How long the container stays up once idle; 1m by default, about what a start
    * costs (the models took 17 to 99 s to load, median 45 s, in 42 starts) */
   SLEEP_AFTER?: string;
 }
 
 const PORT = 8080;
+// The host a container sends its events to: Ingester routes it to IngestEvents
+// (interceptOutboundHttp), so they never leave the machine
+const EVENTS_HOST = "events.internal";
 const RETRY_DELAY_SECONDS = 60;
 const START_TIMEOUT_MS = 2 * 60 * 1000;
 const PROBE_TIMEOUT_MS = 5 * 1000;
@@ -43,6 +54,9 @@ const INACTIVITY_MARGIN_MS = 5 * 60 * 1000;
 // blockConcurrencyWhile's 30 s
 const STOP_TIMEOUT_MS = 10 * 1000;
 const SIGTERM = 15;
+// How long jobs are kept in INGEST_DB, from when they started
+const HISTORY_DAYS = 30;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** The container's blob store, served by Blobs */
 const BLOBS_HOST = "blobs.internal";
@@ -93,17 +107,24 @@ export class Ingester extends DurableObject<Env> {
   async state(): Promise<IngestJobs | null> {
     const container = this.ctx.container;
     if (!container?.running) return null;
+    let body: unknown;
     try {
       const response = await container.getTcpPort(PORT).fetch("http://ingest/jobs", { signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) });
       if (!response.ok) {
         await response.body?.cancel();
         return null;
       }
-      return (await response.json()) as IngestJobs;
+      body = await response.json();
     } catch {
       // Not listening yet
       return null;
     }
+    const parsed = schemas.ContainerJobs.safeParse(body);
+    if (!parsed.success) {
+      logger.error("ingest's jobs aren't what was expected", { error: parsed.error.message });
+      return null;
+    }
+    return parsed.data;
   }
 
   private image(lang: Lang): string {
@@ -115,7 +136,7 @@ export class Ingester extends DurableObject<Env> {
   async run(image: string, jobs: IngestJob[]): Promise<Outcome[]> {
     const container = this.container();
     if (!container.running) {
-      // One start for concurrent calls: registering the intercept is async
+      // One start for concurrent calls: registering the intercepts is async
       this.starting ??= this.start(container, image).finally(() => {
         this.starting = null;
       });
@@ -152,11 +173,12 @@ export class Ingester extends DurableObject<Env> {
   private async start(container: Container, image: string): Promise<void> {
     // Before start: an intercept lasts until the container stops
     await container.interceptOutboundHttp(BLOBS_HOST, (this.ctx.exports as { Blobs: Fetcher }).Blobs);
+    await container.interceptOutboundHttp(EVENTS_HOST, (this.ctx.exports as { IngestEvents: Fetcher }).IngestEvents);
     container.start({
       image,
       instance: INSTANCE,
       enableInternet: false,
-      env: { SKOLIA_BLOBS: `http://${BLOBS_HOST}` },
+      env: { SKOLIA_BLOBS: `http://${BLOBS_HOST}`, SKOLIA_IMAGE: image, SKOLIA_EVENTS_URL: `http://${EVENTS_HOST}/` },
     });
     logger.info("starting ingest", { image });
     this.ctx.waitUntil(
@@ -244,6 +266,10 @@ export class Ingester extends DurableObject<Env> {
 
 export default {
   async queue(batch, env) {
+    if (batch.queue === env.INGEST_EVENTS_QUEUE) {
+      await store(env, batch as MessageBatch<unknown>);
+      return;
+    }
     logger.info("received jobs", {
       docs: batch.messages.map((message) => message.body.doc),
       attempts: batch.messages.map((message) => message.attempts),
@@ -273,6 +299,48 @@ export class Blobs extends WorkerEntrypoint<Env> {
     }
     const object = await this.env.BLOBS.get(key);
     return new Response(object?.body ?? null, { status: object ? 200 : 404 });
+  }
+}
+
+/** A container's events: it POSTs each to EVENTS_HOST, and they're queued for this Worker
+ * to store (store below) */
+export class IngestEvents extends WorkerEntrypoint<Env> {
+  override async fetch(request: Request): Promise<Response> {
+    // JSON, as the jobs' queue, so a message can be read outside a Worker
+    const send = async (event: IngestEvent) => void (await this.env.INGEST_EVENTS.send(event, { contentType: "json" }));
+    return await receiveEvent(send, request);
+  }
+}
+
+/** Stores the containers' events. One that isn't an event is dropped, since it never will
+ * be; the batch is retried if storing fails. */
+async function store(env: Env, batch: MessageBatch<unknown>): Promise<void> {
+  const parsed = batch.messages.flatMap((message): { message: Message<unknown>; event: IngestEvent }[] => {
+    const event = schemas.IngestEvent.safeParse(message.body);
+    if (event.success) return [{ message, event: event.data }];
+    logger.error("not an ingest event", { body: message.body, error: event.error.message });
+    return [];
+  });
+  const before = timestamp(new Date(Date.now() - HISTORY_DAYS * DAY_MS));
+  const history = new D1IngestHistory(env.INGEST_DB);
+  try {
+    await history.record(
+      parsed.map(({ event }) => event),
+      before,
+    );
+    logger.info("stored ingest events", { events: parsed.length });
+  } catch (error: unknown) {
+    // One the database refuses fails the batch; store them one at a time, so only it's retried
+    logger.warn("storing ingest events together failed", { events: parsed.length, error });
+    for (const { message, event } of parsed) {
+      try {
+        await history.record([event], before);
+        message.ack();
+      } catch (error: unknown) {
+        logger.error("storing an ingest event failed", { id: event.id, kind: event.kind, error });
+        message.retry();
+      }
+    }
   }
 }
 

@@ -86,6 +86,7 @@ import type {
   UserData,
 } from "../ports.ts";
 import { log } from "../log.ts";
+import { prepare } from "./d1.ts";
 import type { User } from "./user.ts";
 
 const logger = log("adapters");
@@ -178,10 +179,7 @@ const LexiconRow = z.object({
 
 const FeatureRow = z.object({ id: z.number().int(), feature: z.string(), value: z.string() });
 
-export const prepare = (db: D1Database, query: Query | Sql): D1PreparedStatement => {
-  const { text, params } = compile(query);
-  return db.prepare(text).bind(...params);
-};
+export { prepare };
 
 /** Each language's lexicon database, skolia-lexicon-{lang}[-env], bound as LEXICON_{LANG}
  * (api/wrangler.jsonc). */
@@ -590,7 +588,7 @@ export class D1Documents implements DocumentStore {
     return row ? schemas.DocumentRow.parse(row) : null;
   }
 
-  async visibleAll(ids: readonly DocumentId[], viewer: UserId): Promise<ReadonlyMap<DocumentId, StoredDocument>> {
+  async visibleAll(ids: readonly DocumentId[], viewer: UserId | null): Promise<ReadonlyMap<DocumentId, StoredDocument>> {
     if (ids.length === 0) return new Map();
     const found = await this.db.batch(ids.map((id) => prepare(this.db, visibleQuery(id, viewer))));
     return new Map(

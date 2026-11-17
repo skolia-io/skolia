@@ -161,7 +161,7 @@ export async function get(deps: Deps, id: string, viewer: User | null): Promise<
 }
 
 /** No container running means one is about to start for this document. */
-export function placeIn(jobs: IngestJobs | null, id: DocumentId): QueuePlace {
+export function placeIn(jobs: Pick<IngestJobs, "loading" | "running" | "waiting"> | null, id: DocumentId): QueuePlace {
   if (jobs === null) return { starting: true, ahead: null };
   const index = [...jobs.running, ...jobs.waiting].indexOf(id);
   return { starting: jobs.loading, ahead: index < 0 ? null : index };

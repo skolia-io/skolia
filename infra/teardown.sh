@@ -18,11 +18,13 @@ wrangler() { "$root/infra/wrangler.sh" account "$@"; }
 web=skolia-$env
 ingest=skolia-ingest-$env
 queue=skolia-ingest-$env
+events=skolia-ingest-events-$env
 bucket=skolia-$env
 
 # Listed first, so a failed listing stops the teardown rather than skipping a step
 workers=$(cf GET workers/scripts | jq -r '.result[].id')
 consumers=$(cf_pages queues | jq -r --arg q "$queue" 'select(.queue_name == $q) | .consumers[].script')
+event_consumers=$(cf_pages queues | jq -r --arg q "$events" 'select(.queue_name == $q) | .consumers[].script')
 # wrangler delete leaves them. Named skolia-ingest-pr-N (api/wrangler.ingest.jsonc), or
 # skolia-ingest-{lang}-pr-N before the durable_object scheduling policy.
 containers=$(wrangler containers list --json |
@@ -31,6 +33,9 @@ buckets=$(r2_buckets "$bucket")
 
 if grep -qx "$ingest" <<<"$consumers"; then
   wrangler queues consumer remove "$queue" "$ingest" </dev/null
+fi
+if grep -qx "$ingest" <<<"$event_consumers"; then
+  wrangler queues consumer remove "$events" "$ingest" </dev/null
 fi
 if grep -qx "$ingest" <<<"$workers"; then
   wrangler delete "$ingest" </dev/null

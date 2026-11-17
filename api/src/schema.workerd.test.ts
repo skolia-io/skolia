@@ -6,6 +6,7 @@ import { authOptions } from "./auth.ts";
 import { ALICE, local, useLocal } from "./testing/app.ts";
 import { authConfig } from "./testing/harness.ts";
 import { DOCUMENT_QUERIES } from "./worker/adapters.ts";
+import { INGEST_QUERIES } from "./worker/ingest-history.ts";
 
 useLocal();
 
@@ -113,6 +114,19 @@ test("no document query scans a whole table or sorts its rows", async () => {
   const wrong = plans.filter(({ name, plan }) =>
     plan.some((d) => /^SCAN \S+$/u.test(d) || (paged(name) && /USE TEMP B-TREE FOR .*ORDER BY/u.test(d))),
   );
+  assert.deepEqual(wrong, [], wrong.map(({ name, plan }) => `${name}: ${plan.join("; ")}`).join("\n"));
+});
+
+test("the ingest history's queries seek its index", async () => {
+  const plans = await Promise.all(
+    Object.entries(INGEST_QUERIES).map(async ([name, sql]) => {
+      const { results } = await local.env.INGEST_DB.prepare(`EXPLAIN QUERY PLAN ${sql}`)
+        .bind(...Array.from({ length: parameters(sql) }, () => "x"))
+        .all<{ detail: string }>();
+      return { name, plan: results.map((r) => r.detail) };
+    }),
+  );
+  const wrong = plans.filter(({ plan }) => plan.some((d) => /^SCAN ingest_job$/u.test(d) || /USE TEMP B-TREE/u.test(d)));
   assert.deepEqual(wrong, [], wrong.map(({ name, plan }) => `${name}: ${plan.join("; ")}`).join("\n"));
 });
 

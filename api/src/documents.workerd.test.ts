@@ -21,6 +21,7 @@ import {
   TEXT,
   client,
   importText,
+  ingestJobs,
   importer,
   listed,
   local,
@@ -431,9 +432,9 @@ test("the importer sees where their document is in the queue; others don't", asy
   const place = async (jobs: IngestJobs | null, headers?: Headers) =>
     (await body("get", view(setup({ jobsOf: async () => jobs }), headers, id))).queue;
   assert.deepEqual(await place(null, importer), { starting: true, ahead: null });
-  assert.deepEqual(await place({ loading: true, running: [], waiting: [id] }, importer), { starting: true, ahead: 0 });
-  assert.deepEqual(await place({ loading: false, running: [other], waiting: [other, id] }, importer), { starting: false, ahead: 2 });
-  assert.deepEqual(await place({ loading: false, running: [other], waiting: [] }, importer), { starting: false, ahead: null });
+  assert.deepEqual(await place(ingestJobs({ loading: true, waiting: [id] }), importer), { starting: true, ahead: 0 });
+  assert.deepEqual(await place(ingestJobs({ running: [other], waiting: [other, id] }), importer), { starting: false, ahead: 2 });
+  assert.deepEqual(await place(ingestJobs({ running: [other] }), importer), { starting: false, ahead: null });
   assert.equal(await place(null), undefined);
   await readyAt(id, "1");
   assert.equal(await place(null, importer), undefined);

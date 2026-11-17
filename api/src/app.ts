@@ -13,6 +13,7 @@ import * as schemas from "@skolia/shared/schemas";
 import * as annotations from "./controllers/annotations.ts";
 import * as cards from "./controllers/cards.ts";
 import * as documents from "./controllers/documents.ts";
+import * as ingest from "./controllers/ingest.ts";
 import * as positions from "./controllers/positions.ts";
 import * as readingList from "./controllers/reading-list.ts";
 import { fail, ok, type BlobResult, type Failed, type NotModified, type Result } from "./controllers/result.ts";
@@ -298,6 +299,16 @@ export function createApp(deps: Deps) {
       validator("query", schemas.TagsQuery, badRequest()),
       responds({ 200: json(schemas.page(schemas.AvailableTag), "A page of tags") }),
       async (c) => send(c, await documents.tags(deps, c.req.valid("query"))),
+    )
+    .get(
+      "/api/ingest",
+      anyone(
+        TAGS.ingest,
+        "What analysis is doing",
+        "Each language's analyser, if one is running, with the jobs it's running and those waiting, and the jobs started most recently. A text the viewer can't see is shown without its id, title or error.",
+      ),
+      responds({ 200: json(schemas.IngestOverview, "The analysers and their jobs") }),
+      async (c) => send(c, await ingest.overview(deps, await deps.auth.user(c.req.raw.headers))),
     )
     .post(
       "/api/documents",
