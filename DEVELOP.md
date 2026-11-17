@@ -155,7 +155,7 @@ PDB is licensed CC BY-NC-SA 4.0 (non-commercial). Use it for evaluation only; do
 
 ### Lexicon
 
-Large inputs and outputs live in `data/` at the repo root (git-ignored). The lexicon and valency files the images ship are built by Nix (`flake.nix`) from the inputs pinned in `inputs.sha256`, kept in R2 (`skolia-tfstate/inputs/{sha256}-{name}.zst`) because kaikki.org overwrites its extract in place. `scripts/fetch_inputs.sh` puts them in the Nix store (needs `wrangler login`); `just images` and `deploy-ingest` run it. To build one language's files by themselves:
+Large inputs and outputs live in `data/` at the repo root (git-ignored). The lexicon and valency files the images ship are built by Nix (`flake.nix`) from the inputs pinned in `inputs.sha256`, kept in R2 (`skolia-lexicon-sources/{sha256}-{name}.zst`, `infra/shared/sources.tf`) because kaikki.org overwrites its extract in place. `scripts/fetch_inputs.sh` puts them in the Nix store (needs `wrangler login`); `just images` and `deploy-ingest` run it. To build one language's files by themselves:
 
 ```fish
 scripts/fetch_inputs.sh pl
@@ -168,7 +168,7 @@ The lexicon's version names the extract by its hash, so the same extract gives t
 mkdir -p ../data/kaikki
 curl -fsSL -o ../data/kaikki/kaikki.org-dictionary-Polish.jsonl https://kaikki.org/dictionary/Polish/kaikki.org-dictionary-Polish.jsonl
 set -l sha (shasum -a 256 ../data/kaikki/kaikki.org-dictionary-Polish.jsonl | cut -d' ' -f1)
-zstd -19 -T0 -c ../data/kaikki/kaikki.org-dictionary-Polish.jsonl | pnpm --dir ../api exec wrangler r2 object put skolia-tfstate/inputs/$sha-kaikki.org-dictionary-Polish.jsonl.zst --pipe --remote
+zstd -19 -T0 -c ../data/kaikki/kaikki.org-dictionary-Polish.jsonl | pnpm --dir ../api exec wrangler r2 object put skolia-lexicon-sources/$sha-kaikki.org-dictionary-Polish.jsonl.zst --pipe --remote
 # then put $sha on the kaikki line of inputs.sha256
 ```
 
