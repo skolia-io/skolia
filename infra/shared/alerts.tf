@@ -1,11 +1,6 @@
 variable "alert_email" {
   type        = string
-  default     = null
-  description = "Address that gets the Usage Based Billing emails. Required in production."
-  validation {
-    condition     = var.env != "production" || var.alert_email != null
-    error_message = "alert_email is required in production."
-  }
+  description = "Address that gets the Usage Based Billing emails."
 }
 
 locals {
@@ -23,9 +18,8 @@ locals {
   }
 }
 
-# Usage is per account, so the alerts are made once, with production
 resource "cloudflare_notification_policy" "usage" {
-  for_each = var.env == "production" ? local.usage_alerts : {}
+  for_each = local.usage_alerts
 
   account_id  = var.account_id
   name        = "skolia: ${each.value.name}"
@@ -41,4 +35,22 @@ resource "cloudflare_notification_policy" "usage" {
   mechanisms = {
     email = [{ id = var.alert_email }]
   }
+}
+
+# Made by the app's module with production, before this one: adopted, not made again
+import {
+  for_each = {
+    d1_rows_read                    = "227ff8b240e54d7ea87d7f1eab1f307a"
+    d1_rows_written                 = "ab8abb28b7c84333aaaf2da801725f86"
+    queues_standard_operations      = "bca73c2b1dce449b8b4c0d0f9937cf10"
+    r2_class_a_operations           = "6cdf1ab57a6c4d2da6809468c70c10b7"
+    r2_class_b_operations           = "e1cf9c27b29a4df9bbc89b4bea520445"
+    r2_storage                      = "cd4a07d7c41042c2ac1f0834d0732ab2"
+    worker_durable_objects_duration = "e27cfd17b352406c85ad2c2b091d2ca7"
+    worker_durable_objects_requests = "5454b92c48304d228b45dbeff3a55001"
+    worker_requests                 = "dab331e4cc2246ed97b14541dc25ebe9"
+    worker_standard_cpu_ms          = "842da22cab824a6fbd33148ea2e58ffa"
+  }
+  to = cloudflare_notification_policy.usage[each.key]
+  id = "${var.account_id}/${each.value}"
 }

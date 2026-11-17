@@ -1,6 +1,6 @@
 # infra
 
-Terraform for what wrangler doesn't deploy: R2 bucket, D1 databases (the app's, and a lexicon per language), queue, an R2 token for the ingest containers, and billing usage alerts. Both Workers are deployed with wrangler: `skolia` (reader + API, on workers.dev and skolia.io) from `api/wrangler.jsonc`, and `skolia-ingest` with its containers from `api/wrangler.ingest.jsonc`. Wrangler applies their Durable Object migrations; the provider resends the first migration on every update, which Cloudflare refuses ([cloudflare/terraform-provider-cloudflare#5701](https://github.com/cloudflare/terraform-provider-cloudflare/issues/5701)).
+Terraform for what wrangler doesn't deploy: per environment, an R2 bucket, D1 databases (the app's, and a lexicon per language), a queue and an R2 token for the ingest containers; and once for the account (`infra/shared/`), billing usage alerts, the provider mirror and the lexicon's sources (`skolia-lexicon-sources`). Both Workers are deployed with wrangler: `skolia` (reader + API, on workers.dev and skolia.io) from `api/wrangler.jsonc`, and `skolia-ingest` with its containers from `api/wrangler.ingest.jsonc`. Wrangler applies their Durable Object migrations; the provider resends the first migration on every update, which Cloudflare refuses ([cloudflare/terraform-provider-cloudflare#5701](https://github.com/cloudflare/terraform-provider-cloudflare/issues/5701)).
 
 Account `1d3ca537bca3f2918d2778118d23f0a8`. Secrets in `pass` under `cloudflare/andyyu2004@gmail.com/1d3ca537bca3f2918d2778118d23f0a8/`. Terraform comes from `flake.nix` (`nix develop`).
 
@@ -13,7 +13,7 @@ Account `1d3ca537bca3f2918d2778118d23f0a8`. Secrets in `pass` under `cloudflare/
 3. Dashboard: an R2 token for the state bucket, in `pass` as `skolia-tfstate-access-id` and `skolia-tfstate-secret-access-key`.
 4. The state bucket `skolia-tfstate`, created once through the API with the Terraform token (Terraform can't create its own state bucket).
 5. skolia.io bought through Cloudflare Registrar, so its zone is on the account.
-6. Dashboard (Notifications): a Billing Budget alert in dollars. `alerts.tf` covers per-product usage, but Containers have no usage alert and the provider has no budget alert type.
+6. Dashboard (Notifications): a Billing Budget alert in dollars. `shared/alerts.tf` covers per-product usage, but Containers have no usage alert and the provider has no budget alert type.
 7. Google Cloud project `skolia` (andyyu2004@gmail.com), Google Auth Platform: External audience, scopes `openid`, `userinfo.email`, `userinfo.profile`, authorised domain `skolia.io`. One OAuth client (Web application, no JavaScript origins) per environment, each in `pass` under `gcp/andyyu2004@gmail.com/<client>/{client-id,client-secret}`:
 
    | Client | Redirect URI |
@@ -35,7 +35,7 @@ Account `1d3ca537bca3f2918d2778118d23f0a8`. Secrets in `pass` under `cloudflare/
 | Terraform state | `skolia.tfstate` | `skolia-staging.tfstate` | `skolia-pr-N.tfstate` |
 | Wrangler | top level of `api/wrangler*.jsonc` | `env.staging` | `api/wrangler.pr-N.json`, `api/wrangler.ingest.pr-N.json` (generated) |
 
-All are on the same account. Billing alerts are per account, so only production makes them. `infra/tf.sh <env>` and `infra/wrangler.sh <env>` run terraform and wrangler for one environment. `api/wrangler.jsonc` names each D1 database and wrangler looks up its id. If the name isn't there, `wrangler deploy` creates it outside Terraform, so Terraform goes first (`deploy-infra`); `d1 migrations apply` fails instead.
+All are on the same account. What there's one of per account (billing alerts, the provider mirror, the lexicon's sources) is in `infra/shared/`, its own environment `shared` with its own state, `skolia-shared.tfstate`; CI's `deploy-shared` applies it from main when something a plan reads changed. `infra/tf.sh <env>` and `infra/wrangler.sh <env>` run terraform and wrangler for one environment. `api/wrangler.jsonc` names each D1 database and wrangler looks up its id. If the name isn't there, `wrangler deploy` creates it outside Terraform, so Terraform goes first (`deploy-infra`); `d1 migrations apply` fails instead.
 
 A new environment: add it to the checks in `tf.sh`, `wrangler.sh` and `deploy-ingest.sh` and to `var.env`, add its `env` blocks, then `infra/tf.sh <env> apply`, and deploy.
 
@@ -87,7 +87,7 @@ Not every change deploys. CI's `changes` job (`.github/changes.py`) sorts a run 
 
 `check` is a required check and a skipped job counts as passing, so `mergeable` fails when `check` should have run and didn't pass, or when `check-curated` failed.
 
-CI installs Terraform's providers from the public R2 bucket `skolia-tf-providers` (`infra/providers.tf`, made with production) through `infra/terraformrc`, since the registry sends Terraform to GitHub's releases, which time out for unauthenticated requests at times. CI's `mirror-providers` job (`infra/mirror-providers.py`, also `just mirror-providers`) runs before `check` and adds whatever in `.terraform.lock.hcl` the mirror is missing, downloading GitHub's zips with a token; a zip whose hash isn't in the lock file is refused, and the lock file's hashes check what CI installs.
+CI installs Terraform's providers from the public R2 bucket `skolia-tf-providers` (`infra/shared/mirror.tf`) through `infra/terraformrc`, since the registry sends Terraform to GitHub's releases, which time out for unauthenticated requests at times. CI's `mirror-providers` job (`infra/mirror-providers.py`, also `just mirror-providers`) runs before `check` and adds whatever in `.terraform.lock.hcl` the mirror is missing, downloading GitHub's zips with a token; a zip whose hash isn't in the lock file is refused, and the lock file's hashes check what CI installs.
 
 These, and `main`'s ruleset (pull requests only, through a merge queue that requires CI's `check` and `mergeable` jobs), are managed in Terraform in the dotfiles (`~/.dotfiles/terraform/github`), from `pass`.
 
@@ -95,6 +95,7 @@ By hand, with the credentials above, the same tasks CI runs:
 
 ```fish
 just plan staging
+just apply shared               # billing alerts, provider mirror, lexicon sources
 just deploy staging              # deploy-infra, deploy-ingest and deploy-web, in order; not load-lexicon
 just deploy-infra staging        # terraform apply, D1 migrations
 just deploy-ingest staging       # build, push and deploy the containers
