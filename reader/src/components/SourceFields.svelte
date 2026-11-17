@@ -58,7 +58,7 @@
       <input type="radio" name="{id}-visibility" checked={!(share && shareable)} onchange={() => (share = false)}>
       <span>
         <strong>Private</strong>
-        <span class="hint">Left out of Explore. Anyone with its link can still open it.</span>
+        <span class="hint">Only you can see it.</span>
       </span>
     </label>
     <label class={["choice", { disabled: !shareable }]}>
