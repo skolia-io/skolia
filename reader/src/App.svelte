@@ -67,7 +67,10 @@
   }}
 />
 
-<Nav page={route.page} {user} onerror={(message) => (error = message)} />
+<!-- A language's review is only its cards, with a way out in its corner -->
+{#if !(route.page === "review" && route.lang)}
+  <Nav page={route.page} {user} onerror={(message) => (error = message)} />
+{/if}
 
 <div class="content">
   {#if error}
@@ -88,7 +91,10 @@
   {:else if route.page === "upload"}
     <Upload {user} />
   {:else if route.page === "review"}
-    <Review {user} lang={route.lang} group={route.group} />
+    <!-- Anew, so the languages' counts are loaded again after a session -->
+    {#key route.lang}
+      <Review {user} lang={route.lang} group={route.group} />
+    {/key}
   {:else if route.page === "cards"}
     <Cards {user} lang={route.lang} />
   {:else if route.page === "settings"}

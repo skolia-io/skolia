@@ -76,7 +76,7 @@
     {#if user}
       {@render link("#/list", "Reading list", page === "list", ICONS.list, false)}
       {@render link("#/upload", "Upload", page === "upload", ICONS.upload, false)}
-      {@render link("#/review", "Review", page === "review" || page === "cards", ICONS.review, false)}
+      {@render link("#/review", "Review", page === "review", ICONS.review, false)}
     {/if}
     {@render link("#/about", "About", page === "about", ICONS.about, true)}
   </nav>
@@ -96,6 +96,9 @@
           <span class="muted email">{user.email}</span>
         </p>
         <ul>
+          <li>
+            <a href="#/cards" aria-current={page === "cards" ? "page" : undefined} onclick={() => menu?.hidePopover()}>Manage cards</a>
+          </li>
           <li>
             <a href="#/settings" aria-current={page === "settings" ? "page" : undefined} onclick={() => menu?.hidePopover()}>Settings</a>
           </li>

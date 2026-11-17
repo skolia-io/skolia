@@ -1,15 +1,16 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
 
-  /** A page's column with its title; actions sit at the title's end, wrapping under it on a phone. */
+  /** A page's column. Its title is for screen readers, since the nav already says where you are;
+   * actions sit at the column's top end, wrapping on a phone. */
   let { title, wide = false, actions, children }: { title: string; wide?: boolean; actions?: Snippet; children: Snippet } = $props();
 </script>
 
 <main class={{ wide }}>
-  <div class="title-row">
-    <h1>{title}</h1>
-    {@render actions?.()}
-  </div>
+  <h1>{title}</h1>
+  {#if actions}
+    <div class="actions"> {@render actions()} </div>
+  {/if}
   {@render children()}
 </main>
 
@@ -24,16 +25,21 @@
     max-width: 56rem;
   }
 
-  .title-row {
+  h1 {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .actions {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-end;
     gap: 0.5rem 1rem;
     margin: 0.5rem 0 1rem;
-  }
-
-  h1 {
-    margin: 0;
   }
 </style>

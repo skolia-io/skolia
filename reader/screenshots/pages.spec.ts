@@ -99,14 +99,20 @@ test("review, forms on their own", async ({ page }) => {
   await expect(page).toHaveScreenshot("review-forms.png", { fullPage: true });
 });
 
-test("review, front", async ({ page }) => {
+test("review, languages", async ({ page }) => {
   await open(page, "#/review");
+  await expect(page.getByText("6 new")).toBeVisible();
+  await expect(page).toHaveScreenshot("review-languages.png", { fullPage: true });
+});
+
+test("review, front", async ({ page }) => {
+  await open(page, "#/review/pl");
   await expect(page.getByText("sklep", { exact: true })).toBeVisible();
   await expect(page).toHaveScreenshot("review-front.png", { fullPage: true });
 });
 
 test("review, answer", async ({ page }) => {
-  await open(page, "#/review");
+  await open(page, "#/review/pl");
   await page.getByRole("button", { name: "Show answer" }).click();
   await page.getByText("Forms", { exact: true }).click();
   await expect(page).toHaveScreenshot("review-answer.png", { fullPage: true });
@@ -114,7 +120,7 @@ test("review, answer", async ({ page }) => {
 
 /** Grades the cards before the cloze card Good, so it's the one shown. */
 async function toCloze(page: Page): Promise<void> {
-  await open(page, "#/review");
+  await open(page, "#/review/pl");
   for (const _ of [0, 1]) {
     await page.getByRole("button", { name: "Show answer" }).click();
     await page.getByRole("button", { name: "Good" }).click();
