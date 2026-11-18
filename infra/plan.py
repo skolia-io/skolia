@@ -3,8 +3,8 @@
 # requires-python = ">=3.12"
 # dependencies = []
 # ///
-"""What a CI run and a deploy of an environment need to do: each node of GRAPH whose key
-skolia-ci (infra/shared/ci.tf) has no record of.
+"""What a CI run and a deploy of an environment need to do: each target in the graph whose
+key skolia-ci (infra/shared/ci.tf) has no record of.
   plan.py checks                        print the checks still to pass, as JSON, for ci.yml:
                                         {"check": true, "screenshots": false, "plan_infra": ["shared"]}
   plan.py passed <check>                record a check's pass
@@ -13,18 +13,22 @@ skolia-ci (infra/shared/ci.tf) has no record of.
   plan.py built <build>                 record a build's key once it's in the registry or Cachix
   plan.py deployed <env> <deploy>       record a deploy's key once it's deployed
   plan.py torn-down <env>               record that a preview serves nothing (infra/teardown.sh)
-  plan.py keys                          print each node's key
+  plan.py graph                         print each node's key and edges
   plan.py version                       the skolia Worker's version
-A node's key is a hash of its content, a Nix out path that nix eval gives without building
-anything, and the keys of what it depends on: its build edges (what it's made from) and its
-test edges (what it runs against). So a change reaches everything downstream of it, and
-nothing else. A build or check is recorded once for every environment (the build table), a
-deploy for each environment (deployment). Without CLOUDFLARE_API_TOKEN (a fork's pull
-request) every check runs and none is recorded. The version is the tag at HEAD, or else the
-last tag and the skolia Worker's out path hash (v0.0.17+4qqk2ki3mxwb): not a commit, so a
-skipped deploy serves what a new one would. Secrets aren't in any key: after changing one,
-deploy by hand. Needs the tags (a full clone), CLOUDFLARE_ACCOUNT_ID and
-CLOUDFLARE_API_TOKEN.
+The graph's nodes are projects (directories and files, named by path) and the targets CI
+builds, checks and deploys. Each has content and edges: build edges (what it's made from)
+and test edges (what it runs against). The pnpm projects' build edges are their package.json
+workspace dependencies; the rest are in GRAPH. A node's key is a hash of its content and its
+dependencies' keys, following build edges, and test edges too for a test: a check, or a
+target with test edges of its own. A project's content is its files' Nix source (flake.nix
+hashes), and a Nix build's its out path, which covers what it's built from, nixpkgs
+included; nix eval gives both without building anything. A build or check is recorded once
+for every environment (the build table), a deploy for each environment (deployment).
+Without CLOUDFLARE_API_TOKEN (a fork's pull request) every check runs and none is recorded.
+The version is the tag at HEAD, or else the last tag and the skolia Worker's out path hash
+(v0.0.17+4qqk2ki3mxwb): not a commit, so a skipped deploy serves what a new one would.
+Secrets aren't in any key: after changing one, deploy by hand. Needs the tags (a full
+clone), CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN.
 """
 
 import hashlib
@@ -47,6 +51,8 @@ LANGS = ("pl", "en", "fr")
 DATABASE = "skolia-ci"
 ENV = re.compile(r"staging|production|pr-[0-9]+")
 API = "https://api.cloudflare.com/client/v4"
+BUILD = frozenset({"build"})
+TEST = frozenset({"build", "test"})
 
 log = logging.getLogger("plan")
 
@@ -61,15 +67,40 @@ def digest(*parts: str) -> str:
     return hashlib.sha256("\n".join(parts).encode()).hexdigest()[:24]
 
 
+@dataclass(frozen=True)
+class Node:
+    scope: Literal["project", "build", "check", "deploy"]
+    # Content: these paths' Nix source, or else what this gives
+    paths: tuple[str, ...] = ()
+    content: Callable[[], str] = lambda: ""
+    build: tuple[str, ...] = ()
+    test: tuple[str, ...] = ()
+
+
 @cache
 def system() -> str:
     return run("nix", "eval", "--raw", "--impure", "--expr", "builtins.currentSystem")
 
 
 @cache
-def flake() -> dict[str, str]:
-    """flake.nix keys: the skolia Worker's out path and the sources'."""
-    return json.loads(run("nix", "eval", "--json", f".#keys.{system()}"))
+def flake() -> dict[str, object]:
+    """The skolia Worker's out path, and each project's source (flake.nix planner)."""
+    paths = {name: node.paths for name, node in graph().items() if node.paths}
+    return json.loads(
+        run(
+            "nix",
+            "eval",
+            "--json",
+            ".#planner",
+            "--apply",
+            f"p: {{ worker = p.worker.{system()}; "
+            f"hashes = p.hashes (builtins.fromJSON ''{json.dumps(paths)}''); }}",
+        )
+    )
+
+
+def worker() -> str:
+    return cast(str, flake()["worker"])
 
 
 @cache
@@ -107,62 +138,146 @@ def describe(*args: str) -> str | None:
 def version() -> str:
     if (tag := describe("--exact-match")) is not None:
         return tag
-    worker = flake()["skolia-worker"].removeprefix("/nix/store/")[:12]
-    return f"{describe('--abbrev=0') or 'untagged'}+{worker}"
+    return f"{describe('--abbrev=0') or 'untagged'}+{worker().removeprefix('/nix/store/')[:12]}"
 
 
-@dataclass(frozen=True)
-class Node:
-    scope: Literal["build", "check", "deploy"]
-    content: Callable[[], str] = lambda: ""
-    build: tuple[str, ...] = ()
-    test: tuple[str, ...] = ()
+def pnpm_projects() -> dict[str, Node]:
+    """Each pnpm-workspace.yaml package, built on its workspace dependencies and the lock files."""
+    dirs = re.findall(
+        r"^  - (\S+)$",
+        (ROOT / "pnpm-workspace.yaml").read_text().split("\n\n")[0],
+        re.MULTILINE,
+    )
+    manifests = {d: json.loads((ROOT / d / "package.json").read_text()) for d in dirs}
+    by_name = {manifest["name"]: f"{d}/" for d, manifest in manifests.items()}
+
+    def workspace(manifest: dict[str, dict[str, str]], *fields: str) -> tuple[str, ...]:
+        return tuple(
+            sorted(
+                by_name[dep]
+                for field in fields
+                for dep, spec in manifest.get(field, {}).items()
+                if spec.startswith("workspace:")
+            )
+        )
+
+    return {
+        f"{d}/": Node(
+            "project",
+            paths=(d,),
+            build=(
+                "workspace",
+                *workspace(manifest, "dependencies", "devDependencies"),
+            ),
+            test=workspace(manifest, "testDependencies"),
+        )
+        for d, manifest in manifests.items()
+    }
 
 
 IMAGES = tuple(f"image-{lang}" for lang in LANGS)
 PLAN_INFRA = tuple(f"plan-infra-{env}" for env in ("shared", "staging", "production"))
-
-# Deploys in the order deploy.yml runs them. The end-to-end tests and the curated sync's
-# script are in api/, so in the skolia Worker's source.
-GRAPH: dict[str, Node] = {
-    **{
-        image: Node("build", lambda lang=lang: analysis()[lang]["image"])
-        for image, lang in zip(IMAGES, LANGS)
-    },
-    "worker": Node("build", lambda: flake()["skolia-worker"]),
-    "check": Node("check", lambda: flake()["repo"]),
-    # The specs and their baselines, by git tree: the baselines are in git LFS, which the
-    # planner doesn't check out, and a checkout with them would differ
-    "screenshots": Node(
-        "check",
-        lambda: run("git", "rev-parse", "HEAD:reader/screenshots"),
-        test=("worker",),
-    ),
-    "plan-infra-shared": Node("check", lambda: flake()["infra-shared"]),
-    "plan-infra-staging": Node("check", test=("infra",)),
-    "plan-infra-production": Node("check", test=("infra",)),
-    "infra": Node("deploy", lambda: flake()["infra"]),
-    "ingest": Node("deploy", lambda: flake()["ingest"], build=IMAGES),
-    "lexicon": Node(
-        "deploy", lambda: digest(*(analysis()[lang]["lexicon"] for lang in LANGS))
-    ),
-    "web": Node("deploy", version, build=("worker",)),
-    "e2e": Node("deploy", test=("infra", "ingest", "lexicon", "web")),
-    "curated": Node("deploy", lambda: flake()["curated"], test=("web",)),
-}
-
-
-def scope(of: str) -> list[str]:
-    return [name for name, node in GRAPH.items() if node.scope == of]
+MIGRATIONS = ("api/migrations/", "api/lexicon-migrations/", "ingest/migrations/")
+BASELINES = "reader/screenshots/__screenshots__/"
 
 
 @cache
-def key(name: str) -> str:
-    node = GRAPH[name]
-    edges = [("build", dep) for dep in node.build] + [
-        ("test", dep) for dep in node.test
+def graph() -> dict[str, Node]:
+    projects: dict[str, Node] = {
+        **pnpm_projects(),
+        "workspace": Node(
+            "project",
+            paths=(
+                "package.json",
+                "pnpm-lock.yaml",
+                "pnpm-workspace.yaml",
+                "biome.json",
+            ),
+        ),
+        # What CI's tools come from, and the recipes it runs
+        "tooling": Node("project", paths=("flake.nix", "flake.lock", "justfile")),
+        "analysis/": Node("project", paths=("analysis",)),
+        "curated/": Node("project", paths=("curated",)),
+        # Terraform's resources (not shared/ or tokens/, their own environments)
+        "infra/": Node(
+            "project",
+            paths=(
+                *sorted(f"infra/{tf.name}" for tf in (ROOT / "infra").glob("*.tf")),
+                "infra/.terraform.lock.hcl",
+                "infra/terraformrc",
+                "infra/tf.sh",
+                "infra/wrangler.sh",
+            ),
+        ),
+        "infra/shared/": Node(
+            "project", paths=("infra/shared", "infra/terraformrc", "infra/tf.sh")
+        ),
+        **{m: Node("project", paths=(m.rstrip("/"),)) for m in MIGRATIONS},
+        # By git tree: they're in git LFS, which the planner doesn't check out
+        BASELINES: Node(
+            "project",
+            content=lambda: run("git", "rev-parse", f"HEAD:{BASELINES.rstrip('/')}"),
+        ),
+    }
+    # Deploys in the order deploy.yml runs them
+    targets: dict[str, Node] = {
+        **{
+            image: Node("build", content=lambda lang=lang: analysis()[lang]["image"])
+            for image, lang in zip(IMAGES, LANGS)
+        },
+        "worker": Node("build", content=worker),
+        # just check and just test
+        "check": Node("check", build=tuple(projects)),
+        "screenshots": Node("check", build=("tooling",), test=("reader/", BASELINES)),
+        "plan-infra-shared": Node("check", build=("tooling",), test=("infra/shared/",)),
+        "plan-infra-staging": Node("check", build=("tooling",), test=("infra/",)),
+        "plan-infra-production": Node("check", build=("tooling",), test=("infra/",)),
+        "infra": Node("deploy", build=("infra/", *MIGRATIONS)),
+        "ingest": Node("deploy", build=("ingest/", *IMAGES)),
+        "lexicon": Node(
+            "deploy",
+            content=lambda: digest(*(analysis()[lang]["lexicon"] for lang in LANGS)),
+        ),
+        "web": Node("deploy", content=version, build=("worker",)),
+        # The tests are in api/, so in the skolia Worker
+        "e2e": Node("deploy", test=("infra", "ingest", "lexicon", "web")),
+        "curated": Node("deploy", test=("curated/", "web")),
+    }
+    return projects | targets
+
+
+def scope(of: str) -> list[str]:
+    return [name for name, node in graph().items() if node.scope == of]
+
+
+def content(name: str) -> str:
+    node = graph()[name]
+    if node.paths:
+        return cast(dict[str, str], flake()["hashes"])[name]
+    return node.content()
+
+
+@cache
+def node_key(name: str, kinds: frozenset[str], path: tuple[str, ...] = ()) -> str:
+    if name in path:
+        raise SystemExit(f"a cycle in the graph: {' -> '.join((*path, name))}")
+    node = graph()[name]
+    edges = [
+        (kind, dep)
+        for kind, deps in (("build", node.build), ("test", node.test))
+        if kind in kinds
+        for dep in deps
     ]
-    return digest(node.content(), *(f"{kind} {dep} {key(dep)}" for kind, dep in edges))
+    return digest(
+        content(name),
+        *(f"{kind} {dep} {node_key(dep, kinds, (*path, name))}" for kind, dep in edges),
+    )
+
+
+def key(name: str) -> str:
+    """A test's key follows test edges too, everything else's only build edges."""
+    node = graph()[name]
+    return node_key(name, TEST if node.scope == "check" or node.test else BUILD)
 
 
 def quote(value: str) -> str:
@@ -292,9 +407,12 @@ def main(args: list[str]) -> None:
     match args:
         case ["version"]:
             print(version())
-        case ["keys"]:
-            for name, node in GRAPH.items():
-                print(f"{node.scope} {name} {key(name)}")
+        case ["graph"]:
+            for name, node in graph().items():
+                edges = [f"build:{dep}" for dep in node.build] + [
+                    f"test:{dep}" for dep in node.test
+                ]
+                print(f"{node.scope} {name} {key(name)} {' '.join(edges)}".rstrip())
         case ["checks"]:
             print(json.dumps(checks()))
         case ["passed", name] if name in scope("check"):
