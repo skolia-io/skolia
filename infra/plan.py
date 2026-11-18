@@ -430,6 +430,7 @@ def d1(sql: str) -> list[list[dict[str, object]]]:
     return [result["results"] for result in results]
 
 
+@cache
 def has_token() -> bool:
     if os.environ.get("CLOUDFLARE_API_TOKEN"):
         return True
@@ -439,20 +440,37 @@ def has_token() -> bool:
     return False
 
 
-def built(planner: Planner, names: list[str]) -> dict[str, bool]:
-    """Whether each build or check has a row for its key: one seek each."""
+NEVER_RECORDED = "never recorded"
+
+
+def built(planner: Planner, names: list[str]) -> tuple[dict[str, bool], dict[str, str]]:
+    """Whether each build or check has a row for its key, and its last row's key (or
+    NEVER_RECORDED): two seeks each."""
     results = d1(
         " ".join(
             f"SELECT EXISTS (SELECT 1 FROM build WHERE package = {quote(name)} "
-            f"AND key = {quote(planner.key(name))}) AS done;"
+            f"AND key = {quote(planner.key(name))}) AS done, "
+            f"(SELECT key FROM build WHERE package = {quote(name)} ORDER BY id DESC LIMIT 1) AS last;"
             for name in names
         )
     )
-    return {name: rows[0]["done"] == 1 for name, rows in zip(names, results)}
+    rows = [result[0] for result in results]
+    return (
+        {name: row["done"] == 1 for name, row in zip(names, rows)},
+        {
+            name: cast(str | None, row["last"]) or NEVER_RECORDED
+            for name, row in zip(names, rows)
+        },
+    )
 
 
-def last_keys(env: str, names: list[str]) -> dict[str, object]:
-    """Each deploy's last row's key in env (None if torn down or never deployed): one seek each."""
+NEVER_DEPLOYED = "never deployed"
+TORN_DOWN = "torn down"
+
+
+def last_keys(env: str, names: list[str]) -> dict[str, str]:
+    """Each deploy's last row's key in env, or NEVER_DEPLOYED or TORN_DOWN (a row with no
+    key): one seek each."""
     results = d1(
         " ".join(
             f"SELECT key FROM deployment WHERE env = {quote(env)} AND package = {quote(name)} "
@@ -461,22 +479,36 @@ def last_keys(env: str, names: list[str]) -> dict[str, object]:
         )
     )
     return {
-        name: rows[0]["key"] if rows else None for name, rows in zip(names, results)
+        name: cast(str | None, rows[0]["key"]) or TORN_DOWN if rows else NEVER_DEPLOYED
+        for name, rows in zip(names, results)
     }
 
 
 # The plan
 
 
-def needed(planner: Planner, what: str, done: dict[str, bool]) -> dict[str, bool]:
+def short(key: str) -> str:
+    return key[:12] if re.fullmatch(r"[0-9a-f]{24}", key) else key
+
+
+def needed(
+    planner: Planner,
+    heading: str,
+    done: dict[str, bool],
+    before: dict[str, str] | None = None,
+) -> dict[str, bool]:
+    """Whether each is needed, logged as a table under heading: its key, and for one that's
+    needed what it replaces, when that's known (a deploy's last key in its environment)."""
+    log.info("%s", heading)
+    width = max(map(len, done))
     for name, current in done.items():
-        log.info(
-            "%s %s: %s (%s)",
-            what,
-            name,
-            "current" if current else "needed",
-            planner.key(name),
-        )
+        key = short(planner.key(name))
+        if current:
+            log.info("  %-*s  current  %s", width, name, key)
+        elif before is not None:
+            log.info("  %-*s  needed   %s -> %s", width, name, short(before[name]), key)
+        else:
+            log.info("  %-*s  needed   %s", width, name, key)
     return {name: not current for name, current in done.items()}
 
 
@@ -484,34 +516,38 @@ def plan_deploys(planner: Planner, env: str) -> dict[str, bool] | None:
     """Whether each of env's deploys is needed, or None for a preview that would be staging."""
     names = scope("shared" if env == "shared" else "deploy")
     if not has_token():
-        return dict.fromkeys(names, True)
+        return needed(planner, f"{env}, deploys", dict.fromkeys(names, False))
     keys = {name: planner.key(name) for name in names}
     last = last_keys(env, names)
-    if (
-        env.startswith("pr-")
-        and not any(last.values())
-        and last_keys("staging", names) == keys
-    ):
-        log.info("%s: never deployed, and would be staging, so skipped", env)
+    unserved = all(value in (NEVER_DEPLOYED, TORN_DOWN) for value in last.values())
+    if env.startswith("pr-") and unserved and last_keys("staging", names) == keys:
+        log.info("%s: skipped, as it's never been deployed and would be staging", env)
         return None
-    return needed(planner, env, {name: last[name] == keys[name] for name in names})
+    return needed(
+        planner,
+        f"{env}, deploys",
+        {name: last[name] == keys[name] for name in names},
+        last,
+    )
 
 
 def plan(planner: Planner, envs: list[str]) -> dict[str, object]:
     """The run's: the checks still to pass, and each env's deploys with the builds they need
     (none for a preview that would be staging). terraform is whether anything needs the
     providers mirrored (ci.yml mirror-providers)."""
-    checks = scope("check")
+
+    def recorded(names: list[str]) -> tuple[dict[str, bool], dict[str, str] | None]:
+        return (
+            built(planner, names)
+            if has_token()
+            else (dict.fromkeys(names, False), None)
+        )
+
     check = needed(
-        planner,
-        "check",
-        built(planner, checks) if has_token() else dict.fromkeys(checks, False),
+        planner, "checks, once for every environment", *recorded(scope("check"))
     )
-    builds = scope("build")
     unbuilt = needed(
-        planner,
-        "build",
-        built(planner, builds) if has_token() else dict.fromkeys(builds, False),
+        planner, "builds, once for every environment", *recorded(scope("build"))
     )
     deploys: dict[str, dict[str, object]] = {}
     for env in envs:
@@ -528,6 +564,13 @@ def plan(planner: Planner, envs: list[str]) -> dict[str, object]:
     plan_infra = [env for env in PLAN_INFRA if check[f"plan-infra-{env}"]]
     deploying = any(
         value is True for todo in deploys.values() for value in todo.values()
+    )
+    count = sum(check.values()) + sum(
+        value is True for todo in deploys.values() for value in todo.values()
+    )
+    log.info(
+        "%d to do: the checks and deploys marked needed, and the builds they need",
+        count,
     )
     return {
         "check": check["check"],
@@ -616,9 +659,7 @@ def preview(value: str) -> str:
 
 
 def main(args: list[str]) -> None:
-    logging.basicConfig(
-        level=logging.INFO, format="%(name)s: %(message)s", stream=sys.stderr
-    )
+    logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stderr)
     parser = argparse.ArgumentParser(
         prog="plan.py",
         description=__doc__,
