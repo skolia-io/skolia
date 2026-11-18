@@ -1,6 +1,6 @@
 name: Deploy
 
-# One environment: Terraform and migrations, beside the plan and the images it says are
+# One environment: the plan; then Terraform and migrations, beside the images it says are
 # missing and the skolia Worker's build; then the ingest Worker and the lexicon; then the
 # skolia Worker (reader and API);
 # then, side by side, the end-to-end tests (e2e) and the curated texts in curated/
@@ -91,6 +91,8 @@ jobs:
           CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
 
   deploy-infra:
+    needs: plan
+    if: fromJSON(needs.plan.outputs.plan).infra
     runs-on: ubuntu-24.04
     environment: ${{ startsWith(inputs.env, 'pr-') && 'preview' || inputs.env }}
     env:

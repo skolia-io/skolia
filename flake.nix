@@ -23,15 +23,48 @@
               (fs.fileFilter (f: f.hasExt "md" || nixpkgs.lib.hasSuffix ".test.ts" f.name) ./.)
             ]);
         };
-      # What each Worker is bundled from. infra/plan.py keys the ingest Worker's deployment
-      # on its out path, as bundling it builds its container images (wrangler's dry run).
+      # The contents infra/plan.py's graph hashes, beside the builds' out paths
       sources = {
         worker = nodeSource [ ./api ./ingest ./oauth-proxy ./reader ./shared ./util ];
+        # What the ingest Worker is bundled from; bundling it builds its container images
+        # (wrangler's dry run)
         ingest = nodeSource [ ./ingest ./shared ./util ];
-        # The curated texts, whose sync infra/plan.py keys on this and the skolia Worker
+        # What deploy-infra applies to an environment: Terraform's resources (not shared/ or
+        # tokens/, their own environments) and the D1 migrations
+        infra = fs.toSource {
+          root = ./.;
+          fileset = fs.unions [
+            (fs.difference (fs.fileFilter (f: f.hasExt "tf") ./infra) (fs.unions [ ./infra/shared ./infra/tokens ]))
+            ./infra/.terraform.lock.hcl
+            ./infra/terraformrc
+            ./infra/tf.sh
+            ./infra/wrangler.sh
+            ./api/migrations
+            ./api/lexicon-migrations
+            ./ingest/migrations
+          ];
+        };
+        infra-shared = fs.toSource {
+          root = ./.;
+          fileset = fs.unions [
+            ./infra/shared
+            ./infra/terraformrc
+            ./infra/tf.sh
+          ];
+        };
         curated = fs.toSource {
           root = ./.;
           fileset = ./curated;
+        };
+        # What just check and just test read: all of it but docs and the screenshots'
+        # baselines, which are in git LFS, so a checkout without them would differ
+        repo = fs.toSource {
+          root = ./.;
+          fileset = fs.difference ./. (fs.unions [
+            (fs.maybeMissing ./docs)
+            ./reader/screenshots/__screenshots__
+            (fs.fileFilter (f: f.hasExt "md") ./.)
+          ]);
         };
       };
 
@@ -113,6 +146,10 @@
           };
         in
         {
+          # infra/plan.py's, in one nix eval
+          keys = builtins.mapAttrs (_: source: "${source}") sources // {
+            skolia-worker = skolia-worker.outPath;
+          };
           packages.tools = tools;
           packages.skolia-worker = skolia-worker;
           packages.ci = pkgs.buildEnv {
@@ -136,7 +173,7 @@
       systems = builtins.mapAttrs perSystem terraformZips;
     in
     {
-      inherit sources;
+      keys = builtins.mapAttrs (_: s: s.keys) systems;
       packages = builtins.mapAttrs (_: s: s.packages) systems;
       devShells = builtins.mapAttrs (_: s: s.devShells) systems;
     };

@@ -135,6 +135,11 @@ load-lexicon env *flags:
     done
     if [ {{ env }} != local ]; then infra/plan.py deployed {{ env }} lexicon; fi
 
+# Record in skolia-ci that env now serves this checkout's package (infra/plan.py)
+[private]
+deployed env package:
+    infra/plan.py deployed {{ env }} {{ package }}
+
 # skolia-ci's tables (infra/skolia-ci/migrations), after just apply shared made it
 migrate-ci:
     pnpm --dir api exec wrangler d1 migrations apply DB --remote -c "$PWD/infra/skolia-ci/wrangler.jsonc"
@@ -147,7 +152,7 @@ apply env:
 deploy env: (deploy-infra env) (deploy-ingest env) (deploy-web env)
 
 # Terraform, then D1 migrations; for a preview, its wrangler configs in between
-deploy-infra env: (apply env) && (migrate env)
+deploy-infra env: (apply env) && (migrate env) (deployed env "infra")
     case {{ env }} in pr-*) infra/preview.py config {{ env }} ;; esac
 
 # The skolia Worker (reader and API) with wrangler, with Terraform's BETTER_AUTH_SECRET and, if set,
