@@ -109,6 +109,15 @@ test("anyone sees what analysis is doing, without the texts they can't see", asy
   assert.deepEqual(anyone.recent[2]?.result?.stages, finished("x", shared, at("09:00:00")).stages);
   assert.equal(JSON.stringify(anyone).includes(secret), false);
 
+  const response = await local.server.getWorker().fetch("/api/ingest");
+  assert.equal(response.status, 200);
+  const overview = (await response.json()) as typeof anyone;
+  assert.deepEqual(
+    overview.recent.find((job) => job.id === "done"),
+    anyone.recent.find((job) => job.id === "done"),
+  );
+  assert.equal(JSON.stringify(overview).includes(secret), false);
+
   const owner = await body("importer", client(app, importer).ingest.$get());
   assert.deepEqual(owner.languages[2]?.container?.jobs[0]?.document, { id: secret, title: "Secret" });
   assert.equal(owner.recent[1]?.result?.error, `no text at texts/${secret}`);

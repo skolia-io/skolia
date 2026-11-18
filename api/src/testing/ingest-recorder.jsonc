@@ -4,6 +4,7 @@
   "name": "skolia-ingest",
   "main": "ingest-recorder.ts",
   "compatibility_date": "2026-10-19",
+  "d1_databases": [{ "binding": "INGEST_DB", "database_name": "skolia-ingest", "migrations_dir": "../../../ingest/migrations" }],
   "queues": {
     "consumers": [{ "queue": "skolia-ingest", "max_batch_size": 100, "max_batch_timeout": 0 }]
   },

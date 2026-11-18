@@ -13,6 +13,7 @@ import { sql } from "@skolia/util/sql";
 import { lexiconBinding, lexiconsOf, prepare, type LexiconBindings } from "../worker/adapters.ts";
 import type { User as UserObject } from "../worker/user.ts";
 import type IngestRecorder from "./ingest-recorder.ts";
+import type { RecorderEnv } from "./ingest-recorder.ts";
 
 export const ORIGIN = "http://localhost:5173";
 
@@ -28,7 +29,6 @@ export interface TestEnv extends LexiconBindings {
   USER: DurableObjectNamespace<UserObject>;
   BLOBS: R2Bucket;
   INGEST: Queue<IngestJob | Flush>;
-  INGEST_DB: D1Database;
 }
 
 export function authConfig(database: D1Database): AuthConfig {
@@ -43,7 +43,7 @@ export function authConfig(database: D1Database): AuthConfig {
 
 export interface Local {
   server: TestHarness;
-  env: TestEnv;
+  env: TestEnv & RecorderEnv;
   auth: Auth;
   signUp(fields: { name: string; email: string }): Promise<User>;
   signIn(userId: string): Promise<Headers>;
@@ -65,9 +65,11 @@ export async function startLocal(): Promise<Local> {
   const worker = server.getWorker<TestEnv>();
   await worker.applyD1Migrations("DB");
   for (const lang of LANGS) await worker.applyD1Migrations(lexiconBinding(lang));
-  await worker.applyD1Migrations("INGEST_DB");
-  const env = await worker.getEnv();
-  const recorder = await server.getWorker<object, { default: typeof IngestRecorder }>("skolia-ingest").getExport();
+  const ingest = server.getWorker<RecorderEnv, { default: typeof IngestRecorder }>("skolia-ingest");
+  await ingest.applyD1Migrations("INGEST_DB");
+  const { INGEST_DB } = await ingest.getEnv();
+  const env = { ...(await worker.getEnv()), INGEST_DB };
+  const recorder = await ingest.getExport();
   const options = authOptions(authConfig(env.DB));
   const instance = betterAuth({ ...options, plugins: [...options.plugins, testUtils()] });
   const { test } = await instance.$context;

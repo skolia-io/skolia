@@ -1,5 +1,5 @@
 // The jobs the ingest containers ran, in skolia-ingest's D1 database (ingest/migrations):
-// the ingest Worker stores the containers' events, the API reads them.
+// the ingest Worker stores the containers' events and serves history over RPC.
 import type { IngestEvent, IngestJobRecord, Timestamp } from "@skolia/shared/api";
 import * as schemas from "@skolia/shared/schemas";
 import { prepare } from "@skolia/util/d1";

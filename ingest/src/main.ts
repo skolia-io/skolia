@@ -13,7 +13,7 @@
 // deploy changes an image, new jobs start a container with the new one while the old
 // container finishes its jobs and stops.
 import { DurableObject, WorkerEntrypoint } from "cloudflare:workers";
-import { isLang, timestamp, type ContainerJobs, type IngestEvent, type Lang } from "@skolia/shared/api";
+import { isLang, timestamp, type ContainerJobs, type IngestEvent, type IngestJobRecord, type Lang } from "@skolia/shared/api";
 import type { IngestJob } from "@skolia/shared/schema";
 import * as schemas from "@skolia/shared/schemas";
 import { log } from "@skolia/util/log";
@@ -102,6 +102,10 @@ export class Ingester extends DurableObject<Env> implements IngesterRpc {
    * language. Null when no container is running; it isn't started to find out. */
   async jobs(lang: Lang): Promise<ContainerJobs | null> {
     return await this.env.INGESTER.getByName(this.image(lang)).state();
+  }
+
+  recent(limit: number): Promise<readonly IngestJobRecord[]> {
+    return new D1IngestHistory(this.env.INGEST_DB).recent(limit);
   }
 
   async state(): Promise<ContainerJobs | null> {

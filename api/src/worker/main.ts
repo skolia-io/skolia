@@ -4,7 +4,6 @@ import type { IngestEvent } from "@skolia/shared/api";
 import type { IngestJob } from "@skolia/shared/schema";
 import { createApp } from "../app.ts";
 import { NO_AUTH, createAuth } from "../auth.ts";
-import { D1IngestHistory } from "@skolia/ingest/history";
 import type { IngesterRpc } from "@skolia/ingest/rpc";
 import { log } from "@skolia/util/log";
 import type { Auth } from "../ports.ts";
@@ -20,10 +19,8 @@ interface Env extends LexiconBindings {
   USER: DurableObjectNamespace<User>;
   BLOBS: R2Bucket;
   INGEST: Queue<IngestJob>;
-  /** The ingest Worker's (ingest/src/main.ts), for where a document is in its queue */
+  /** The ingest Worker's queue state and history */
   INGESTER: DurableObjectNamespace<IngesterRpc>;
-  /** skolia-ingest's D1 database: the jobs the ingest containers ran */
-  INGEST_DB: D1Database;
   /** wrangler vars (api/wrangler.jsonc); a preview's from infra/preview.py */
   BASE_URL?: string;
   BETTER_AUTH_SECRET?: string;
@@ -70,7 +67,7 @@ export default {
       documents: new D1Documents(env.DB),
       blobs: new R2Blobs(env.BLOBS),
       queue: new CloudflareQueue(env.INGEST, (lang) => env.INGESTER.getByName(lang).jobs(lang)),
-      ingestHistory: new D1IngestHistory(env.INGEST_DB),
+      ingestHistory: { recent: (limit) => env.INGESTER.getByName("history").recent(limit) },
       now: () => new Date(),
     });
     return app.fetch(request, env, ctx);

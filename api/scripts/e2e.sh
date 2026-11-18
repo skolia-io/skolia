@@ -23,7 +23,7 @@ d1() {
 }
 d1 migrations apply DB
 for lang in "$@"; do d1 migrations apply "LEXICON_$(tr a-z A-Z <<<"$lang")"; done
-d1 migrations apply INGEST_DB
+d1 migrations apply INGEST_DB -c ../ingest/wrangler.jsonc
 just load-lexicon local --sample 3000 --persist-to "$api/$state"
 
 pnpm exec wrangler dev -c wrangler.jsonc -c ../ingest/wrangler.jsonc --persist-to "$state" --port "$port" --show-interactive-dev-session=false >"$log" 2>&1 &
