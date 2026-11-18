@@ -470,8 +470,8 @@ export type Reviewed = z.output<typeof schemas.Reviewed>;
 
 /** standard: someone who signed in. system: skolia.io's own accounts, the end-to-end
  * tests' importer and the curated texts'. */
-export const USER_TYPES = ["standard", "system"] as const;
-export type UserType = (typeof USER_TYPES)[number];
+export const ROLE_NAMES = ["standard", "system"] as const;
+export type RoleName = (typeof ROLE_NAMES)[number];
 
 export type User = z.output<typeof schemas.User>;
 

@@ -28,7 +28,7 @@ import {
   TAG_KIND,
   TAG_VALUE,
   UPOS,
-  USER_TYPES,
+  ROLE_NAMES,
   VISIBILITIES,
   WORD_CARD_KINDS,
   isShareable,
@@ -61,7 +61,7 @@ export const CardId = z.uuid().brand<"CardId">().meta({ id: "CardId" });
 export const ReviewId = z.uuid().brand<"ReviewId">();
 
 export const Visibility = z.enum(VISIBILITIES).meta({ id: "Visibility" });
-export const UserType = z.enum(USER_TYPES);
+export const RoleName = z.enum(ROLE_NAMES);
 
 export const LemmaId = z
   .templateLiteral([Lang, ":", z.string().min(1).max(MAX_LEMMA_LENGTH), ":", z.enum(UPOS)])
@@ -443,7 +443,7 @@ export const ApiError = z.object({ error: z.string() }).meta({ id: "ApiError" })
 export const Version = z.object({ version: z.string() }).meta({ id: "Version" });
 
 export const User = z
-  .object({ id: UserId, name: z.string(), email: z.string(), image: z.string().nullable(), type: UserType })
+  .object({ id: UserId, name: z.string(), email: z.string(), image: z.string().nullable(), type: RoleName })
   .meta({ id: "User" });
 
 /** A page of a list. next: the cursor for the page after it (?after=), null on the last page. */

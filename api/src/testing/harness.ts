@@ -4,7 +4,7 @@ import { betterAuth } from "better-auth";
 import { testUtils } from "better-auth/plugins";
 import { createTestHarness, type TestHarness } from "wrangler";
 import { LANGS, type User } from "@skolia/shared/api";
-import { UserId, UserType } from "@skolia/shared/schemas";
+import { RoleName, UserId } from "@skolia/shared/schemas";
 import * as z from "zod";
 import type { IngestParams } from "@skolia/ingest/rpc";
 import { authOptions, toAuth, type AuthConfig } from "../auth.ts";
@@ -83,8 +83,8 @@ export async function startLocal(): Promise<Local> {
     async signUp(fields) {
       const saved = await test.saveUser(test.createUser(fields));
       const { id, name, email, image } = saved;
-      const { type } = z.object({ type: UserType }).parse(saved);
-      return { id: UserId.parse(id), name, email, image: image ?? null, type };
+      const { role } = z.object({ role: RoleName }).parse(saved);
+      return { id: UserId.parse(id), name, email, image: image ?? null, type: role };
     },
     signIn: (userId) => test.getAuthHeaders({ userId }),
     started,
