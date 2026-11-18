@@ -9,7 +9,7 @@ import { createApp, type AppType } from "../app.ts";
 import type { Auth, IngestJobs } from "../ports.ts";
 import { sql } from "@skolia/util/sql";
 import {
-  CloudflareQueue,
+  IngestJobsRpc,
   D1Documents,
   D1Lexicon,
   DurableObjectUsers,
@@ -51,7 +51,7 @@ export function setup({ auth = local.auth, at = NOW, jobsOf = async () => null }
     lexicon: new D1Lexicon(lexiconsOf(env)),
     documents: new D1Documents(env.DB),
     blobs: new R2Blobs(env.BLOBS),
-    queue: new CloudflareQueue(env.INGEST, jobsOf),
+    queue: new IngestJobsRpc((job, queued) => env.INGESTER.getByName(`document:${job.doc}`).enqueue(job, queued), jobsOf),
     ingestHistory: new D1IngestHistory(env.INGEST_DB),
     version: "v1.2.3",
     now: () => new Date(at),

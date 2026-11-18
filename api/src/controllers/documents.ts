@@ -30,7 +30,6 @@ import { NO_CONTENT, fail, ok, type BlobResult, type Failed, type Json, type NoC
 const logger = log("documents");
 
 const NAME = /^[a-z0-9-]{1,64}$/;
-const JSON_TYPE = "application/json";
 
 /** A page of the entries the viewer can see that the filter keeps. Listing only reads
  * each entry's status; opening one (get) queues it again if it needs it. */
@@ -259,8 +258,7 @@ async function requeue(
     const value = status?.[key];
     if (value !== undefined) queued[key] = value;
   }
-  await deps.blobs.put(statusKey(record.id), JSON.stringify(queued), JSON_TYPE);
-  await deps.queue.send({ doc: record.id, lang: record.lang });
+  await deps.queue.send({ doc: record.id, lang: record.lang }, queued);
   return queued;
 }
 

@@ -699,22 +699,20 @@ export class R2Blobs implements BlobStore {
  * (ingest/src/main.ts), or a fake in the tests. */
 export type JobsOf = (lang: Lang) => Promise<IngestJobs | null>;
 
-export class CloudflareQueue implements JobQueue {
-  private readonly queue: Queue<IngestJob>;
+export class IngestJobsRpc implements JobQueue {
+  private readonly enqueue: JobQueue["send"];
   private readonly jobsOf: JobsOf;
 
-  constructor(queue: Queue<IngestJob>, jobsOf: JobsOf) {
-    this.queue = queue;
+  constructor(enqueue: JobQueue["send"], jobsOf: JobsOf) {
+    this.enqueue = enqueue;
     this.jobsOf = jobsOf;
   }
 
-  async send(job: IngestJob): Promise<void> {
-    // JSON, not the default Workers-only "v8" format, so a message can be read outside a
-    // Worker (the dashboard, wrangler)
+  async send(...[job, queued]: Parameters<JobQueue["send"]>): Promise<void> {
     try {
-      await this.queue.send(job, { contentType: "json" });
+      await this.enqueue(job, queued);
     } catch (error: unknown) {
-      logger.error("sending job to the ingest queue failed", { doc: job.doc, lang: job.lang, error });
+      logger.error("registering ingest job failed", { doc: job.doc, lang: job.lang, error });
       throw error;
     }
   }

@@ -25,6 +25,12 @@ sequenceDiagram
   API->>I: Read processing state and last published pair
 ```
 
+## Preview implementation
+
+This draft exercises durable dispatch using the existing Ingester Durable Object class. An object named for the document stores one pending job and arms an alarm before acknowledging registration. The alarm dispatches through the language router and periodically checks R2 status and the container's live jobs. Work missing from both is dispatched again. A job that repeatedly fails dispatch is marked failed. The old import queue consumer remains during rollout so already-sent messages can drain. Containers' history events still use their separate queue.
+
+This slice keeps the existing R2 publication contract and read-triggered fallback for legacy jobs. The D1 import outbox and attempt-aware publication below are follow-ups. In particular, document registration and the initial RPC are separate, and the executor still writes the published status. A successful import response confirms durable dispatch registration.
+
 ## State and ownership
 
 - **API D1 outbox.** A new import records dispatch intent in the same transaction as document registration. The source text is already in R2 at its content-addressed key, so a failed transaction leaves a reusable source object. The relay retries unacknowledged intents. Ingest acknowledges only after its upsert commits. Replaying an intent leaves an existing claim or published reading intact.

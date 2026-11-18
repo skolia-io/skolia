@@ -14,7 +14,8 @@
 // container finishes its jobs and stops.
 import { DurableObject, WorkerEntrypoint } from "cloudflare:workers";
 import { isLang, timestamp, type ContainerJobs, type IngestEvent, type IngestJobRecord, type Lang } from "@skolia/shared/api";
-import type { IngestJob } from "@skolia/shared/schema";
+import type { IngestJob, Status } from "@skolia/shared/schema";
+import { statusKey } from "@skolia/shared/keys";
 import * as schemas from "@skolia/shared/schemas";
 import { log } from "@skolia/util/log";
 import { D1IngestHistory, receiveEvent } from "./history.ts";
@@ -41,6 +42,13 @@ const PORT = 8080;
 // (interceptOutboundHttp), so they never leave the machine
 const EVENTS_HOST = "events.internal";
 const RETRY_DELAY_SECONDS = 60;
+const CHECK_JOB_MS = 30_000;
+const MAX_DISPATCHES = 10;
+interface PendingJob {
+  job: IngestJob;
+  queued: Status | null;
+  dispatches: number;
+}
 const START_TIMEOUT_MS = 2 * 60 * 1000;
 const PROBE_TIMEOUT_MS = 5 * 1000;
 // 1 vCPU, 6 GiB: Polish ingest peaked at 4.3 GiB on a 2,800-word text, English at 4.7 GiB
@@ -91,6 +99,77 @@ export class Ingester extends DurableObject<Env> implements IngesterRpc {
     const container = ctx.container;
     if (container?.running) {
       void ctx.blockConcurrencyWhile(() => container.setInactivityTimeout(this.inactivityTimeoutMs()));
+    }
+  }
+
+  /** The document's object durably registers work before acknowledging the RPC. */
+  async enqueue(job: IngestJob, queued: Status): Promise<void> {
+    await this.ctx.blockConcurrencyWhile(async () => {
+      const pending = await this.ctx.storage.transaction(async (txn) => {
+        const existing = await txn.get<PendingJob>("pending");
+        if (existing !== undefined) return existing;
+        const pending: PendingJob = { job, queued, dispatches: 0 };
+        await txn.put("pending", pending);
+        await txn.setAlarm(Date.now());
+        return pending;
+      });
+      await this.initialize(pending);
+    });
+  }
+
+  private async initialize(pending: PendingJob): Promise<void> {
+    if (pending.queued === null) return;
+    const key = statusKey(schemas.DocumentId.parse(pending.job.doc));
+    await this.env.BLOBS.put(key, JSON.stringify(pending.queued), { httpMetadata: { contentType: "application/json" } });
+    pending.queued = null;
+    await this.ctx.storage.put("pending", pending);
+  }
+
+  private async advance(pending: PendingJob): Promise<void> {
+    const { job, dispatches } = pending;
+    const doc = schemas.DocumentId.parse(job.doc);
+    const lang = schemas.Lang.parse(job.lang);
+    const key = statusKey(doc);
+    // Keep a check scheduled even if the container accepts the job and this alarm is interrupted.
+    await this.ctx.storage.setAlarm(Date.now() + CHECK_JOB_MS);
+    await this.initialize(pending);
+    const blob = await this.env.BLOBS.get(key);
+    const parsed = schemas.Status.safeParse(await blob?.json());
+    const status = parsed.success ? parsed.data : null;
+    if (status?.state === "ready" || status?.state === "failed") {
+      await this.ctx.storage.delete("pending");
+      return;
+    }
+
+    const router = this.env.INGESTER.getByName(lang);
+    if (dispatches > 0) {
+      const live = await router.jobs(lang);
+      if (live?.jobs.some(({ doc }) => doc === job.doc)) return;
+      // A completion may have landed between the initial read and the live check.
+      const latest = await this.env.BLOBS.head(key);
+      if (latest?.etag !== blob?.etag) return;
+    }
+    if (dispatches >= MAX_DISPATCHES) {
+      if (blob === null) throw new Error("missing status for ingest job");
+      const failed = await this.env.BLOBS.put(
+        key,
+        JSON.stringify({
+          ...status,
+          state: "failed",
+          updated: timestamp(new Date()),
+          error: "ingest did not complete after repeated dispatches",
+        }),
+        { onlyIf: { etagMatches: blob.etag }, httpMetadata: { contentType: "application/json" } },
+      );
+      if (failed !== null) await this.ctx.storage.delete("pending");
+      return;
+    }
+
+    await this.ctx.storage.put<PendingJob>("pending", { ...pending, dispatches: dispatches + 1 });
+    try {
+      await router.route(lang, [job]);
+    } catch (error: unknown) {
+      logger.warn("dispatching durable ingest job failed", { doc: job.doc, lang: job.lang, error });
     }
   }
 
@@ -154,6 +233,11 @@ export class Ingester extends DurableObject<Env> implements IngesterRpc {
   }
 
   override async alarm(): Promise<void> {
+    const pending = await this.ctx.storage.get<PendingJob>("pending");
+    if (pending !== undefined) {
+      await this.advance(pending);
+      return;
+    }
     const container = this.ctx.container;
     if (!container?.running) return;
     // So that no job is handed over between the check and the container's exit: a job

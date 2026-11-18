@@ -137,7 +137,7 @@ export interface BlobStore {
 export type IngestJobs = ContainerJobs;
 
 export interface JobQueue {
-  send(job: IngestJob): Promise<void>;
+  send(job: IngestJob, queued: z.output<typeof schemas.Status>): Promise<void>;
   /** Null when no container is running for the language, or it can't be asked. */
   jobs(lang: Lang): Promise<IngestJobs | null>;
 }

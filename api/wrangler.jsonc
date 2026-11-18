@@ -47,9 +47,6 @@
   "r2_buckets": [{ "binding": "BLOBS", "bucket_name": "skolia" }],
   // wrangler dev takes BASE_URL from api/.env, and the auth secrets from api/.env.local (DEVELOP.md); deployed, they're wrangler secrets.
   "vars": { "BASE_URL": "https://skolia.io" },
-  "queues": {
-    "producers": [{ "binding": "INGEST", "queue": "skolia-ingest" }]
-  },
   // INGESTER: the ingest Worker's (ingest/wrangler.jsonc), asked where a document is in
   // its queue
   "durable_objects": {
@@ -86,9 +83,6 @@
       ],
       "r2_buckets": [{ "binding": "BLOBS", "bucket_name": "skolia-staging" }],
       "vars": { "BASE_URL": "https://staging.skolia.io" },
-      "queues": {
-        "producers": [{ "binding": "INGEST", "queue": "skolia-ingest-staging" }]
-      },
       "durable_objects": {
         "bindings": [
           { "name": "USER", "class_name": "User" },
