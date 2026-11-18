@@ -52,6 +52,7 @@ test("explore, tag menu fits on a narrow phone", async ({ page, isMobile }) => {
   const bounds = (await menu.boundingBox())!;
   expect(bounds.x).toBeGreaterThanOrEqual(0);
   expect(bounds.x + bounds.width).toBeLessThanOrEqual(width);
+  await expect(page).toHaveScreenshot("explore-tag-menu-narrow-phone.png");
   await menu.getByLabel("level · B1").check();
   await expect(page.getByText("1 text", { exact: true })).toBeVisible();
 });
