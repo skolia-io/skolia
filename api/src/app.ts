@@ -116,7 +116,7 @@ export function createApp(deps: Deps) {
       "/api/me/cards/counts",
       mine(TAGS.cards, "Cards to review, by language", "dayStart: when the user's day started; today's new cards count from it."),
       validator("query", schemas.CountsQuery, badRequest("dayStart must be an ISO time")),
-      responds({ 200: json(z.array(schemas.CardCounts), "Each language's due and new cards, by group"), 401: NOT_SIGNED_IN }),
+      responds({ 200: json(z.array(schemas.CardCounts), "Due and new cards by group for each language with cards"), 401: NOT_SIGNED_IN }),
       (c) => signedIn(c, (user) => cards.counts(deps, user, c.req.valid("query").dayStart)),
     )
     .get(

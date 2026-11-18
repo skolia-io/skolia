@@ -2135,7 +2135,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Each language's due and new cards, by group",
+            "description": "Due and new cards by group for each language with cards",
             "content": {
               "application/json": {
                 "schema": {
