@@ -60,7 +60,7 @@ function authFor(env: Env): Auth {
 
 export default {
   async scheduled(_event, env) {
-    await runBackgroundMigrations({ db: env.DB.withSession("first-primary"), blobs: new R2Blobs(env.BLOBS) }, BACKGROUND_MIGRATIONS);
+    await runBackgroundMigrations({ db: env.DB.withSession("first-primary"), bucket: env.BLOBS }, BACKGROUND_MIGRATIONS);
   },
   fetch(request, env, ctx) {
     const app = createApp({

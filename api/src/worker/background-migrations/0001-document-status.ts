@@ -2,7 +2,7 @@ import * as z from "zod";
 import { DocumentId } from "@skolia/shared/schemas";
 import { sql } from "@skolia/util/sql";
 import { readStatus } from "../../controllers/documents.ts";
-import { prepare, statusProjectionQuery } from "../adapters.ts";
+import { R2Blobs, prepare, statusProjectionQuery } from "../adapters.ts";
 import type { BackgroundMigration } from "./runner.ts";
 
 const PAGE = 24;
@@ -11,7 +11,8 @@ const Row = z.object({ id: DocumentId, projected: z.number() });
 export const documentStatus: BackgroundMigration = {
   version: 1,
   name: "document-status",
-  async run({ db, blobs }, cursor) {
+  async run({ db, bucket }, cursor) {
+    const blobs = new R2Blobs(bucket);
     const { results } = await prepare(
       db,
       sql`SELECT document.id,

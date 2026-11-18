@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Status, StoredStatus } from "./schemas.ts";
-import { statusForStorage } from "./status.ts";
 
 const artifacts = { analyzer: "a", lexicon: "l", analysis: "doc/x/analysis/a.json.br", bundle: "doc/x/bundle/b.json.br" };
 const updated = "2026-11-04T00:00:00.000Z";
@@ -16,7 +15,7 @@ test("status requires the fields its state promises", () => {
   assert.deepEqual(Status.parse({ state: "queued", updated, error: "irrelevant" }), { state: "queued", updated });
 });
 
-test("status storage round-trips every variant without breaking older flat-format readers", () => {
+test("status storage accepts both nested writes and existing flat values", () => {
   const statuses = [
     { state: "queued", updated },
     { state: "analysing", updated, artifacts },
@@ -27,8 +26,7 @@ test("status storage round-trips every variant without breaking older flat-forma
   for (const status of statuses) {
     assert.deepEqual(Status.parse(status), status);
     assert.deepEqual(StoredStatus.parse(status), status);
-    const stored = statusForStorage(status);
-    assert.equal("artifacts" in stored, false);
-    assert.deepEqual(StoredStatus.parse(stored), status);
+    const { artifacts: retained, ...fields } = { artifacts: undefined, ...status };
+    assert.deepEqual(StoredStatus.parse({ ...fields, ...retained }), status);
   }
 });

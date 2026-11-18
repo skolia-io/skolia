@@ -22,7 +22,6 @@ import {
 import type { PageRequest } from "@skolia/shared/page";
 import { PART_ENCODING, docId, partKey, statusKey, textKey, versionsKey } from "@skolia/shared/keys";
 import type { Status, Versions } from "@skolia/shared/schema";
-import { statusForStorage } from "@skolia/shared/status";
 import * as schemas from "@skolia/shared/schemas";
 import { log } from "@skolia/util/log";
 import type { BlobStore, Deps, EntryFields, IngestJobs, StoredDocument } from "../ports.ts";
@@ -357,7 +356,7 @@ function summarize(
 
 /** Publish the detail blob and its list projection together. Callers retry on failure. */
 export async function publishStatus(deps: Pick<Deps, "blobs" | "documents">, id: DocumentId, status: Status): Promise<void> {
-  await deps.blobs.put(statusKey(id), JSON.stringify(statusForStorage(status)), "application/json");
+  await deps.blobs.put(statusKey(id), JSON.stringify(status), "application/json");
   await deps.documents.setStatus(id, status);
 }
 

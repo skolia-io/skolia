@@ -1,7 +1,6 @@
 import * as z from "zod";
 import { sql } from "@skolia/util/sql";
 import { log } from "@skolia/util/log";
-import type { BlobStore } from "../../ports.ts";
 import { prepare } from "../adapters.ts";
 
 const logger = log("background-migrations");
@@ -11,7 +10,7 @@ const Claimed = Row.pick({ cursor: true });
 
 export interface Context {
   readonly db: D1DatabaseSession;
-  readonly blobs: BlobStore;
+  readonly bucket: R2Bucket;
 }
 
 export interface BackgroundMigration {

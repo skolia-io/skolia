@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { docId, statusKey } from "@skolia/shared/keys";
 import { BACKGROUND_MIGRATIONS } from "./worker/background-migrations/index.ts";
 import { documentStatus } from "./worker/background-migrations/0001-document-status.ts";
+import { nestDocumentStatus } from "./worker/background-migrations/0002-nest-document-status.ts";
 import { runBackgroundMigrations, type Context } from "./worker/background-migrations/runner.ts";
 import { D1Documents, R2Blobs } from "./worker/adapters.ts";
 import { local, setup, useLocal } from "./testing/app.ts";
@@ -10,7 +11,7 @@ import { local, setup, useLocal } from "./testing/app.ts";
 useLocal();
 
 function context(): Context {
-  return { db: local.env.DB.withSession("first-primary"), blobs: new R2Blobs(local.env.BLOBS) };
+  return { db: local.env.DB.withSession("first-primary"), bucket: local.env.BLOBS };
 }
 
 async function legacy(n: number) {
@@ -92,6 +93,48 @@ test("a failed batch keeps its checkpoint and retries its data writes safely", a
   });
   await runBackgroundMigrations(context(), BACKGROUND_MIGRATIONS);
   assert.ok((await local.env.DB.prepare("SELECT completed_at FROM background_migration WHERE version = 1").first())?.["completed_at"]);
+});
+
+test("status conversion resumes across pages and preserves retained artifacts and unrelated objects", async () => {
+  setup();
+  const artifacts = { analyzer: "a", lexicon: "l", analysis: "analysis", bundle: "bundle" };
+  const base = { state: "queued", updated: "2026-11-04T00:00:00.000Z" };
+  const flat = JSON.stringify({ ...base, ...artifacts });
+  const nested = { ...base, artifacts };
+  const live = { state: "failed" as const, updated: base.updated, error: "new publication" };
+  const id = await docId("pl", "status with no document row");
+  const liveId = await docId("pl", "already nested");
+  const { db, bucket } = context();
+  await bucket.put(statusKey(id), flat, { customMetadata: { source: "legacy" } });
+  await bucket.put(statusKey(liveId), JSON.stringify(live));
+  const unrelated = `doc/${id}/text.txt`;
+  await bucket.put(unrelated, "text");
+  const untouched = (await bucket.head(statusKey(liveId)))?.etag;
+  await local.env.DB.prepare("INSERT INTO document_status VALUES (?, ?, ?)").bind(id, base.updated, flat).run();
+  await new D1Documents(db).setStatus(liveId, live);
+  for (let n = 0; n < 49; n++) await bucket.put(`doc/00-unrelated/${n}`, "text");
+
+  const first = await nestDocumentStatus.run(context(), null);
+  assert.ok(first.cursor?.startsWith("r2:"));
+  assert.equal(await (await bucket.get(statusKey(id)))?.text(), flat);
+  const second = await nestDocumentStatus.run(context(), first.cursor);
+  assert.deepEqual(second, { cursor: "d1:", done: false });
+  const converted = await bucket.get(statusKey(id));
+  assert.deepEqual(await converted?.json(), nested);
+  assert.deepEqual(converted?.customMetadata, { source: "legacy" });
+  assert.equal(await (await bucket.get(unrelated))?.text(), "text");
+  assert.equal((await bucket.head(statusKey(liveId)))?.etag, untouched);
+  assert.ok((await nestDocumentStatus.run(context(), second.cursor)).done);
+  assert.ok((await nestDocumentStatus.run(context(), second.cursor)).done);
+  const rows = await local.env.DB.prepare("SELECT document_id, updated_at, status FROM document_status").all();
+  assert.deepEqual(
+    new Map(rows.results.map((row) => [row["document_id"], JSON.parse(String(row["status"])) as unknown])),
+    new Map<string, unknown>([
+      [id, nested],
+      [liveId, live],
+    ]),
+  );
+  assert.equal(rows.results.find((row) => row["document_id"] === id)?.["updated_at"], base.updated);
 });
 
 test("an active lease excludes another runner and an expired lease can be resumed", async () => {

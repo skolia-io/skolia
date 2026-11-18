@@ -89,7 +89,6 @@ import type {
 } from "../ports.ts";
 import { prepare } from "@skolia/util/d1";
 import { log } from "@skolia/util/log";
-import { statusForStorage } from "@skolia/shared/status";
 import type { User } from "./user.ts";
 
 const logger = log("adapters");
@@ -562,7 +561,7 @@ export const DOCUMENT_QUERIES = {
 export function statusProjectionQuery(id: DocumentId, status: z.output<typeof schemas.Status> | null, replace = true): Sql {
   const conflict = replace ? sql`DO UPDATE SET updated_at = excluded.updated_at, status = excluded.status` : sql`DO NOTHING`;
   return sql`INSERT INTO document_status (document_id, updated_at, status)
-    VALUES (${id}, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), ${JSON.stringify(status === null ? null : statusForStorage(status))})
+    VALUES (${id}, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), ${JSON.stringify(status)})
     ON CONFLICT (document_id) ${conflict}`;
 }
 

@@ -38,7 +38,6 @@ import {
 import { body, expectStatus } from "./testing/responses.ts";
 import { BACKGROUND_MIGRATIONS } from "./worker/background-migrations/index.ts";
 import { runBackgroundMigrations } from "./worker/background-migrations/runner.ts";
-import { R2Blobs } from "./worker/adapters.ts";
 
 useLocal();
 
@@ -104,10 +103,7 @@ test("legacy lists stay readable during backfill and stop needing blobs after it
   await local.env.DB.prepare("DELETE FROM document_status WHERE document_id = ?").bind(id).run();
   const before = await body("legacy list", api.documents.$get({ query: {} }));
   assert.equal(before.items[0]?.state, "ready");
-  await runBackgroundMigrations(
-    { db: local.env.DB.withSession("first-primary"), blobs: new R2Blobs(local.env.BLOBS) },
-    BACKGROUND_MIGRATIONS,
-  );
+  await runBackgroundMigrations({ db: local.env.DB.withSession("first-primary"), bucket: local.env.BLOBS }, BACKGROUND_MIGRATIONS);
   await local.env.BLOBS.delete(statusKey(id));
   assert.deepEqual(await body("backfilled list", api.documents.$get({ query: {} })), before);
 });
