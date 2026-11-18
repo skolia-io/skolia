@@ -32,7 +32,7 @@ interface Env extends LexiconBindings {
   /** A preview's (infra/preview.py): the OAuth proxy's URL (oauth-proxy/), where its Google sign-in goes */
   OAUTH_PROXY_URL?: string;
   OAUTH_PROXY_SECRET?: string;
-  /** infra/web.sh version, a var (just deploy-web) rather than in the bundle, so the bundle's
+  /** infra/plan.py version, a var (just deploy-web) rather than in the bundle, so the bundle's
    * Nix out path doesn't change with it; unset under wrangler dev */
   VERSION?: string;
 }

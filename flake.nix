@@ -8,6 +8,28 @@
   outputs =
     { nixpkgs, ... }:
     let
+      fs = nixpkgs.lib.fileset;
+      # Part of the Node workspace, with its lock files, but not what doesn't reach a Worker:
+      # Markdown, tests and the screenshots (whose baselines are in git LFS, so a checkout
+      # without them would differ)
+      nodeSource =
+        dirs:
+        fs.toSource {
+          root = ./.;
+          fileset = fs.difference
+            (fs.unions ([ ./package.json ./pnpm-lock.yaml ./pnpm-workspace.yaml ] ++ dirs))
+            (fs.unions [
+              ./reader/screenshots
+              (fs.fileFilter (f: f.hasExt "md" || nixpkgs.lib.hasSuffix ".test.ts" f.name) ./.)
+            ]);
+        };
+      # What each Worker is bundled from. infra/plan.py keys the ingest Worker's deployment
+      # on its out path, as bundling it builds its container images (wrangler's dry run).
+      sources = {
+        worker = nodeSource [ ./api ./ingest ./oauth-proxy ./reader ./shared ./util ];
+        ingest = nodeSource [ ./ingest ./shared ./util ];
+      };
+
       # HashiCorp's release: nixpkgs builds terraform from source, as it's unfree (BUSL),
       # which takes minutes in each CI job
       terraformVersion = "1.17.1";
@@ -44,32 +66,11 @@
           };
           # The skolia Worker as just deploy-web uploads it: the reader's assets and the API
           # bundled by wrangler, as the bundle test builds it (justfile build). Its out path
-          # is what CI compares with the deployed version's tag (infra/web.sh). The
-          # version isn't in it: deploy-web sets VERSION as a var.
+          # is its key (infra/plan.py). The version isn't in it: deploy-web sets VERSION as a var.
           skolia-worker = pkgs.stdenvNoCC.mkDerivation (finalAttrs: {
             pname = "skolia-worker";
             version = "0";
-            # The Node workspace, but not what doesn't reach the Worker: Markdown, tests
-            # and the screenshots (whose baselines are in git LFS, so a checkout without
-            # them would differ)
-            src = pkgs.lib.fileset.toSource {
-              root = ./.;
-              fileset = pkgs.lib.fileset.difference
-                (pkgs.lib.fileset.unions [
-                  ./package.json
-                  ./pnpm-lock.yaml
-                  ./pnpm-workspace.yaml
-                  ./api
-                  ./oauth-proxy
-                  ./reader
-                  ./shared
-                  ./util
-                ])
-                (pkgs.lib.fileset.unions [
-                  ./reader/screenshots
-                  (pkgs.lib.fileset.fileFilter (f: f.hasExt "md" || pkgs.lib.hasSuffix ".test.ts" f.name) ./.)
-                ]);
-            };
+            src = sources.worker;
             # The lock file's packages. When pnpm-lock.yaml changes this hash does too: set
             # it to "" and take the one the build reports.
             pnpmDeps = pkgs.fetchPnpmDeps {
@@ -130,6 +131,7 @@
       systems = builtins.mapAttrs perSystem terraformZips;
     in
     {
+      inherit sources;
       packages = builtins.mapAttrs (_: s: s.packages) systems;
       devShells = builtins.mapAttrs (_: s: s.devShells) systems;
     };

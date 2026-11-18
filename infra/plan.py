@@ -16,8 +16,8 @@ each built once for every environment:
   image-<lang>   the ingest image (analysis#ingest-<lang>.imageTag), in the registry
   worker         the skolia Worker (flake.nix skolia-worker), in Cachix
 Deploys, each environment's:
-  ingest         the image tags and the Node workspace the ingest Worker is bundled from
-                 (skolia-worker's src)
+  ingest         the image tags and the source the ingest Worker is bundled from
+                 (flake.nix sources.ingest)
   lexicon        each language's cards lexicon (analysis#cards-lexicon-<lang>)
   web            the skolia Worker and its version
 The version is the tag at HEAD, or else the last tag and the skolia Worker's out path hash
@@ -95,7 +95,7 @@ BUILDS: dict[str, Callable[[], str]] = {
 
 DEPLOYS: dict[str, Callable[[], str]] = {
     "ingest": lambda: digest(
-        *(f"{lang} {image_tag(lang)}" for lang in LANGS), nix_eval(".#skolia-worker.src.outPath")
+        *(f"{lang} {image_tag(lang)}" for lang in LANGS), nix_eval(".#sources.ingest.outPath")
     ),
     "lexicon": lambda: digest(
         *(nix_eval(f"./analysis#cards-lexicon-{lang}.outPath") for lang in LANGS)
