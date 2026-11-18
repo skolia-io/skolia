@@ -47,7 +47,7 @@
       "migrations_dir": "lexicon-migrations"
     }
   ],
-  "r2_buckets": [{ "binding": "BLOBS", "bucket_name": "skolia" }],
+  "r2_buckets": [{ "binding": "BLOBS", "bucket_name": "skolia-documents" }],
   // wrangler dev takes BASE_URL from api/.env, and the auth secrets from api/.env.local (DEVELOP.md); deployed, they're wrangler secrets.
   "vars": { "BASE_URL": "https://skolia.io" },
   // INGEST_WORKFLOW: the ingest Worker's runs of ingest (ingest/wrangler.jsonc), one started
@@ -86,7 +86,7 @@
           "migrations_dir": "lexicon-migrations"
         }
       ],
-      "r2_buckets": [{ "binding": "BLOBS", "bucket_name": "skolia-staging" }],
+      "r2_buckets": [{ "binding": "BLOBS", "bucket_name": "skolia-documents-staging" }],
       "vars": { "BASE_URL": "https://staging.skolia.io" },
       "workflows": [
         {

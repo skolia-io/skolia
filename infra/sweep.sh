@@ -22,8 +22,8 @@ previews() {
   names+=$'\n'$("$root/infra/wrangler.sh" account containers list --json | jq -r '.[].name') || return
   names+=$'\n'$(cf_pages d1/database | jq -r .name) || return
   names+=$'\n'$(cf_pages queues | jq -r .queue_name) || return
-  names+=$'\n'$(r2_buckets skolia-pr-) || return
-  sed -nE 's/^skolia(-(ingest|lexicon)(-[a-z]+)?)?-(pr-[0-9]+)(\.tfstate)?$/\4/p' <<<"$names" | sort -u
+  names+=$'\n'$(r2_buckets -pr-) || return
+  sed -nE 's/^skolia(-(ingest|lexicon|documents)(-[a-z]+)?)?-(pr-[0-9]+)(\.tfstate)?$/\4/p' <<<"$names" | sort -u
 }
 
 # Previews of pull requests that aren't open, asked again each time, so a pull request
