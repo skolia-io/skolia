@@ -28,6 +28,11 @@
       sources = {
         worker = nodeSource [ ./api ./ingest ./oauth-proxy ./reader ./shared ./util ];
         ingest = nodeSource [ ./ingest ./shared ./util ];
+        # The curated texts, whose sync infra/plan.py keys on this and the skolia Worker
+        curated = fs.toSource {
+          root = ./.;
+          fileset = ./curated;
+        };
       };
 
       # HashiCorp's release: nixpkgs builds terraform from source, as it's unfree (BUSL),

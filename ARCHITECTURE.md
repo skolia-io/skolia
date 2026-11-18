@@ -184,7 +184,7 @@ flowchart TB
 - The ingest image has `lexicon-{lang}` but not the cards lexicon. The cards lexicon is built from the lexicon, with Morfeusz's paradigms for Polish.
 - `load-lexicon` only substitutes from Cachix and never fetches the inputs, so it needs the lexicon there; `build-ingest-image` pushes it only when an image is rebuilt.
 - `deploy-web` waits for `load-lexicon` and `deploy-ingest`: the end-to-end tests read the lexicon.
-- Deploys don't wait for `check`. `plan` (`infra/plan.py`) skips each package (an image, the ingest Worker, the lexicon, the skolia Worker) whose key, a hash of its Nix outputs, `skolia-ci` has a row for: in `build` for an image or the skolia Worker's bundle, built once for every environment, and as the environment's last row in `deployment` for the ingest Worker, the lexicon and the skolia Worker. Both tables only grow.
+- Deploys don't wait for `check`. `plan` (`infra/plan.py`) skips each package (an image, the ingest Worker, the lexicon, the skolia Worker) whose key, a hash of its Nix outputs, `skolia-ci` has a row for: in `build` for an image or the skolia Worker's bundle, built once for every environment, and as the environment's last row in `deployment` for the ingest Worker, the lexicon, the skolia Worker, the end-to-end tests and the curated sync. Both tables only grow.
 - `schema.gen.ts` is generated from analysis; the blob keys in `shared/keys.ts` are kept in step by hand.
 - A preview loads each language's entries for wordfreq's 3,000 most common words only, and accepts 20 imports a day.
 

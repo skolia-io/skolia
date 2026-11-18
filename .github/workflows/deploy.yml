@@ -6,7 +6,7 @@ name: Deploy
 # then, side by side, the end-to-end tests (e2e) and the curated texts in curated/
 # (sync-curated, sync-curated.yml). The ingest Worker consumes the queue the skolia Worker
 # feeds, so it goes first. The plan (infra/plan.py) skips each build or deployment whose
-# Nix key skolia-ci has a row for. One deploy
+# Nix key skolia-ci has a row for, the end-to-end tests and the curated sync included. One deploy
 # of an environment runs at a time (ci.yml's concurrency), so no older deploy lands
 # between the plan and what it skipped. A newer push cancels the run, but a step that
 # changes what's deployed finishes first (.github/uninterruptible.sh). Previews (pr-<N>)
@@ -21,10 +21,10 @@ on:
     outputs:
       url:
         description: The environment's URL, set once the skolia Worker's deployed or current, even if a later step fails
-        value: ${{ jobs.e2e.outputs.url }}
+        value: ${{ jobs.plan.outputs.plan && (jobs.deploy-web.outputs.deployed || !fromJSON(jobs.plan.outputs.plan).web) && jobs.plan.outputs.url || '' }}
       e2e:
-        description: The end-to-end tests' result (success, failure or cancelled), empty if they didn't run
-        value: ${{ jobs.e2e.outputs.result }}
+        description: The end-to-end tests' result (success, failure or cancelled), current if they passed against what's deployed before, empty if they didn't run
+        value: ${{ jobs.e2e.outputs.result || (jobs.plan.outputs.plan && !fromJSON(jobs.plan.outputs.plan).e2e && 'current') || '' }}
 
 permissions:
   contents: read
@@ -41,6 +41,7 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       plan: ${{ steps.plan.outputs.plan }}
+      url: ${{ steps.url.outputs.url }}
     steps:
       # The tags and history, for the version
       - uses: actions/checkout@v7
@@ -49,6 +50,8 @@ jobs:
       - uses: ./.github/actions/setup
       - id: plan
         run: echo "plan=$(infra/plan.py ${{ inputs.env }})" >> "$GITHUB_OUTPUT"
+      - id: url
+        run: echo "url=$(just url ${{ inputs.env }})" >> "$GITHUB_OUTPUT"
 
   # The images are named by their inputs, not the environment, so one built for a preview
   # serves staging and production too
@@ -144,23 +147,28 @@ jobs:
       GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
       # The preview environment's only: its sign-in goes through the OAuth proxy (oauth-proxy/)
       OAUTH_PROXY_SECRET: ${{ secrets.OAUTH_PROXY_SECRET }}
+    outputs:
+      deployed: ${{ steps.deploy.outputs.deployed }}
     steps:
       # The tags and history, for the version
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: ./.github/actions/setup
-      - run: .github/uninterruptible.sh just deploy-web ${{ inputs.env }}
+      - id: deploy
+        run: |
+          .github/uninterruptible.sh just deploy-web ${{ inputs.env }}
+          echo "deployed=true" >> "$GITHUB_OUTPUT"
 
   # A skipped job anywhere before makes success() false, so each job after one that may be
-  # skipped says what it needs: deploy-web deployed or current
+  # skipped says what it needs: deploy-web deployed or current. Each runs only if the plan
+  # says what it ran against, or its input, changed since it last passed.
   e2e:
-    needs: deploy-web
-    if: ${{ !cancelled() && !failure() }}
+    needs: [plan, deploy-web]
+    if: ${{ !cancelled() && !failure() && fromJSON(needs.plan.outputs.plan).e2e }}
     runs-on: ubuntu-24.04
     environment: ${{ startsWith(inputs.env, 'pr-') && 'preview' || inputs.env }}
     outputs:
-      url: ${{ steps.url.outputs.url }}
       result: ${{ steps.result.outputs.result }}
     steps:
       # The tags and history, for the version
@@ -168,16 +176,14 @@ jobs:
         with:
           fetch-depth: 0
       - uses: ./.github/actions/setup
-      - id: url
-        run: echo "url=$(just url ${{ inputs.env }})" >> "$GITHUB_OUTPUT"
       - run: just e2e ${{ inputs.env }}
       - id: result
         if: always()
         run: echo "result=${{ job.status }}" >> "$GITHUB_OUTPUT"
 
   sync-curated:
-    needs: deploy-web
-    if: ${{ !cancelled() && !failure() }}
+    needs: [plan, deploy-web]
+    if: ${{ !cancelled() && !failure() && fromJSON(needs.plan.outputs.plan).curated }}
     uses: ./.github/workflows/sync-curated.yml
     with:
       env: ${{ inputs.env }}

@@ -6,7 +6,7 @@
 """What a deploy of an environment needs to do, from skolia-ci (infra/shared/ci.tf): what's
 been built, for every environment (build), and what each environment serves (deployment).
   plan.py <staging|production|pr-N>     print the plan as JSON, for deploy.yml:
-                                        {"images": ["pl"], "worker": true, "ingest": true, "lexicon": false, "web": true}
+                                        {"images": ["pl"], "worker": true, "ingest": true, "lexicon": false, ...}
   plan.py built <build>                 record a build's key once it's in the registry or Cachix
   plan.py deployed <env> <deploy>       record a deploy's key once it's deployed
   plan.py torn-down <env>               record that a preview serves nothing (infra/teardown.sh)
@@ -20,6 +20,8 @@ Deploys, each environment's:
                  (flake.nix sources.ingest)
   lexicon        each language's cards lexicon (analysis#cards-lexicon-<lang>)
   web            the skolia Worker and its version
+  e2e            the end-to-end tests, run against ingest, lexicon and web
+  curated        the curated texts' sync (flake.nix sources.curated), against web
 The version is the tag at HEAD, or else the last tag and the skolia Worker's out path hash
 (v0.0.17+4qqk2ki3mxwb): not a commit, so a skipped deploy serves what a new one would.
 Secrets aren't in any key: after changing one, deploy by hand. Needs the tags (a full
@@ -93,14 +95,29 @@ BUILDS: dict[str, Callable[[], str]] = {
     "worker": worker,
 }
 
+
+def ingest() -> str:
+    tags = (f"{lang} {image_tag(lang)}" for lang in LANGS)
+    return digest(*tags, nix_eval(".#sources.ingest.outPath"))
+
+
+def lexicon() -> str:
+    return digest(*(nix_eval(f"./analysis#cards-lexicon-{lang}.outPath") for lang in LANGS))
+
+
+def web() -> str:
+    return digest(version(), worker())
+
+
+# In the order deploy.yml runs them: the end-to-end tests and the curated sync go last, and
+# their keys hold the deploys they ran against. The tests and the sync script are in api/,
+# so in the skolia Worker's key.
 DEPLOYS: dict[str, Callable[[], str]] = {
-    "ingest": lambda: digest(
-        *(f"{lang} {image_tag(lang)}" for lang in LANGS), nix_eval(".#sources.ingest.outPath")
-    ),
-    "lexicon": lambda: digest(
-        *(nix_eval(f"./analysis#cards-lexicon-{lang}.outPath") for lang in LANGS)
-    ),
-    "web": lambda: digest(version(), worker()),
+    "ingest": ingest,
+    "lexicon": lexicon,
+    "web": web,
+    "e2e": lambda: digest(ingest(), lexicon(), web()),
+    "curated": lambda: digest(nix_eval(".#sources.curated.outPath"), web()),
 }
 
 
@@ -164,6 +181,8 @@ def plan(env: str) -> dict[str, object]:
         "ingest": deploy("ingest"),
         "lexicon": deploy("lexicon"),
         "web": deploy("web"),
+        "e2e": deploy("e2e"),
+        "curated": deploy("curated"),
     }
 
 

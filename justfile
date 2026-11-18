@@ -206,6 +206,7 @@ e2e env="local":
     export E2E_API_KEY E2E_USER_KEY
     just d1-sql {{ env }} api/src/e2e-keys.ts
     node api/src/e2e.ts "$url" "$(infra/plan.py version)"
+    infra/plan.py deployed {{ env }} e2e
 
 # Make the curated user's documents match curated/ (api/src/sync-curated.ts); with --check, only list what that takes.
 # A preview gets 5 of the texts (--sample), spread over languages, kinds and annotations.
@@ -219,6 +220,7 @@ sync-curated env *flags:
     just d1-sql {{ env }} api/src/sync-curated-key.ts
     case {{ env }} in pr-*) sample="--sample 5" ;; *) sample= ;; esac
     node api/src/sync-curated.ts "$url" curated $sample {{ flags }}
+    case "{{ env }} {{ flags }}" in local* | *--check*) ;; *) infra/plan.py deployed {{ env }} curated ;; esac
 
 # The environment's URL
 [private]
