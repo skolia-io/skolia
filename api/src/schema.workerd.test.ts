@@ -36,6 +36,7 @@ test("every D1 table is STRICT, and timestamps must be toISOString()'s", async (
       "user_document",
       "user_document_annotation",
       "user_document_tag",
+      "user_type",
       "verification",
     ].map((name) => ({ name, strict: 1 })),
   );
@@ -49,8 +50,6 @@ test("every D1 table is STRICT, and timestamps must be toISOString()'s", async (
   await addAttribution("cc-by-3.0", "A", "https://example.org");
   await assert.rejects(addAttribution("cc0"), /UNIQUE constraint failed/);
   await assert.rejects(addAttribution("cc-by-3.0", "A", "https://example.org"), /UNIQUE constraint failed/);
-  await assert.rejects(addAttribution("mit"), /CHECK constraint failed/);
-  await assert.rejects(addAttribution("cc-by"), /CHECK constraint failed/);
   await assert.rejects(addAttribution("cc-by-4.0", ""), /CHECK constraint failed/);
   await assert.rejects(addAttribution("cc-by-4.0", null, "ftp://x"), /CHECK constraint failed/);
   const entry = (
@@ -74,7 +73,6 @@ test("every D1 table is STRICT, and timestamps must be toISOString()'s", async (
   await assert.rejects(entry("missing", "public"), /FOREIGN KEY constraint failed/);
   await assert.rejects(entry("a", "public", { owner: "nobody" }), /FOREIGN KEY constraint failed/);
   await assert.rejects(entry("a", "public", { attribution: 99 }), /FOREIGN KEY constraint failed/);
-  await assert.rejects(entry("a", "secret"), /CHECK constraint failed/);
   await entry("a", "public", { attribution: await attributionId("all-rights-reserved") });
   // Deleting a user takes their entries, and leaves the text
   await env.DB.prepare(`delete from "user" where "id" = ?`).bind(user.id).run();
@@ -82,7 +80,27 @@ test("every D1 table is STRICT, and timestamps must be toISOString()'s", async (
   assert.notEqual(await env.DB.prepare("select 1 from document where id = 'a'").first(), null);
 });
 
-test("a status may precede its document, but its state, timestamp and data must be valid", async () => {
+test("user types are seeded and new types can be added without changing the schema", async () => {
+  const db = local.env.DB;
+  assert.deepEqual((await db.prepare("SELECT name FROM user_type ORDER BY name").all()).results, [
+    { name: "standard" },
+    { name: "system" },
+  ]);
+  const user = await local.signUp(ALICE);
+  assert.equal(user.type, "standard");
+  const assign = db.prepare(`UPDATE "user" SET "type" = 'future' WHERE id = ?`).bind(user.id);
+  await assert.rejects(assign.run(), /FOREIGN KEY constraint failed/);
+  await db.prepare("INSERT INTO user_type VALUES ('future')").run();
+  try {
+    await assign.run();
+    assert.equal(await db.prepare(`SELECT "type" FROM "user" WHERE id = ?`).bind(user.id).first("type"), "future");
+  } finally {
+    await db.prepare(`UPDATE "user" SET "type" = 'standard' WHERE id = ?`).bind(user.id).run();
+    await db.prepare("DELETE FROM user_type WHERE name = 'future'").run();
+  }
+});
+
+test("a status may precede its document; the database checks structure, not app enum values", async () => {
   const db = local.env.DB;
   const at = "2026-11-07T00:00:00.000Z";
   const put = (id: string, state: string, updated: string, data: string) =>
@@ -92,10 +110,10 @@ test("a status may precede its document, but its state, timestamp and data must 
       .run();
   await put("new-import", "queued", at, "{}");
   assert.equal(await db.prepare("SELECT * FROM document WHERE id = 'new-import'").first(), null);
-  await assert.rejects(put("bad-state", "analysing", at, "{}"), /CHECK constraint failed/);
+  await put("future-state", "future", at, "{}");
   await assert.rejects(put("bad-date", "queued", "yesterday", "{}"), /CHECK constraint failed/);
   for (const data of ["[]", "null", "not json"]) await assert.rejects(put("bad-data", "queued", at, data));
-  await assert.rejects(db.prepare("INSERT INTO document VALUES ('bad-lang', 'de', 1)").run(), /CHECK constraint failed/);
+  await db.prepare("INSERT INTO document VALUES ('new-lang', 'de', 1)").run();
   await assert.rejects(db.prepare("INSERT INTO document VALUES ('bad-words', 'pl', -1)").run(), /CHECK constraint failed/);
 });
 

@@ -249,7 +249,7 @@ test("a word's cards are stored with their ts-fsrs state, which gives their due 
       ["recognition", "2026-11-07T00:00:00.000Z", "new"],
     ],
   );
-  await assert.rejects(storage.exec("update card set fsrs = json_set(fsrs, '$.scheduleStatus', 'lost')"));
+  await assert.rejects(storage.exec("update card set fsrs = json_remove(fsrs, '$.scheduleStatus')"), /NOT NULL constraint failed/);
 });
 
 test("row_count's triggers keep the count of cards of every kind however one goes", async () => {

@@ -51,12 +51,7 @@ CREATE INDEX "apikey_referenceId_idx" ON "apikey" ("referenceId");
 
 CREATE TABLE attribution (
   id INTEGER PRIMARY KEY,
-  licence TEXT NOT NULL CHECK (licence IN (
-    'public-domain', 'cc0',
-    'cc-by-4.0', 'cc-by-3.0', 'cc-by-sa-4.0', 'cc-by-sa-3.0', 'cc-by-nc-4.0', 'cc-by-nc-3.0',
-    'cc-by-nc-sa-4.0', 'cc-by-nc-sa-3.0', 'cc-by-nd-4.0', 'cc-by-nd-3.0', 'cc-by-nc-nd-4.0', 'cc-by-nc-nd-3.0',
-    'all-rights-reserved', 'unknown'
-  )),
+  licence TEXT NOT NULL,
   author TEXT CHECK (author != ''),
   source TEXT CHECK (source GLOB 'http://?*' OR source GLOB 'https://?*')
 ) STRICT;
@@ -76,7 +71,7 @@ CREATE TABLE background_migration (
 
 CREATE TABLE document (
   id TEXT NOT NULL PRIMARY KEY,
-  lang TEXT NOT NULL CHECK (lang IN ('en', 'fr', 'pl')),
+  lang TEXT NOT NULL,
   words INTEGER NOT NULL CHECK (words >= 0)
 ) STRICT, WITHOUT ROWID;
 
@@ -85,7 +80,7 @@ CREATE TABLE document_status (
   -- inserting the document. A failed start must not leave a visible entry, and
   -- a fast run can publish its result before the document exists.
   document_id TEXT NOT NULL PRIMARY KEY,
-  state TEXT NOT NULL CHECK (state IN ('queued', 'ready', 'failed')),
+  state TEXT NOT NULL,
   updated_at TEXT NOT NULL CHECK (updated_at IS strftime('%Y-%m-%dT%H:%M:%fZ', updated_at)),
   data TEXT NOT NULL CHECK (json_valid(data) AND json_type(data) = 'object')
 ) STRICT, WITHOUT ROWID;
@@ -122,15 +117,17 @@ CREATE TABLE "user" (
   "image" TEXT,
   "createdAt" TEXT NOT NULL CHECK ("createdAt" IS strftime('%Y-%m-%dT%H:%M:%fZ', "createdAt")),
   "updatedAt" TEXT NOT NULL CHECK ("updatedAt" IS strftime('%Y-%m-%dT%H:%M:%fZ', "updatedAt")),
-  "type" TEXT NOT NULL DEFAULT 'standard' CHECK ("type" IN ('standard', 'system'))
+  "type" TEXT NOT NULL DEFAULT 'standard' REFERENCES user_type (name)
 ) STRICT;
+
+CREATE INDEX user_type_idx ON "user" ("type");
 
 CREATE TABLE user_document (
   user_id TEXT NOT NULL REFERENCES "user" ("id") ON DELETE CASCADE,
   document_id TEXT NOT NULL REFERENCES document (id),
   title TEXT NOT NULL,
   imported_at TEXT NOT NULL CHECK (imported_at IS strftime('%Y-%m-%dT%H:%M:%fZ', imported_at)),
-  visibility TEXT NOT NULL CHECK (visibility IN ('public', 'private')),
+  visibility TEXT NOT NULL,
   attribution_id INTEGER NOT NULL REFERENCES attribution (id),
   annotations_count INTEGER NOT NULL DEFAULT 0 CHECK (annotations_count >= 0),
   PRIMARY KEY (user_id, document_id)
@@ -179,6 +176,10 @@ CREATE TABLE user_document_tag (
 ) STRICT, WITHOUT ROWID;
 
 CREATE INDEX user_document_tag_value_idx ON user_document_tag (kind, value, user_id, document_id);
+
+CREATE TABLE user_type (
+  name TEXT NOT NULL PRIMARY KEY
+) STRICT, WITHOUT ROWID;
 
 CREATE TABLE "verification" (
   -- Better Auth: verification values and expiry.
