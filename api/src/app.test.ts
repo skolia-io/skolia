@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { acceptsEncoding } from "./app.ts";
-import { countWords, isOutdated, nameOf, parseStatus, parseVersions } from "./controllers/documents.ts";
+import { STUCK_AFTER_MS, countWords, isOutdated, isStuck, nameOf, parseStatus, parseVersions } from "./controllers/documents.ts";
 
 const NOW = "2026-11-04T00:00:00Z";
 
@@ -13,7 +13,13 @@ test("accept-encoding parsing", () => {
   assert.equal(acceptsEncoding(undefined, "br"), false);
 });
 
-test("outdated rule", () => {
+test("stuck and outdated rules", () => {
+  const at = new Date(NOW);
+  const old = new Date(at.getTime() - STUCK_AFTER_MS - 1).toISOString();
+  assert.equal(isStuck({ state: "queued", updated: NOW }, at), false);
+  assert.equal(isStuck({ state: "queued", updated: old }, at), true);
+  assert.equal(isStuck({ state: "ready", updated: old }, at), false);
+  assert.equal(isStuck({ state: "analysing", updated: "garbage" }, at), true);
   assert.equal(nameOf("doc/x/analysis/s2-a1.json.br"), "s2-a1");
   assert.equal(nameOf(undefined), undefined);
   const latest = { analyzer: "a", lexicon: "l", analysis: "s2-a1", bundle: "b1-a1-l1" };

@@ -234,16 +234,19 @@ async function ownEntry(deps: Deps, id: DocumentId, user: User): Promise<StoredD
   return entry?.user === user.id ? entry : null;
 }
 
-/** The summary, after queueing the document again if ingest now produces other versions. */
+/** The summary, after queueing the document again if ingest now produces other
+ * versions, or if its run seems lost. */
 async function current(deps: Deps, record: StoredDocument, versions: VersionsOf, viewer: User | null): Promise<DocumentSummary> {
   const status = await readStatus(deps.blobs, record.id);
-  if (status !== null && isOutdated(status, await versions(record.lang))) {
-    return summarize(record, await requeue(deps, record, versions, status, deps.now(), "outdated"), viewer);
+  const now = deps.now();
+  if (status !== null) {
+    const reason = isStuck(status, now) ? "stuck" : isOutdated(status, await versions(record.lang)) ? "outdated" : null;
+    if (reason !== null) return summarize(record, await requeue(deps, record, versions, status, now, reason), viewer);
   }
   return summarize(record, status, viewer);
 }
 
-type RequeueReason = "imported" | "reimported" | "outdated";
+type RequeueReason = "imported" | "reimported" | "stuck" | "outdated";
 
 /** Queues the document and starts a run of ingest for it, keeping the last analysis readable
  * until the new one is ready. The queued status is written before the run exists, which
@@ -278,6 +281,19 @@ async function requeue(
 export function isOutdated(status: Status, latest: Versions | null): boolean {
   if (status.state !== "ready" || latest === null) return false;
   return nameOf(status.analysis) !== latest.analysis || nameOf(status.bundle) !== latest.bundle;
+}
+
+/** Longer than a job takes, waiting its turn included, short of a run's retries. A document
+ * queued (or analysing, as a container before runs wrote) for this long may have lost its run:
+ * its start failed, or its job was on the queue runs replaced. Starting it again is safe: a run
+ * under way is left alone, one that ended is run again, and ingest reuses blobs that already
+ * exist. */
+export const STUCK_AFTER_MS = 30 * 60 * 1000;
+
+export function isStuck(status: Status, at: Date): boolean {
+  if (status.state !== "queued" && status.state !== "analysing") return false;
+  const updated = Date.parse(status.updated);
+  return Number.isNaN(updated) || at.getTime() - updated > STUCK_AFTER_MS;
 }
 
 /** The name in a blob key: doc/{id}/analysis/{name}.json.br -> {name}. */
