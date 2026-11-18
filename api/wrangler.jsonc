@@ -13,6 +13,9 @@
   "preview_urls": false,
   // Workers Logs, inherited by env.staging and previews; log events are src/log.ts's
   "observability": { "enabled": true },
+  // Runs /api/* near D1 and R2 when that's faster than near the user; assets are still
+  // served from the nearest location. Inherited by env.staging and previews.
+  "placement": { "mode": "smart" },
   "routes": [{ "pattern": "skolia.io", "custom_domain": true }],
   // wrangler dev would otherwise rewrite each request's Host to the route's, and the
   // ingest container's S3 requests, signed for localhost:8787, would fail
