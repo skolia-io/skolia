@@ -14,6 +14,7 @@ locals {
     "D1 Write",
     "Queues Write",
     "Notifications Write",
+    "Workers KV Storage Read",
   ]
 
   zone_permissions = [
