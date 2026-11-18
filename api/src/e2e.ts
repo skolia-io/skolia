@@ -34,8 +34,8 @@ const log = scriptLog("e2e");
 
 const TIMEOUT_MS = 10 * 60 * 1000;
 const POLL_MS = 10 * 1000;
-// How long a finished job's event may take through the events queue (batched every 5 s)
-const EVENT_TIMEOUT_MS = 60 * 1000;
+// How long a run may take to record its job's attempts after it writes the status
+const HISTORY_TIMEOUT_MS = 60 * 1000;
 const VERSION_TIMEOUT_MS = 2 * 60 * 1000;
 
 const TEXTS: Record<Lang, string> = {
@@ -145,10 +145,10 @@ async function documents(base: string, key: string, lang: Lang): Promise<void> {
   }
 }
 
-/** The analysis of a document just ready is in the ingest history once its container's
- * event has been through the queue; signed out, the private text isn't. */
+/** The analysis of a document just ready is in the ingest history once its run has recorded
+ * it; signed out, the private text isn't. */
 async function ingestHistory(api: Api, anonymous: Api, lang: Lang, id: DocumentId): Promise<void> {
-  const deadline = Date.now() + EVENT_TIMEOUT_MS;
+  const deadline = Date.now() + HISTORY_TIMEOUT_MS;
   for (;;) {
     // A retried attempt's job comes before the one that made it ready
     const job = (await body(`${lang} ingest`, api.ingest.$get())).recent.find(
@@ -167,7 +167,7 @@ async function ingestHistory(api: Api, anonymous: Api, lang: Lang, id: DocumentI
       log.info("{lang}: ingest job {job}", { lang, doc: id, job: job.id, stages: job.result.stages });
       return;
     }
-    if (Date.now() > deadline) throw new Error(`${lang}: the job isn't ready in the ingest history after ${EVENT_TIMEOUT_MS / 1000} s`);
+    if (Date.now() > deadline) throw new Error(`${lang}: the job isn't ready in the ingest history after ${HISTORY_TIMEOUT_MS / 1000} s`);
     await sleep(1000);
   }
 }

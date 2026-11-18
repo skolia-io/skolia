@@ -474,7 +474,7 @@ export const IngestOutcome = z.enum(["ready", "failed", "retried"]).meta({
 export const StageTime = z.object({ stage: IngestStage, ms: z.number().int().min(0) }).meta({ id: "StageTime" });
 
 const IngestJobId = z.string().min(1).max(64);
-/** The longest error a job can have, in UTF-16 code units (http.py MAX_ERROR), so an event fits a queue message */
+/** The longest error a job's attempt can have, in UTF-16 code units (http.py MAX_ERROR) */
 export const MAX_INGEST_ERROR = 2000;
 const Size = z.number().int().min(0).nullable();
 
@@ -523,8 +523,12 @@ const StartedFields = {
   startedAt: Timestamp,
 };
 
-/** What an ingest container answers to POST /jobs, once the job has run (ingest/schema.py) */
+/** How a job ended, for the document's status (ingest/schema.py) */
 export const JobResult = gen.JobResult;
+
+/** What an ingest container answers to POST /jobs, once the job has run: its result, and
+ * its attempts for the history (ingest/schema.py) */
+export const JobAnswer = gen.JobAnswer;
 
 /** An IngestWorkflow instance (ingest/src/workflow.ts): one document made to one bundle
  * version, `{doc}-{short hash of the bundle name}` (api/src/worker/adapters.ts runId) */
@@ -533,18 +537,6 @@ export const IngestRunId = z
   .regex(/^[0-9a-f]{64}-[0-9a-f]{12}$/u)
   .brand<"IngestRunId">();
 
-/** What an ingest container sends as a job starts and as it ends, to the ingest Worker,
- * which stores them (ingest/migrations). */
-export const IngestEvent = z
-  .discriminatedUnion("kind", [
-    z.object({ kind: z.literal("started"), ...StartedFields }),
-    z.object({ kind: z.literal("finished"), ...StartedFields, ...IngestResult.shape }),
-  ])
-  .refine((event) => event.kind === "started" || event.outcome !== "ready" || event.error === null, {
-    message: "a ready job has no error",
-  })
-  .meta({ id: "IngestEvent" });
-
 const JsonStages = z.string().transform((stages, ctx) => {
   const parsed = z.array(StageTime).safeParse(JSON.parse(stages));
   if (parsed.success) return parsed.data;
@@ -552,7 +544,8 @@ const JsonStages = z.string().transform((stages, ctx) => {
   return z.NEVER;
 });
 
-/** An ingest_job row (ingest/migrations): its result is null until it's finished */
+/** An ingest_job row (ingest/migrations): its result is null for a job that started before
+ * runs recorded jobs whole, and never finished */
 export const IngestJobRow = z
   .object({
     ...StartedFields,

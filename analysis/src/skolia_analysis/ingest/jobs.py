@@ -5,20 +5,9 @@ from __future__ import annotations
 
 import json
 from collections import deque
-from typing import Literal, Protocol, cast
+from typing import Protocol, cast
 
-from .schema import IngestJob, JobResult
-
-Stage = Literal[
-    "reading",
-    "loading-analysis",
-    "analysing",
-    "bundling",
-    "compressing-analysis",
-    "uploading-analysis",
-    "compressing-bundle",
-    "uploading-bundle",
-]
+from .schema import IngestJob, JobResult, Stage
 
 
 class InvalidJob(ValueError):

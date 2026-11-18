@@ -41,7 +41,6 @@ import type {
   Tags,
   CardState,
   ContainerJobs,
-  IngestEvent,
   IngestJobRecord,
 } from "@skolia/shared/api";
 import type { PageRequest } from "@skolia/shared/page";
@@ -145,7 +144,7 @@ export interface JobQueue {
   jobs(lang: Lang): Promise<IngestJobs | null>;
 }
 
-/** The jobs the ingest containers ran, from their events (ingest/src/history.ts) */
+/** The jobs the ingest containers ran, as each run recorded its attempts (ingest/src/history.ts) */
 export interface IngestHistory {
   /** Those started most recently, newest first */
   recent(limit: number): Promise<readonly IngestJobRecord[]>;

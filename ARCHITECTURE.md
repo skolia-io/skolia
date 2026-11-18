@@ -29,11 +29,8 @@ flowchart LR
     LX[("D1 skolia-lexicon-{lang}, one per language: entry, featureset, loaded")]
     R2[("R2 skolia: doc/{id}/..., versions/{lang}.json")]
     IDB[("D1 skolia-ingest: ingest_job, 30 days")]
-    QE[["Queue skolia-ingest-events"]]
     subgraph INGW["skolia-ingest Worker"]
       WF["IngestWorkflow, one run per document and version"]
-      EVE["IngestEvents entrypoint"]
-      ECON["events consumer"]
       IDO["Ingester DO, one per language and one per image"]
     end
     subgraph CTR["containers (Python), one per language"]
@@ -61,15 +58,12 @@ flowchart LR
   IDO -->|"recent jobs"| IDB
   WF -->|"analyse a job, wait for the result"| IDO
   WF -->|"status: ready, failed"| R2
-  EVE -->|"event"| QE
-  QE --> ECON
-  ECON -->|"insert or update, prune"| IDB
+  WF -->|"the job's attempts, prune"| IDB
   IDO -->|"POST /jobs, GET /busy, GET /jobs"| CTR
   CTR -->|"GET, PUT http://blobs.internal/{key}, served from the Worker's R2 binding (interceptOutboundHttp)"| R2
-  CTR -->|"POST http://events.internal/, routed to the Worker (interceptOutboundHttp)"| EVE
 ```
 
-A job's events never leave the machine: the Ingester routes its container's requests to `events.internal` to the ingest Worker's `IngestEvents` entrypoint, which puts them on a queue the same Worker consumes. They're for the analysis page only: nothing waits on them. The queue holds them until D1 has them, and one consumer makes every write to `skolia-ingest`.
+The container answers each job with its result and its attempts: one, or more if storage failed and the job went back in line. The run writes the status first, then adds the attempts to `skolia-ingest` for the analysis page; a failure there is logged, and the document is ready all the same.
 
 ```mermaid
 sequenceDiagram
@@ -77,23 +71,15 @@ sequenceDiagram
   participant WF as IngestWorkflow run (skolia-ingest)
   participant DO as Ingester DO (skolia-ingest)
   participant C as container
-  participant EV as IngestEvents entrypoint (skolia-ingest)
-  participant QE as Queue skolia-ingest-events
-  participant ECON as events consumer (skolia-ingest)
   participant IDB as D1 skolia-ingest
   API->>WF: create {doc}-{bundle hash}
   WF->>DO: analyse (step, retried if it fails)
-  DO->>DO: interceptOutboundHttp(events.internal, IngestEvents) and blobs.internal, on each start
+  DO->>DO: interceptOutboundHttp(blobs.internal, Blobs), on each start
   DO->>C: POST /jobs, held until the job has run
-  C->>EV: POST http://events.internal/ (started)
-  EV->>QE: send
-  C->>EV: POST http://events.internal/ (finished)
-  EV->>QE: send
-  C-->>DO: JobResult: its analysis, or why it failed
-  DO-->>WF: JobResult
-  WF->>WF: status ready or failed
-  QE->>ECON: batch, up to 5 s later
-  ECON->>IDB: insert or update, prune
+  C-->>DO: JobAnswer: its analysis or why it failed, and its attempts
+  DO-->>WF: JobAnswer
+  WF->>WF: status ready or failed (step publish)
+  WF->>IDB: insert the attempts, prune (step record)
   API->>DO: GET /api/ingest reads recent jobs and each container's live jobs
   DO->>IDB: read recent jobs
 ```
@@ -103,12 +89,12 @@ sequenceDiagram
 - **Review:** the User DO gives the due cards and the API adds their entries from its language's lexicon D1. The DO never reads the lexicon, and the reader's word sheet never reads the lexicon D1s, so the two can show different lexicon versions until a document is re-bundled.
 - **Import:** the API puts the text in R2, the metadata in D1 and a queued `status.json`, then starts a run of the ingest Worker's `IngestWorkflow` (`ingest/src/workflow.ts`), named for the document and the bundle version it's to make, so a run asked for twice is one run. The run asks the Ingester named after its language's image to analyse it, so a deploy that changes an image starts a new container, and the Ingester's `POST /jobs` is answered once the job has had its turn and run. A container that goes away first fails the request, and the step is tried again, up to 3 times, after 1, 2 and 4 minutes; one that doesn't answer within the hour times out the same way. While it waits, the importer's summary says where it is: the API asks the language's Ingester (a Durable Object binding to the ingest Worker), which asks a running container for its jobs (`GET /jobs`) and never starts one.
 - The ingest Worker's only D1 is `skolia-ingest`, and its R2 binding serves the containers' blobs: they have no R2 credentials.
-- **Analysis page:** each container reports its jobs' stages (`GET /jobs`), and sends an event as each job starts and ends to the ingest Worker, which stores them in `skolia-ingest`, its own D1 so the main one stays small. The API shows both, without the texts the viewer can't see.
+- **Analysis page:** each container reports its running and waiting jobs' stages (`GET /jobs`), and each run stores its job's attempts in `skolia-ingest`, its own D1 so the main one stays small. The API shows both, without the texts the viewer can't see.
 - Lexicon lookups only see the rows of each language's version in `loaded`.
 
-Locally, `wrangler dev` runs both Workers and the ingest containers, with local D1, R2, Queue and Workflows. The API reaches them through small interfaces (`api/src/ports.ts`, faked in the tests); ingest reaches the local bucket through the same `blobs.internal` intercept. The API writes `doc/{doc}/status.json` as queued before it starts a run, the run writes it from then on (ready or failed), and the API reads it to tell the reader. The container writes no status: its answer gives the analysis it made. The importer sees analysing while the container runs the job, from its `GET /jobs`.
+Locally, `wrangler dev` runs both Workers and the ingest containers, with local D1, R2 and Workflows. The API reaches them through small interfaces (`api/src/ports.ts`, faked in the tests); ingest reaches the local bucket through the same `blobs.internal` intercept. The API writes `doc/{doc}/status.json` as queued before it starts a run, the run writes it from then on (ready or failed), and the API reads it to tell the reader. The container writes no status: its answer gives the analysis it made. The importer sees analysing while the container runs the job, from its `GET /jobs`.
 
-On Cloudflare: Terraform (`infra/`) manages what wrangler doesn't: R2, D1, the queues and billing alerts. Both Workers are deployed with wrangler: `skolia` with the reader as static assets on workers.dev and skolia.io (`api/wrangler.jsonc`), and `skolia-ingest` with its containers, one per language (`ingest/wrangler.jsonc`). Wrangler also applies their Durable Object migrations, which the Terraform provider can't do on an update (it resends the first migration and Cloudflare refuses it). A run hands each job to its language's container over HTTP and waits for the answer. The container keeps jobs in memory, sleeps when idle (the Durable Object asks ingest whether it's busy before stopping it), and has the models and lexicon in its image. It has no internet access or R2 credentials: the Durable Object intercepts its requests to `blobs.internal` and serves them from the ingest Worker's R2 binding (`Blobs` in `ingest/src/main.ts`). A job lost with its container is handed over again by its run's retry.
+On Cloudflare: Terraform (`infra/`) manages what wrangler doesn't: R2, D1, the queues (unused, until they're deleted) and billing alerts. Both Workers are deployed with wrangler: `skolia` with the reader as static assets on workers.dev and skolia.io (`api/wrangler.jsonc`), and `skolia-ingest` with its containers, one per language (`ingest/wrangler.jsonc`). Wrangler also applies their Durable Object migrations, which the Terraform provider can't do on an update (it resends the first migration and Cloudflare refuses it). A run hands each job to its language's container over HTTP and waits for the answer. The container keeps jobs in memory, sleeps when idle (the Durable Object asks ingest whether it's busy before stopping it), and has the models and lexicon in its image. It has no internet access or R2 credentials: the Durable Object intercepts its requests to `blobs.internal` and serves them from the ingest Worker's R2 binding (`Blobs` in `ingest/src/main.ts`). A job lost with its container is handed over again by its run's retry.
 
 ```mermaid
 flowchart TB

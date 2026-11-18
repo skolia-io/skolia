@@ -31,6 +31,49 @@ class JobResult(TypedDict):
     error: str | None
 
 
+Stage = Literal[
+    "reading",
+    "loading-analysis",
+    "analysing",
+    "bundling",
+    "compressing-analysis",
+    "uploading-analysis",
+    "compressing-bundle",
+    "uploading-bundle",
+]
+
+
+class StageTime(TypedDict):
+    stage: Stage
+    ms: int
+
+
+class JobAttempt(TypedDict):
+    """One attempt at a job in a container, for the ingest history (ingest/migrations).
+    retried: storage failed and the job went back in line, to be attempted again."""
+
+    id: str
+    image: str
+    acceptedAt: str
+    startedAt: str
+    finishedAt: str
+    outcome: Literal["ready", "failed", "retried"]
+    error: str | None
+    chars: int | None
+    """Null for an attempt that failed before it read the text, as is words."""
+    words: int | None
+    stages: list[StageTime]
+    """The stages it ran, in order, the one it failed in included."""
+
+
+class JobAnswer(TypedDict):
+    """The answer to POST /jobs, once the job has finished: its result, and its attempts,
+    which the run that asked for it adds to the ingest history."""
+
+    result: JobResult
+    attempts: list[JobAttempt]
+
+
 type State = Literal["queued", "analysing", "ready", "failed"]
 
 
