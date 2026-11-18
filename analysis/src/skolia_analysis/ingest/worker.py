@@ -20,7 +20,7 @@ from .schema import (
     MAX_TEXT_LENGTH,
     IngestJob,
     JobResult,
-    Made,
+    ReadyAnalysis,
     Versions,
     analysis_key,
     analysis_name,
@@ -110,17 +110,21 @@ class Ingester:
         """Raises BlobError when storage fails: that's worth retrying, unlike a failed
         analysis, which would fail the same way again."""
         try:
-            made = self._process(job, progress)
+            analysis = self._process(job, progress)
         except BlobError:
             raise
         except JobError as error:
-            return {"outcome": "failed", "made": None, "error": str(error)}
+            return {"outcome": "failed", "analysis": None, "error": str(error)}
         except Exception as error:
             log.exception("ingest of %s failed", job["doc"])
-            return {"outcome": "failed", "made": None, "error": f"{type(error).__name__}: {error}"}
-        return {"outcome": "ready", "made": made, "error": None}
+            return {
+                "outcome": "failed",
+                "analysis": None,
+                "error": f"{type(error).__name__}: {error}",
+            }
+        return {"outcome": "ready", "analysis": analysis, "error": None}
 
-    def _process(self, job: IngestJob, progress: Progress) -> Made:
+    def _process(self, job: IngestJob, progress: Progress) -> ReadyAnalysis:
         doc = job["doc"]
         pipeline = self._pipelines.get(job["lang"])
         if pipeline is None:

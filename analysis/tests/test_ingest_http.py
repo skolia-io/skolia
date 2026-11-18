@@ -13,16 +13,16 @@ import pytest
 from skolia_analysis.ingest.events import Event, HttpEvents, StartedEvent
 from skolia_analysis.ingest.http import HttpJobs, JobsState, serve
 from skolia_analysis.ingest.jobs import Received
-from skolia_analysis.ingest.schema import IngestJob, JobResult, Made
+from skolia_analysis.ingest.schema import IngestJob, JobResult, ReadyAnalysis
 
 JOB: IngestJob = {"doc": "a" * 64, "lang": "pl"}
-MADE: Made = {
+ANALYSIS: ReadyAnalysis = {
     "analyzer": "pl/1",
     "lexicon": "lex/1",
     "analysis": f"doc/{'a' * 64}/analysis/s2-a1.json.br",
     "bundle": f"doc/{'a' * 64}/bundle/b1-v1-a1-l1.json.br",
 }
-READY: JobResult = {"outcome": "ready", "made": MADE, "error": None}
+READY: JobResult = {"outcome": "ready", "analysis": ANALYSIS, "error": None}
 ISO = re.compile(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z")
 IMAGE = "skolia-ingest:test"
 
@@ -159,7 +159,7 @@ def test_stages_are_recorded_in_order_and_sent_when_finished() -> None:
 def test_a_failed_job_is_sent_with_its_error() -> None:
     jobs, recorder = recorded()
     jobs.add(json.dumps(JOB))
-    jobs.ack(started(jobs), {"outcome": "failed", "made": None, "error": "no text at x"})
+    jobs.ack(started(jobs), {"outcome": "failed", "analysis": None, "error": "no text at x"})
     started_event, finished = recorder.events
     assert started_event["kind"] == "started" and finished["kind"] == "finished"
     assert finished["id"] == started_event["id"]
@@ -251,7 +251,7 @@ def test_a_released_job_is_answered_when_it_finishes_on_a_later_attempt(
     answer = posted(port, JOB)
     until(jobs.busy)
     jobs.release(started(jobs), "BlobError: connection refused")
-    failed: JobResult = {"outcome": "failed", "made": None, "error": "no text at x"}
+    failed: JobResult = {"outcome": "failed", "analysis": None, "error": "no text at x"}
     jobs.ack(started(jobs), failed)
     assert answer() == (200, failed)
 

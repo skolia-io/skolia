@@ -10,8 +10,9 @@ class IngestJob(TypedDict):
     lang: str
 
 
-class Made(TypedDict):
-    """What a job that succeeded made, for the run to point the document's status at."""
+class ReadyAnalysis(TypedDict):
+    """The analysis a ready document reads: its blob keys, and the analyser and lexicon that
+    made them. A job that succeeds answers with it, and the run puts it in the status."""
 
     analyzer: str
     lexicon: str
@@ -22,11 +23,11 @@ class Made(TypedDict):
 
 
 class JobResult(TypedDict):
-    """How a job ended, the answer to POST /jobs: what it made, or why it failed. The
+    """How a job ended, the answer to POST /jobs: its analysis, or why it failed. The
     ingest Worker's run that asked for it writes the document's status from it."""
 
     outcome: Literal["ready", "failed"]
-    made: Made | None
+    analysis: ReadyAnalysis | None
     error: str | None
 
 

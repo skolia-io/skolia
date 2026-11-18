@@ -40,7 +40,7 @@ export class IngestWorkflow extends WorkflowEntrypoint<Env, IngestParams> {
       );
     } catch (error: unknown) {
       logger.error("ingest didn't answer", { doc, lang, run: event.instanceId, error });
-      result = { outcome: "failed", made: null, error: `ingest didn't answer: ${String(error)}` };
+      result = { outcome: "failed", analysis: null, error: `ingest didn't answer: ${String(error)}` };
     }
     await step.do("publish", STATUS, () => setStatus(this.env.BLOBS, doc, result));
     return result.outcome;
@@ -52,7 +52,7 @@ export class IngestWorkflow extends WorkflowEntrypoint<Env, IngestParams> {
 async function setStatus(blobs: R2Bucket, doc: DocumentId, result: JobResult): Promise<void> {
   const updated = timestamp(new Date());
   const status = await (async (): Promise<Status> => {
-    if (result.outcome === "ready" && result.made !== null) return { state: "ready", updated, ...result.made };
+    if (result.outcome === "ready" && result.analysis !== null) return { state: "ready", updated, ...result.analysis };
     const previous = await blobs.get(statusKey(doc));
     const parsed = previous === null ? null : schemas.Status.safeParse(await previous.json());
     const { analyzer, lexicon, analysis, bundle } = parsed?.success ? parsed.data : {};

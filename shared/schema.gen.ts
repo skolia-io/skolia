@@ -474,7 +474,7 @@ export interface IngestJob {
   lang: string;
 }
 
-export interface Made {
+export interface ReadyAnalysis {
   analyzer: string;
   lexicon: string;
   analysis: string;
@@ -483,7 +483,7 @@ export interface Made {
 
 export interface JobResult {
   outcome: "ready" | "failed";
-  made: Made | null;
+  analysis: ReadyAnalysis | null;
   error: string | null;
 }
 

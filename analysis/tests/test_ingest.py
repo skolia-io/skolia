@@ -12,7 +12,7 @@ from skolia_analysis.ingest.jobs import InvalidJob, MemoryQueue, Received, Stage
 from skolia_analysis.ingest.schema import (
     MAX_TEXT_LENGTH,
     IngestJob,
-    Made,
+    ReadyAnalysis,
     doc_id,
     status_key,
     text_key,
@@ -51,10 +51,12 @@ def job(doc: str, lang: str = "pl") -> IngestJob:
     return {"doc": doc, "lang": lang}
 
 
-def made(blobs: DirBlobs, doc: str, pipelines: dict[str, Pipeline], lang: str = "pl") -> Made:
+def run_to_ready(
+    blobs: DirBlobs, doc: str, pipelines: dict[str, Pipeline], lang: str = "pl"
+) -> ReadyAnalysis:
     result = Ingester(blobs, pipelines).process(job(doc, lang))
-    assert result["made"] is not None, result
-    return result["made"]
+    assert result["analysis"] is not None, result
+    return result["analysis"]
 
 
 def test_job_writes_analysis_and_bundle_but_no_status(tmp_path: Path) -> None:
@@ -67,7 +69,7 @@ def test_job_writes_analysis_and_bundle_but_no_status(tmp_path: Path) -> None:
     assert queue.acked == [job(doc)]
     # The run that asked for it writes the status (ingest/src/workflow.ts)
     assert blobs.get(status_key(doc)) is None
-    ready = made(blobs, doc, pipelines())
+    ready = run_to_ready(blobs, doc, pipelines())
     analysis = blobs.get(ready["analysis"])
     assert analysis is not None
     assert json.loads(brotli.decompress(analysis))["analyzer"] == "test/1"
@@ -161,7 +163,7 @@ def test_all_of_a_document_is_under_one_prefix(tmp_path: Path) -> None:
     blobs = DirBlobs(tmp_path)
     doc = doc_id("pl", TEXT)
     blobs.put(text_key(doc), TEXT.encode(), "text/plain")
-    ready = made(blobs, doc, pipelines())
+    ready = run_to_ready(blobs, doc, pipelines())
     keys = [text_key(doc), status_key(doc), ready["analysis"], ready["bundle"]]
     assert all(key.startswith(f"doc/{doc}/") for key in keys), keys
 
@@ -216,7 +218,7 @@ def test_what_a_job_made_has_the_published_names(tmp_path: Path) -> None:
     doc = doc_id("pl", TEXT)
     blobs.put(text_key(doc), TEXT.encode(), "text/plain")
     pipeline = pipelines()["pl"]
-    ready = made(blobs, doc, {"pl": pipeline})
+    ready = run_to_ready(blobs, doc, {"pl": pipeline})
     assert ready["analysis"] == f"doc/{doc}/analysis/{pipeline.versions()['analysis']}.json.br"
     assert ready["bundle"] == f"doc/{doc}/bundle/{pipeline.versions()['bundle']}.json.br"
 
@@ -274,7 +276,7 @@ def test_a_new_lexicon_rebundles_without_analysing_again(tmp_path: Path) -> None
         return fake_bundle(blob)
 
     Ingester(blobs, {"pl": Pipeline("pl", analyze, bundle, "test/1", "lex/1")}).process(job(doc))
-    ready = made(blobs, doc, {"pl": Pipeline("pl", analyze, bundle, "test/1", "lex/2")})
+    ready = run_to_ready(blobs, doc, {"pl": Pipeline("pl", analyze, bundle, "test/1", "lex/2")})
     assert ready["lexicon"] == "lex/2"
     assert len(analysed) == 1
     assert len(bundled) == 2 and bundled[1] == fake_analysis(TEXT)

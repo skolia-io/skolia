@@ -237,7 +237,7 @@ export class Ingester extends DurableObject<Env> implements IngesterRpc {
     const body = await response.text();
     if (response.status === 400) {
       logger.error("ingest refused job", { doc: job.doc, lang: job.lang, body });
-      return { outcome: "failed", made: null, error: `ingest refused the job: ${body}` };
+      return { outcome: "failed", analysis: null, error: `ingest refused the job: ${body}` };
     }
     if (!response.ok) throw new Error(`ingest answered ${response.status}: ${body}`);
     return schemas.JobResult.parse(JSON.parse(body));

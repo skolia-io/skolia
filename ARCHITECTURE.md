@@ -89,7 +89,7 @@ sequenceDiagram
   EV->>QE: send
   C->>EV: POST http://events.internal/ (finished)
   EV->>QE: send
-  C-->>DO: JobResult: what it made, or why it failed
+  C-->>DO: JobResult: its analysis, or why it failed
   DO-->>WF: JobResult
   WF->>WF: status ready or failed
   QE->>ECON: batch, up to 5 s later
@@ -106,7 +106,7 @@ sequenceDiagram
 - **Analysis page:** each container reports its jobs' stages (`GET /jobs`), and sends an event as each job starts and ends to the ingest Worker, which stores them in `skolia-ingest`, its own D1 so the main one stays small. The API shows both, without the texts the viewer can't see.
 - Lexicon lookups only see the rows of each language's version in `loaded`.
 
-Locally, `wrangler dev` runs both Workers and the ingest containers, with local D1, R2, Queue and Workflows. The API reaches them through small interfaces (`api/src/ports.ts`, faked in the tests); ingest reaches the local bucket through the same `blobs.internal` intercept. The API writes `doc/{doc}/status.json` as queued before it starts a run, the run writes it from then on (ready or failed), and the API reads it to tell the reader. The container writes no status: its answer says what it made. The importer sees analysing while the container runs the job, from its `GET /jobs`.
+Locally, `wrangler dev` runs both Workers and the ingest containers, with local D1, R2, Queue and Workflows. The API reaches them through small interfaces (`api/src/ports.ts`, faked in the tests); ingest reaches the local bucket through the same `blobs.internal` intercept. The API writes `doc/{doc}/status.json` as queued before it starts a run, the run writes it from then on (ready or failed), and the API reads it to tell the reader. The container writes no status: its answer gives the analysis it made. The importer sees analysing while the container runs the job, from its `GET /jobs`.
 
 On Cloudflare: Terraform (`infra/`) manages what wrangler doesn't: R2, D1, the queues and billing alerts. Both Workers are deployed with wrangler: `skolia` with the reader as static assets on workers.dev and skolia.io (`api/wrangler.jsonc`), and `skolia-ingest` with its containers, one per language (`ingest/wrangler.jsonc`). Wrangler also applies their Durable Object migrations, which the Terraform provider can't do on an update (it resends the first migration and Cloudflare refuses it). A run hands each job to its language's container over HTTP and waits for the answer. The container keeps jobs in memory, sleeps when idle (the Durable Object asks ingest whether it's busy before stopping it), and has the models and lexicon in its image. It has no internet access or R2 credentials: the Durable Object intercepts its requests to `blobs.internal` and serves them from the ingest Worker's R2 binding (`Blobs` in `ingest/src/main.ts`). A job lost with its container is handed over again by its run's retry.
 
