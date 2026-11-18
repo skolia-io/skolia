@@ -34,9 +34,9 @@ export function createReadingList(status: ReadingStatus, lang: () => Lang | unde
 }
 
 /** The text's entry: data is null when it isn't on the list, undefined while loading or signed out. */
-export function createReadingEntry(id: () => DocumentId) {
+export function createReadingEntry(id: () => DocumentId, enabled: () => boolean = () => true) {
   const user = createQuery(() => userQuery);
-  return createQuery(() => ({ ...entryQuery(id()), enabled: user.data != null }));
+  return createQuery(() => ({ ...entryQuery(id()), enabled: user.data != null && enabled() }));
 }
 
 /** status null: off the list. */

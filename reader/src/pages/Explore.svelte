@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createInfiniteQuery, createQuery, keepPreviousData } from "@tanstack/svelte-query";
-  import type { DocumentKey, Lang, User } from "@skolia/shared/api";
+  import type { DocumentKey, DocumentSummary, Lang, User } from "@skolia/shared/api";
   import type { Cursor } from "@skolia/shared/page";
   import { LANGS, LANGUAGE_INFO } from "@skolia/shared/api";
   import { listDocuments, type DocumentQuery } from "../lib/api.ts";
@@ -8,6 +8,7 @@
   import { tagsQuery } from "../lib/queries.ts";
   import TagFilter from "../components/TagFilter.svelte";
   import DocumentList from "../components/DocumentList.svelte";
+  import ExploreReadingMenu from "../components/ExploreReadingMenu.svelte";
   import Page from "../components/Page.svelte";
 
   let { user }: { user: User | null | undefined } = $props();
@@ -66,6 +67,10 @@
 
 <svelte:window onhashchange={follow} />
 
+{#snippet readingAction(doc: DocumentSummary)}
+  <ExploreReadingMenu id={doc.id} title={doc.title} />
+{/snippet}
+
 <Page title="Explore" wide>
   <label class="search">
     <svg viewBox="0 0 20 20" aria-hidden="true"
@@ -82,6 +87,8 @@
       hasMore={listing.hasNextPage}
       loadingMore={listing.isFetchingNextPage || listing.isPlaceholderData}
       onmore={() => void listing.fetchNextPage()}
+      aside={user ? readingAction : undefined}
+      compactAside
     >
       {#snippet controls()}
         <select class={{ active: lang !== "all" }} bind:value={lang} aria-label="Language">
