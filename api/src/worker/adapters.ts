@@ -197,10 +197,10 @@ export function lexiconsOf(env: LexiconBindings): Record<Lang, D1Database> {
  * as the ingest images, serving its loaded version. Its JSON is ours, so it's trusted to
  * match. */
 export class D1Lexicon implements Lexicon {
-  private readonly dbs: Record<Lang, D1Database>;
+  private readonly dbs: Record<Lang, D1DatabaseSession>;
 
   constructor(dbs: Record<Lang, D1Database>) {
-    this.dbs = dbs;
+    this.dbs = Object.fromEntries(LANGS.map((lang) => [lang, dbs[lang].withSession("first-primary")])) as Record<Lang, D1DatabaseSession>;
   }
 
   async entries(ids: readonly LemmaId[]): Promise<Lookup> {
@@ -218,7 +218,7 @@ export class D1Lexicon implements Lexicon {
   /** The entries, then the feature sets their paradigms use, from the version each
    * entry came from: a load that switches versions in between leaves the old version's
    * rows until it cleans up. */
-  async #entries(db: D1Database, ids: LemmaId[]): Promise<{ entries: LexiconEntry[]; featureSets: FeatureSets | null }> {
+  async #entries(db: D1DatabaseSession, ids: LemmaId[]): Promise<{ entries: LexiconEntry[]; featureSets: FeatureSets | null }> {
     const { results } = await prepare(
       db,
       sql`SELECT entry.lemma_id AS lemmaId, entry.version, entry.lemma, entry.upos, entry.senses,
@@ -547,9 +547,9 @@ export const DOCUMENT_QUERIES = {
 } as const;
 
 export class D1Documents implements DocumentStore {
-  private readonly db: D1Database;
+  private readonly db: D1DatabaseSession;
 
-  constructor(db: D1Database) {
+  constructor(db: D1DatabaseSession) {
     this.db = db;
   }
 
