@@ -1,6 +1,5 @@
 // skolia-api on Cloudflare Workers (api/wrangler.jsonc). Static assets (the reader) are
 // served before the Worker runs, except for /api/*.
-import type { IngestEvent } from "@skolia/shared/api";
 import { createApp } from "../app.ts";
 import { NO_AUTH, createAuth } from "../auth.ts";
 import type { IngesterRpc, IngestParams } from "@skolia/ingest/rpc";

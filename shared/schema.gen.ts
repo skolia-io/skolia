@@ -487,6 +487,29 @@ export interface JobResult {
   error: string | null;
 }
 
+export interface StageTime {
+  stage: "reading" | "loading-analysis" | "analysing" | "bundling" | "compressing-analysis" | "uploading-analysis" | "compressing-bundle" | "uploading-bundle";
+  ms: number;
+}
+
+export interface JobAttempt {
+  id: string;
+  image: string;
+  acceptedAt: string;
+  startedAt: string;
+  finishedAt: string;
+  outcome: "ready" | "failed" | "retried";
+  error: string | null;
+  chars: number | null;
+  words: number | null;
+  stages: StageTime[];
+}
+
+export interface JobAnswer {
+  result: JobResult;
+  attempts: JobAttempt[];
+}
+
 export type State = "queued" | "analysing" | "ready" | "failed";
 
 export interface Status {

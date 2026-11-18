@@ -1,10 +1,10 @@
 """Jobs over HTTP, for the Cloudflare container: a run of the ingest Worker's
 IngestWorkflow POSTs each here and waits for the answer. Jobs live in memory, so a
 container stopped mid-job loses them, and with them the request, which the run then
-sends again. Each attempt at a job sends a started and a finished event (events.py), for
-the analysis page.
+sends again.
 
-  POST /jobs   an IngestJob as JSON -> 200 JobResult, once the job has finished
+  POST /jobs   an IngestJob as JSON -> 200 JobAnswer, once the job has finished: its
+               result, and its attempts for the ingest history
   GET  /busy   {"busy": bool}: whether a job is waiting or running, so the container
                isn't put to sleep mid-analysis
   GET  /jobs   JobsState: whether the pipelines are still loading, and the jobs running
@@ -21,16 +21,15 @@ from collections import deque
 from datetime import UTC, datetime
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import TypedDict, override
+from typing import Literal, TypedDict, override
 
-from .events import Events, FinishedEvent, LoggedEvents, Outcome, StageTime, StartedEvent
-from .jobs import InvalidJob, Received, Stage, parse_job
-from .schema import IngestJob, JobResult
+from .jobs import InvalidJob, Received, parse_job
+from .schema import IngestJob, JobAnswer, JobAttempt, JobResult, Stage, StageTime
 
 log = logging.getLogger(__name__)
 
 MAX_BODY_BYTES = 4096
-# A finished event's error is cut to this many code points: at most 2 UTF-16 code units each,
+# An attempt's error is cut to this many code points: at most 2 UTF-16 code units each,
 # within MAX_INGEST_ERROR (shared/schemas.ts)
 MAX_ERROR = 1000
 
@@ -63,20 +62,25 @@ def iso_now() -> str:
 
 
 class Answer:
-    """What POST /jobs waits for: the job's result, once its last attempt has finished."""
+    """What POST /jobs waits for: the job's result, once its last attempt has finished, and
+    each of its attempts."""
 
     def __init__(self) -> None:
         self._done = threading.Event()
+        self._attempts: list[JobAttempt] = []
         self._result: JobResult | None = None
+
+    def attempted(self, attempt: JobAttempt) -> None:
+        self._attempts.append(attempt)
 
     def give(self, result: JobResult) -> None:
         self._result = result
         self._done.set()
 
-    def wait(self) -> JobResult:
+    def wait(self) -> JobAnswer:
         self._done.wait()
         assert self._result is not None
-        return self._result
+        return {"result": self._result, "attempts": list(self._attempts)}
 
 
 class _Job:
@@ -131,27 +135,12 @@ class _Job:
             "stages": list(self._stages),
         }
 
-    def started(self, image: str) -> StartedEvent:
-        job = self.received.job
-        assert self.started_at is not None, "not received yet"
-        return {
-            "kind": "started",
-            "id": self.id,
-            "doc": job["doc"],
-            "lang": job["lang"],
-            "image": image,
-            "acceptedAt": self.accepted_at,
-            "startedAt": self.started_at,
-        }
-
-    def finished(self, image: str, outcome: Outcome, error: str | None) -> FinishedEvent:
-        job = self.received.job
+    def attempt(
+        self, image: str, outcome: Literal["ready", "failed", "retried"], error: str | None
+    ) -> JobAttempt:
         assert self.started_at is not None, "finished before it was received"
         return {
-            "kind": "finished",
             "id": self.id,
-            "doc": job["doc"],
-            "lang": job["lang"],
             "image": image,
             "acceptedAt": self.accepted_at,
             "startedAt": self.started_at,
@@ -165,10 +154,9 @@ class _Job:
 
 
 class HttpJobs:
-    """A JobQueue fed by POST /jobs. image names the container's image in events."""
+    """A JobQueue fed by POST /jobs. image names the container's image in attempts."""
 
-    def __init__(self, events: Events | None = None, image: str = "") -> None:
-        self._events = events or LoggedEvents()
+    def __init__(self, image: str = "") -> None:
         self._image = image
         self._started_at = iso_now()
         self._pending: deque[_Job] = deque()
@@ -210,13 +198,12 @@ class HttpJobs:
             job = self._pending.popleft()
             job.started_at = iso_now()
             self._running.append(job)
-            self._events.send(job.started(self._image))
             return job.received
 
     def ack(self, received: Received, result: JobResult) -> None:
         with self._changed:
             job = self._take(received)
-            self._events.send(job.finished(self._image, result["outcome"], result["error"]))
+            job.answer.attempted(job.attempt(self._image, result["outcome"], result["error"]))
         job.answer.give(result)
 
     def release(self, received: Received, error: str) -> None:
@@ -226,7 +213,7 @@ class HttpJobs:
             self._pending.append(
                 _Job(self._changed, received.job, received.raw, job.accepted_at, job.answer)
             )
-            self._events.send(job.finished(self._image, "retried", error))
+            job.answer.attempted(job.attempt(self._image, "retried", error))
             self._changed.notify()
 
     def _take(self, received: Received) -> _Job:

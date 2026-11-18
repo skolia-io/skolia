@@ -491,6 +491,29 @@ export const JobResult: z.ZodType<types.JobResult> = /* @__PURE__ */ (() => z.ob
   error: z.string().nullable(),
 }).meta({ id: "JobResult" }))();
 
+export const StageTime: z.ZodType<types.StageTime> = /* @__PURE__ */ (() => z.object({
+  stage: z.enum(["reading", "loading-analysis", "analysing", "bundling", "compressing-analysis", "uploading-analysis", "compressing-bundle", "uploading-bundle"]),
+  ms: z.number().int(),
+}).meta({ id: "StageTime" }))();
+
+export const JobAttempt: z.ZodType<types.JobAttempt> = /* @__PURE__ */ (() => z.object({
+  id: z.string(),
+  image: z.string(),
+  acceptedAt: z.string(),
+  startedAt: z.string(),
+  finishedAt: z.string(),
+  outcome: z.enum(["ready", "failed", "retried"]),
+  error: z.string().nullable(),
+  chars: z.number().int().nullable(),
+  words: z.number().int().nullable(),
+  stages: z.array(StageTime),
+}).meta({ id: "JobAttempt" }))();
+
+export const JobAnswer: z.ZodType<types.JobAnswer> = /* @__PURE__ */ (() => z.object({
+  result: JobResult,
+  attempts: z.array(JobAttempt),
+}).meta({ id: "JobAnswer" }))();
+
 export const State: z.ZodType<types.State> = /* @__PURE__ */ (() => z.enum(["queued", "analysing", "ready", "failed"]).meta({ id: "State" }))();
 
 export const Status: z.ZodType<types.Status> = /* @__PURE__ */ (() => z.object({

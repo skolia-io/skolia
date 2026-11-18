@@ -29,14 +29,15 @@ resource "cloudflare_d1_database" "ingest" {
   primary_location_hint = local.location
 }
 
-# What the ingest containers send as each job starts and ends: the ingest Worker puts them
-# here (its IngestEvents entrypoint) and stores them in skolia-ingest
+# Unused: the ingest Worker's events, before each run recorded its job's attempts. Kept until
+# every environment's ingest Worker no longer consumes it, since a queue with a consumer
+# can't be deleted
 resource "cloudflare_queue" "ingest_events" {
   account_id = var.account_id
   queue_name = "skolia-ingest-events${local.suffix}"
 }
 
-# The consumer is the ingest Worker (skolia-ingest[-env]); wrangler attaches it.
+# Unused: the ingest jobs, before IngestWorkflow. Kept for the same reason
 resource "cloudflare_queue" "ingest" {
   account_id = var.account_id
   queue_name = "skolia-ingest${local.suffix}"

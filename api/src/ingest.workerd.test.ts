@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { D1IngestHistory, receiveEvent } from "@skolia/ingest/history";
-import type { DocumentId, IngestEvent, IngestResult, Lang, Timestamp } from "@skolia/shared/api";
+import { D1IngestHistory } from "@skolia/ingest/history";
+import type { DocumentId, Lang, Timestamp } from "@skolia/shared/api";
+import type { JobAttempt } from "@skolia/shared/schema";
 import { ALICE, client, importer, ingestJobs, local, setup, useLocal, type App } from "./testing/app.ts";
 import { body, expectStatus } from "./testing/responses.ts";
 
@@ -10,19 +11,12 @@ useLocal();
 const at = (time: string) => `2026-11-17T${time}.000Z` as Timestamp;
 const IMAGE = "skolia-ingest-pl:test";
 
-function started(id: string, doc: DocumentId, startedAt: Timestamp): Extract<IngestEvent, { kind: "started" }> {
-  return { kind: "started", id, doc, lang: "pl", image: IMAGE, acceptedAt: at("09:00:00"), startedAt };
-}
-
-function finished(
-  id: string,
-  doc: DocumentId,
-  startedAt: Timestamp,
-  fields: Partial<IngestResult> = {},
-): Extract<IngestEvent, { kind: "finished" }> {
+function attempt(id: string, startedAt: Timestamp, fields: Partial<JobAttempt> = {}): JobAttempt {
   return {
-    ...started(id, doc, startedAt),
-    kind: "finished",
+    id,
+    image: IMAGE,
+    acceptedAt: at("09:00:00"),
+    startedAt,
     finishedAt: at("09:30:00"),
     outcome: "ready",
     error: null,
@@ -36,6 +30,15 @@ function finished(
   };
 }
 
+/** A row for a job that started before runs recorded jobs whole, and never finished */
+async function unfinished(id: string, doc: DocumentId, startedAt: Timestamp): Promise<void> {
+  await local.env.INGEST_DB.prepare(
+    "INSERT INTO ingest_job (id, document_id, lang, image, accepted_at, started_at) VALUES (?, ?, 'pl', ?, ?, ?)",
+  )
+    .bind(id, doc, IMAGE, at("09:00:00"), startedAt)
+    .run();
+}
+
 async function imported(app: App, headers: Headers, title: string, text: string, visibility: "public" | "private"): Promise<DocumentId> {
   const json = { title, text, lang: "pl" as Lang, visibility, licence: "cc0" as const };
   return (await body("import", client(app, headers).documents.$post({ json }), 202)).id;
@@ -44,17 +47,18 @@ async function imported(app: App, headers: Headers, title: string, text: string,
 test("anyone sees what analysis is doing, without the texts they can't see", async () => {
   const shared = await imported(setup(), importer, "Shared", "Jest kot.", "public");
   const secret = await imported(setup(), importer, "Secret", "Jest pies.", "private");
-  await new D1IngestHistory(local.env.INGEST_DB).record(
-    [
-      finished("done", shared, at("09:00:05")),
-      finished("failed", secret, at("09:00:10"), { outcome: "failed", error: `no text at texts/${secret}` }),
-      // Its container stopped before it finished
-      started("lost", shared, at("09:00:20")),
-      // Still running: shown with its container
-      started("running", secret, at("09:01:01")),
-    ],
+  const history = new D1IngestHistory(local.env.INGEST_DB);
+  await history.record(shared, "pl", [attempt("done", at("09:00:05"))], at("00:00:00"));
+  await history.record(
+    secret,
+    "pl",
+    [attempt("failed", at("09:00:10"), { outcome: "failed", error: `no text at texts/${secret}` })],
     at("00:00:00"),
   );
+  // Its container stopped before it finished
+  await unfinished("lost", shared, at("09:00:20"));
+  // Still running: shown with its container
+  await unfinished("running", secret, at("09:01:01"));
   const running = {
     id: "running",
     doc: secret,
@@ -106,7 +110,7 @@ test("anyone sees what analysis is doing, without the texts they can't see", asy
       ["done", "Shared", "ready", null],
     ],
   );
-  assert.deepEqual(anyone.recent[2]?.result?.stages, finished("x", shared, at("09:00:00")).stages);
+  assert.deepEqual(anyone.recent[2]?.result?.stages, attempt("x", at("09:00:00")).stages);
   assert.equal(JSON.stringify(anyone).includes(secret), false);
 
   const response = await local.server.getWorker().fetch("/api/ingest");
@@ -126,35 +130,25 @@ test("anyone sees what analysis is doing, without the texts they can't see", asy
   assert.equal((await body("someone else", client(app, alice).ingest.$get())).recent[1]?.document, null);
 });
 
-test("a job's events make one row, in either order and either twice, and old jobs go", async () => {
+test("a job's attempts are recorded once, however often its run records them, and old jobs go", async () => {
   const doc = "a".repeat(64) as DocumentId;
   const history = new D1IngestHistory(local.env.INGEST_DB);
-  await history.record([finished("one", doc, at("08:00:00")), started("one", doc, at("08:00:00"))], at("00:00:00"));
-  await history.record([started("two", doc, at("10:00:00")), started("two", doc, at("10:00:00"))], at("00:00:00"));
+  const attempts = [
+    attempt("one", at("08:00:00"), { outcome: "retried", error: "BlobError: connection refused" }),
+    attempt("two", at("08:01:00")),
+  ];
+  await history.record(doc, "pl", attempts, at("00:00:00"));
+  await history.record(doc, "pl", attempts, at("00:00:00"));
   assert.deepEqual(
-    (await history.recent(50)).map((job) => [job.id, job.result?.outcome ?? null]),
+    (await history.recent(50)).map((job) => [job.id, job.doc, job.result?.outcome ?? null]),
     [
-      ["two", null],
-      ["one", "ready"],
+      ["two", doc, "ready"],
+      ["one", doc, "retried"],
     ],
   );
-  await history.record([finished("two", doc, at("10:00:00"))], at("09:00:00"));
+  await history.record(doc, "pl", [attempt("three", at("10:00:00"))], at("08:00:30"));
   assert.deepEqual(
-    (await history.recent(50)).map((job) => [job.id, job.result?.outcome ?? null]),
-    [["two", "ready"]],
+    (await history.recent(50)).map((job) => job.id),
+    ["three", "two"],
   );
-});
-
-test("the ingest Worker passes on what a container sends only if it's an event", async () => {
-  const sent: IngestEvent[] = [];
-  const receive = (method: string, body?: string) =>
-    receiveEvent(async (event) => void sent.push(event), new Request("http://events.internal/", { method, body: body ?? null }));
-  const event = started("e1", "b".repeat(64) as DocumentId, at("09:00:00"));
-  assert.equal((await receive("GET")).status, 404);
-  assert.equal((await receive("POST", "not json")).status, 400);
-  assert.equal((await receive("POST", JSON.stringify({ kind: "lost" }))).status, 400);
-  const readyWithError = { ...finished("e0", event.doc, at("09:01:00")), error: "but how" };
-  assert.equal((await receive("POST", JSON.stringify(readyWithError))).status, 400);
-  assert.equal((await receive("POST", JSON.stringify(event))).status, 202);
-  assert.deepEqual(sent, [event]);
 });

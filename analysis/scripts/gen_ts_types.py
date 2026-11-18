@@ -33,6 +33,7 @@ ROOTS: list[object] = [
     schema.Blob,
     lexicon_schema.Bundle,
     ingest_schema.IngestJob,
+    ingest_schema.JobAnswer,
     ingest_schema.JobResult,
     ingest_schema.ReadyAnalysis,
     ingest_schema.Status,
