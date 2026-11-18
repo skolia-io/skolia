@@ -85,14 +85,14 @@ test("roles are seeded and new roles can be added without changing the schema", 
   assert.deepEqual((await db.prepare("SELECT name FROM role ORDER BY name").all()).results, [{ name: "standard" }, { name: "system" }]);
   const user = await local.signUp(ALICE);
   assert.equal(user.type, "standard");
-  const assign = db.prepare(`UPDATE "user" SET "type" = 'future' WHERE id = ?`).bind(user.id);
+  const assign = db.prepare(`UPDATE "user" SET role = 'future' WHERE id = ?`).bind(user.id);
   await assert.rejects(assign.run(), /FOREIGN KEY constraint failed/);
   await db.prepare("INSERT INTO role VALUES ('future')").run();
   try {
     await assign.run();
-    assert.equal(await db.prepare(`SELECT "type" FROM "user" WHERE id = ?`).bind(user.id).first("type"), "future");
+    assert.equal(await db.prepare(`SELECT role FROM "user" WHERE id = ?`).bind(user.id).first("role"), "future");
   } finally {
-    await db.prepare(`UPDATE "user" SET "type" = 'standard' WHERE id = ?`).bind(user.id).run();
+    await db.prepare(`UPDATE "user" SET role = 'standard' WHERE id = ?`).bind(user.id).run();
     await db.prepare("DELETE FROM role WHERE name = 'future'").run();
   }
 });

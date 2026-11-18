@@ -24,7 +24,7 @@ test("fresh API and User databases match the checked-in schema snapshots", async
   t.after(() => local.close());
   const { results } = await local.env.DB.prepare(SCHEMA).all<Definition>();
   await snapshot("api", ddl(results.filter((row) => row.name !== "d1_migrations")));
-  assert.deepEqual((await local.env.DB.prepare(`SELECT id FROM "user" WHERE type = 'system' ORDER BY id`).all()).results, [
+  assert.deepEqual((await local.env.DB.prepare(`SELECT id FROM "user" WHERE role = 'system' ORDER BY id`).all()).results, [
     { id: "curated" },
     { id: "system" },
   ]);

@@ -33,7 +33,9 @@ export function authOptions(config: AuthConfig) {
     secret: config.secret,
     socialProviders: config.google ? { google: config.google } : {},
     account: { encryptOAuthTokens: true },
-    user: { additionalFields: { type: { type: [...USER_TYPES], required: false, defaultValue: "standard", input: false } } },
+    user: {
+      additionalFields: { type: { fieldName: "role", type: [...USER_TYPES], required: false, defaultValue: "standard", input: false } },
+    },
     disabledPaths: API_KEY_PATHS,
     plugins: [
       apiKey({ apiKeyHeaders: API_KEY_HEADER, enableSessionForAPIKeys: true, rateLimit: { enabled: false } }),

@@ -113,7 +113,7 @@ CREATE TABLE tag (
 ) STRICT, WITHOUT ROWID;
 
 CREATE TABLE "user" (
-  -- Better Auth identity; type is Skolia's application-specific field.
+  -- Better Auth identity; role is Skolia's application-specific field.
   "id" TEXT NOT NULL PRIMARY KEY,
   "name" TEXT NOT NULL,
   "email" TEXT NOT NULL UNIQUE,
@@ -121,10 +121,10 @@ CREATE TABLE "user" (
   "image" TEXT,
   "createdAt" TEXT NOT NULL CHECK ("createdAt" IS strftime('%Y-%m-%dT%H:%M:%fZ', "createdAt")),
   "updatedAt" TEXT NOT NULL CHECK ("updatedAt" IS strftime('%Y-%m-%dT%H:%M:%fZ', "updatedAt")),
-  "type" TEXT NOT NULL DEFAULT 'standard' REFERENCES role (name)
+  role TEXT NOT NULL DEFAULT 'standard' REFERENCES role (name)
 ) STRICT;
 
-CREATE INDEX user_role_idx ON "user" ("type");
+CREATE INDEX user_role_idx ON "user" (role);
 
 CREATE TABLE user_document (
   user_id TEXT NOT NULL REFERENCES "user" ("id") ON DELETE CASCADE,

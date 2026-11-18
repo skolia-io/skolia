@@ -103,7 +103,7 @@ export async function startLocal(): Promise<Local> {
       await env.DB.batch([
         ...tables.map((t) => prepare(env.DB, sql`DELETE FROM ${sql.id(t)}`)),
         // The system users are the migrations'
-        prepare(env.DB, sql`DELETE FROM "user" WHERE "type" != 'system'`),
+        prepare(env.DB, sql`DELETE FROM "user" WHERE role != 'system'`),
       ]);
       for (const db of Object.values(lexiconsOf(env))) {
         await db.batch(["entry", "featureset", "loaded"].map((t) => prepare(db, sql`DELETE FROM ${sql.id(t)}`)));
