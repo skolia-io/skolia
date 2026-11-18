@@ -6,11 +6,13 @@ name: CI
 # down when the pull request closes (sweep.yml catches any left); the mergeable job
 # gates merging on it and on the screenshots. A comment on the pull request links to the preview, and says when
 # it's torn down (.github/preview-comment.sh).
-# main: deploy staging and end-to-end test it, deploy the previews' OAuth proxy, and apply infra/shared/ if it may have changed. A v* tag on a commit in main: staging, then production. The ingest
-# images are built once, before any deploy. The steps are just recipes (justfile) and
-# infra/deploy-ingest.sh, so a deploy by hand runs the same commands.
+# main: deploy staging and end-to-end test it, deploy the previews' OAuth proxy, and apply infra/shared/ if it may have changed. A v* tag on a commit in main: staging, then production.
+# Deploys don't wait for check: a preview is up while it runs, and main and tags have passed
+# it in the merge queue. Each deploy skips what's already current (deploy.yml's plan). The
+# steps are just recipes (justfile) and infra/deploy-ingest.sh, so a deploy by hand runs the
+# same commands.
 # A pull request, merge group or push to main that only changes content (curated texts, docs,
-# Markdown; .github/changes.py) skips check, the screenshots, the image builds, the plans and
+# Markdown; .github/changes.py) skips check, the screenshots, the plans and
 # the deploys. If texts changed, it checks they parse (check-curated) and runs just sync-curated:
 # against staging on a push to main, and against the pull request's preview if an earlier
 # push deployed one. The plans run only when something they read changed.
@@ -23,6 +25,15 @@ on:
     types: [opened, synchronize, reopened, closed]
   merge_group:
   workflow_dispatch:
+
+# One run at a time for a pull request (its pushes and its close) and for main, so one
+# deploy of an environment at a time: a newer run cancels this one, and starts once it has
+# stopped. A step that changes what's deployed finishes first (.github/uninterruptible.sh).
+# A tag's run and a merge group's run aren't cancelled; a tag's staging deploy waits for
+# main's (deploy-staging).
+concurrency:
+  group: ci-${{ github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
 
 # actions: read is for actions-timeline (deploy.yml), which lists the run's jobs
 permissions:
@@ -116,44 +127,10 @@ jobs:
             reader/playwright-report/
             reader/test-results/
 
-  # Before any deploy, for all of them: the images are named by their inputs, not the
-  # environment. Only builds and pushes an image whose inputs changed. Runs wherever
-  # deploy-preview or deploy-staging does.
-  build-ingest-image:
-    if: >-
-      needs.changes.outputs.deploy == 'true' && (
-      (github.event_name == 'pull_request' && github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository)
-      || (github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))))
-    needs: [check, changes]
-    runs-on: ubuntu-24.04
-    strategy:
-      fail-fast: false
-      matrix:
-        # The languages in infra/deploy-ingest.sh
-        lang: [pl, en, fr]
-    env:
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-    steps:
-      - uses: actions/checkout@v7
-      # The model downloads read HF_TOKEN (impureEnvVars) from the daemon, not this job
-      - uses: ./.github/actions/setup
-        with:
-          nix-conf: |
-            extra-experimental-features = configurable-impure-env
-            impure-env = HF_TOKEN=${{ secrets.HF_TOKEN }}
-      # deploy-ingest.sh pushes to it
-      - uses: cachix/cachix-action@v17
-        with:
-          name: andyyu2004
-          skipPush: true
-      - run: infra/deploy-ingest.sh build ${{ matrix.lang }}
-        env:
-          CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
-
   # Only when something a plan reads changed (.github/changes.py)
   plan-infra:
     if: needs.changes.outputs.infra == 'true' && github.event_name == 'pull_request' && github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository
-    needs: [check, changes]
+    needs: [changes, mirror-providers]
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -169,16 +146,10 @@ jobs:
       - uses: ./.github/actions/setup
       - run: just plan ${{ matrix.env }}
 
-  # Pull requests from forks get neither: they'd need the secrets. The group is held for
-  # the whole deploy (all of deploy.yml's jobs), so a teardown waits for a deploy, and a
-  # push waits for the last push's deploy instead of cancelling it part way; a pending
-  # deploy is replaced by a newer one, or by the teardown.
+  # Pull requests from forks get neither: they'd need the secrets
   deploy-preview:
     if: needs.changes.outputs.deploy == 'true' && github.event_name == 'pull_request' && github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository
-    needs: [changes, build-ingest-image]
-    concurrency:
-      group: preview-pr-${{ github.event.number }}
-      cancel-in-progress: false
+    needs: [changes, mirror-providers]
     uses: ./.github/workflows/deploy.yml
     with:
       env: pr-${{ github.event.number }}
@@ -193,9 +164,6 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
-    concurrency:
-      group: preview-comment-pr-${{ github.event.number }}
-      cancel-in-progress: false
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
@@ -253,15 +221,17 @@ jobs:
         run: |
           echo "the preview's deploy, end-to-end tests or curated sync didn't pass: ${{ needs.deploy-preview.result }}" >&2
           exit 1
+      # A skipped job counts as passing, so the preview's end-to-end tests must have run
+      - if: github.event_name == 'pull_request' && needs.changes.outputs.deploy == 'true' && needs.deploy-preview.outputs.e2e != 'success'
+        run: |
+          echo "the preview's end-to-end tests didn't pass: '${{ needs.deploy-preview.outputs.e2e }}'" >&2
+          exit 1
 
   # A pull request that only changes content, some of it curated texts: syncs them to its
   # preview if an earlier push deployed one (deploy-preview syncs a preview it deploys)
   sync-curated-preview:
     if: needs.changes.outputs.deploy == 'false' && needs.changes.outputs.curated == 'true' && github.event_name == 'pull_request' && github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository
     needs: [changes, check-curated]
-    concurrency:
-      group: preview-pr-${{ github.event.number }}
-      cancel-in-progress: false
     uses: ./.github/workflows/sync-curated.yml
     with:
       env: pr-${{ github.event.number }}
@@ -274,9 +244,6 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
-    concurrency:
-      group: preview-pr-${{ github.event.number }}
-      cancel-in-progress: false
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       TF_IN_AUTOMATION: "1"
@@ -286,7 +253,7 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.base.ref }}
       - uses: ./.github/actions/setup
-      - run: just teardown pr-${{ github.event.number }}
+      - run: .github/uninterruptible.sh just teardown pr-${{ github.event.number }}
       # Only edits a comment a deploy left: one that didn't deploy has nothing to say
       - run: |
           echo "**Preview:** torn down when this pull request closed." | .github/preview-comment.sh ${{ github.event.number }} --if-exists
@@ -298,11 +265,8 @@ jobs:
   # something a plan reads changed
   deploy-shared:
     if: needs.changes.outputs.infra == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [changes, check]
+    needs: [changes, mirror-providers]
     runs-on: ubuntu-24.04
-    concurrency:
-      group: deploy-shared
-      cancel-in-progress: false
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
@@ -311,12 +275,17 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
-      - run: just apply shared
-      - run: just migrate-ci
+      - run: .github/uninterruptible.sh just apply shared
+      - run: .github/uninterruptible.sh just migrate-ci
 
+  # A tag's and main's runs both deploy staging: one at a time, as deploy.yml's plan reads
+  # what's deployed
   deploy-staging:
     if: needs.changes.outputs.deploy == 'true' && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
-    needs: [changes, build-ingest-image]
+    needs: [changes, mirror-providers]
+    concurrency:
+      group: environment-staging
+      cancel-in-progress: false
     uses: ./.github/workflows/deploy.yml
     with:
       env: staging
@@ -325,12 +294,9 @@ jobs:
   # The previews' Google sign-in (oauth-proxy/): one for all of them, from main
   deploy-oauth-proxy:
     if: needs.changes.outputs.deploy == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [changes, check]
+    needs: changes
     runs-on: ubuntu-24.04
     environment: oauth-proxy
-    concurrency:
-      group: deploy-oauth-proxy
-      cancel-in-progress: false
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
@@ -339,7 +305,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
-      - run: just deploy-oauth-proxy
+      - run: .github/uninterruptible.sh just deploy-oauth-proxy
 
   # A push to main that only changes content, some of it curated texts. A tag always
   # deploys (deploy-staging), which syncs them.
@@ -363,6 +329,9 @@ jobs:
   deploy-production:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [deploy-staging, check-tag-on-main]
+    concurrency:
+      group: environment-production
+      cancel-in-progress: false
     uses: ./.github/workflows/deploy.yml
     with:
       env: production

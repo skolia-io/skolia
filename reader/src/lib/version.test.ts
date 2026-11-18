@@ -6,6 +6,7 @@ const REPO = "https://github.com/skolia-io/skolia";
 
 test("a build links to the log up to its tag or commit", () => {
   assert.equal(versionUrl("v0.0.2"), `${REPO}/commits/v0.0.2`);
+  assert.equal(versionUrl("v0.0.2+4qqk2ki3mxwb"), `${REPO}/commits/v0.0.2`);
   assert.equal(versionUrl("v0.0.2-dirty"), `${REPO}/commits/v0.0.2`);
   assert.equal(versionUrl("v0.0.2-16-g3231f8c"), `${REPO}/commits/3231f8c`);
   assert.equal(versionUrl("v0.0.2-16-g3231f8c-dirty"), `${REPO}/commits/3231f8c`);

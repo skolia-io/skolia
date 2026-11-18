@@ -61,4 +61,5 @@ fi
 TF_IN_AUTOMATION=1 "$root/infra/tf.sh" "$env" destroy -auto-approve -input=false
 cf DELETE "r2/buckets/skolia-tfstate/objects/skolia-$env.tfstate" >/dev/null
 rm -rf "$root/infra/.terraform-$env" "$root/api/wrangler.$env.json" "$root/ingest/wrangler.$env.json"
+"$root/infra/plan.py" torn-down "$env"
 echo "$env is gone"

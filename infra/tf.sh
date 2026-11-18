@@ -31,8 +31,7 @@ export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
 key=skolia.tfstate
 [ "$env" = production ] || key=skolia-$env.tfstate
 if [ ! -f "$TF_DATA_DIR/terraform.tfstate" ]; then
-  # readonly: a missing platform hash fails here instead of dirtying the checkout, which
-  # the end-to-end tests' git describe would then report as -dirty
+  # readonly: a missing platform hash fails here instead of dirtying the checkout
   terraform init -input=false -lockfile=readonly -backend-config="key=$key" \
     -backend-config="endpoints={s3=\"https://$CLOUDFLARE_ACCOUNT_ID.r2.cloudflarestorage.com\"}" >&2
 fi

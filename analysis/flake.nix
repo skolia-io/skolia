@@ -358,9 +358,11 @@
           prefix = "cacheable";
           value = cacheable;
         }
-        # deploy-ingest.sh reads each pushed image's digest with it
+        # deploy-ingest.sh reads each pushed image's digest with it. nixpkgs', which the
+        # binary cache has, not nix2container's patched one (copyTo's nix: transport), which
+        # each deploy would build.
         // {
-          skopeo = nix2container.packages.${host}.skopeo-nix2container;
+          skopeo = nixpkgs.legacyPackages.${host}.skopeo;
         };
     in
     {

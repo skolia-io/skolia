@@ -3,7 +3,7 @@
 # Cloudflare's registry and deploys the ingest Worker with them:
 #   deploy-ingest.sh build <lang>         build and push one language's image, for every
 #                                          environment (CI runs one per language, in
-#                                          parallel, before any deploy)
+#                                          parallel, for the images infra/plan.py lists)
 #   deploy-ingest.sh <env> deploy         deploy the ingest Worker with every language's
 #                                          image, which must be in the registry
 #   deploy-ingest.sh <env>                both, every language in turn
@@ -68,6 +68,7 @@ build_lang() {
   tag=$(tag_of "$lang")
   if in_registry "$name" "$tag"; then
     echo "$name:$tag is already in the registry"
+    "$root/infra/plan.py" built "image-$lang"
     return
   fi
   "$root/analysis/scripts/fetch_inputs.sh" "$lang"
@@ -83,6 +84,7 @@ build_lang() {
   if [ -n "${CACHIX_AUTH_TOKEN:-}" ]; then
     nix build --no-link --print-out-paths "./analysis#cacheable-$lang" | cachix push andyyu2004
   fi
+  "$root/infra/plan.py" built "image-$lang"
 }
 
 # Wrangler at times deploys the version but leaves the containers' settings half applied,
@@ -161,6 +163,7 @@ deploy() {
   done
 
   deploy_worker "$config" "$out"
+  "$root/infra/plan.py" deployed "$env" ingest
 }
 
 case $mode in

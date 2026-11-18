@@ -25,6 +25,8 @@ env:
 
 jobs:
   sync-curated:
+    # Not success(), which a skipped job before its caller makes false (deploy.yml)
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     environment: ${{ startsWith(inputs.env, 'pr-') && 'preview' || inputs.env }}
     concurrency:

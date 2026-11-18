@@ -42,6 +42,61 @@
             dontStrip = true;
             installPhase = "install -Dm755 terraform $out/bin/terraform";
           };
+          # The skolia Worker as just deploy-web uploads it: the reader's assets and the API
+          # bundled by wrangler, as the bundle test builds it (justfile build). Its out path
+          # is what CI compares with the deployed version's tag (infra/web.sh). The
+          # version isn't in it: deploy-web sets VERSION as a var.
+          skolia-worker = pkgs.stdenvNoCC.mkDerivation (finalAttrs: {
+            pname = "skolia-worker";
+            version = "0";
+            # The Node workspace, but not what doesn't reach the Worker: Markdown, tests
+            # and the screenshots (whose baselines are in git LFS, so a checkout without
+            # them would differ)
+            src = pkgs.lib.fileset.toSource {
+              root = ./.;
+              fileset = pkgs.lib.fileset.difference
+                (pkgs.lib.fileset.unions [
+                  ./package.json
+                  ./pnpm-lock.yaml
+                  ./pnpm-workspace.yaml
+                  ./api
+                  ./oauth-proxy
+                  ./reader
+                  ./shared
+                  ./util
+                ])
+                (pkgs.lib.fileset.unions [
+                  ./reader/screenshots
+                  (pkgs.lib.fileset.fileFilter (f: f.hasExt "md" || pkgs.lib.hasSuffix ".test.ts" f.name) ./.)
+                ]);
+            };
+            # The lock file's packages. When pnpm-lock.yaml changes this hash does too: set
+            # it to "" and take the one the build reports.
+            pnpmDeps = pkgs.fetchPnpmDeps {
+              inherit (finalAttrs) pname version src;
+              pnpm = pkgs.pnpm_11;
+              fetcherVersion = 5;
+              hash = "sha256-C7rPT+nDLWBxsRBQ55ulQocyiGXUaPthakCGqjY6TXk=";
+            };
+            nativeBuildInputs = [
+              pkgs.nodejs_24
+              pkgs.pnpm_11
+              pkgs.pnpmConfigHook
+            ];
+            buildPhase = ''
+              runHook preBuild
+              export HOME=$TMPDIR WRANGLER_SEND_METRICS=false
+              pnpm --filter @skolia/reader build
+              (cd api && pnpm exec wrangler deploy --dry-run --outdir "$TMPDIR/worker" --env="")
+              runHook postBuild
+            '';
+            installPhase = ''
+              runHook preInstall
+              install -Dm644 "$TMPDIR/worker/main.js" "$out/worker/main.js"
+              cp -r reader/dist "$out/assets"
+              runHook postInstall
+            '';
+          });
           tools = pkgs.buildEnv {
             name = "skolia-tools";
             paths = [
@@ -53,6 +108,7 @@
         in
         {
           packages.tools = tools;
+          packages.skolia-worker = skolia-worker;
           packages.ci = pkgs.buildEnv {
             name = "skolia-ci";
             paths = [
