@@ -17,6 +17,7 @@ resource "cloudflare_d1_database" "lexicon" {
   account_id            = var.account_id
   name                  = "skolia-lexicon-${each.key}${local.suffix}"
   primary_location_hint = local.d1_location
+  read_replication      = { mode = "auto" }
 }
 
 # The ingest Worker's job history (ingest/migrations), apart from skolia so that one
