@@ -162,6 +162,7 @@ deploy() {
     fi
   done
 
+  "$root/infra/plan.py" deploying "$env" ingest
   deploy_worker "$config" "$out"
   "$root/infra/plan.py" deployed "$env" ingest
 }
