@@ -114,7 +114,7 @@
   }
 
   .listing-count {
-    margin-right: auto;
+    flex-grow: 1;
     font-size: 0.9rem;
     font-weight: 600;
   }
