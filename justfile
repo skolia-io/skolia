@@ -213,7 +213,7 @@ deploy-web env:
     version=$(infra/plan.py version)
     out=$(nix build --no-link --print-out-paths .#skolia-worker)
     dir=$(mktemp -d)
-    trap 'rm -rf "$dir"' EXIT
+    trap 'rm -rf "$dir" api/wrangler.deploy.json' EXIT
     # JSON: wrangler expands $ in a dotenv file
     infra/tf.sh {{ env }} output -raw better_auth_secret | jq -Rn '{BETTER_AUTH_SECRET: input}
       + ({GOOGLE_CLIENT_ID: env.GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET: env.GOOGLE_CLIENT_SECRET, OAUTH_PROXY_SECRET: env.OAUTH_PROXY_SECRET} | with_entries(select((.value // "") != "")))' > "$dir/secrets.json"
@@ -222,8 +222,9 @@ deploy-web env:
       pr-*) config=wrangler.{{ env }}.json; [ -f "api/$config" ] || infra/preview.py config {{ env }} ;;
       *) config=wrangler.jsonc ;;
     esac
+    infra/d1-ids.py {{ env }} "api/$config" api/wrangler.deploy.json
     infra/plan.py deploying {{ env }} web
-    infra/wrangler.sh {{ env }} deploy "$out/worker/main.js" -c "$config" --no-bundle --assets "$out/assets" --var "VERSION:$version" \
+    infra/wrangler.sh {{ env }} deploy "$out/worker/main.js" -c wrangler.deploy.json --no-bundle --assets "$out/assets" --var "VERSION:$version" \
       --secrets-file "$dir/secrets.json"
     infra/plan.py deployed {{ env }} web
 

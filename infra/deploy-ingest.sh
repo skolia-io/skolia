@@ -161,6 +161,7 @@ deploy() {
       exit 1
     fi
   done
+  "$root/infra/d1-ids.py" "$env" "$config" "$config"
 
   "$root/infra/plan.py" deploying "$env" ingest
   deploy_worker "$config" "$out"
