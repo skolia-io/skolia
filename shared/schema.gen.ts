@@ -512,15 +512,26 @@ export interface JobAnswer {
 
 export type State = "queued" | "analysing" | "ready" | "failed";
 
-export interface Status {
-  state: State;
+export interface QueuedStatus {
+  state: "queued" | "analysing";
   updated: string;
-  analyzer?: string;
-  lexicon?: string;
-  analysis?: string;
-  bundle?: string;
-  error?: string;
+  artifacts?: ReadyAnalysis;
 }
+
+export interface ReadyStatus {
+  state: "ready";
+  updated: string;
+  artifacts: ReadyAnalysis;
+}
+
+export interface FailedStatus {
+  state: "failed";
+  updated: string;
+  error: string;
+  artifacts?: ReadyAnalysis;
+}
+
+export type Status = QueuedStatus | ReadyStatus | FailedStatus;
 
 export interface Versions {
   analyzer: string;

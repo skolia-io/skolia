@@ -70,12 +70,16 @@ export class IngestWorkflow extends WorkflowEntrypoint<Env, IngestParams> {
 async function setStatus(blobs: R2Bucket, publisher: StatusPublisher, doc: DocumentId, result: JobResult): Promise<void> {
   const updated = timestamp(new Date());
   const status = await (async (): Promise<Status> => {
-    if (result.outcome === "ready" && result.analysis !== null) return { state: "ready", updated, ...result.analysis };
+    if (result.outcome === "ready" && result.analysis !== null) return { state: "ready", updated, artifacts: result.analysis };
     const previous = await blobs.get(statusKey(doc));
-    const parsed = previous === null ? null : schemas.Status.safeParse(await previous.json());
-    const { analyzer, lexicon, analysis, bundle } = parsed?.success ? parsed.data : {};
-    const kept = Object.fromEntries(Object.entries({ analyzer, lexicon, analysis, bundle }).filter(([, value]) => value !== undefined));
-    return { ...kept, state: "failed", updated, error: result.error ?? "ingest failed without saying why" };
+    const parsed = previous === null ? null : schemas.StoredStatus.safeParse(await previous.json());
+    const artifacts = parsed?.success ? parsed.data.artifacts : undefined;
+    return {
+      state: "failed",
+      updated,
+      error: result.error ?? "ingest failed without saying why",
+      ...(artifacts === undefined ? {} : { artifacts }),
+    };
   })();
   await publisher.publish(doc, status);
 }

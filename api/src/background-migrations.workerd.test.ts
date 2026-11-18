@@ -18,7 +18,14 @@ async function legacy(n: number) {
   await local.env.DB.prepare("INSERT INTO document (id, lang, words) VALUES (?, 'pl', 3)").bind(id).run();
   await new R2Blobs(local.env.BLOBS).put(
     statusKey(id),
-    JSON.stringify({ state: "ready", updated: "2026-11-04T00:00:00.000Z" }),
+    JSON.stringify({
+      state: "ready",
+      updated: "2026-11-04T00:00:00.000Z",
+      analyzer: "a",
+      lexicon: "l",
+      analysis: "analysis",
+      bundle: "bundle",
+    }),
     "application/json",
   );
   return id;

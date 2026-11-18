@@ -73,7 +73,7 @@ export function ingestJobs(fields: Partial<IngestJobs> = {}): IngestJobs {
 export async function putJson(key: string, value: unknown): Promise<void> {
   const id = key.match(/^doc\/([a-f0-9]{64})\/status\.json$/u)?.[1];
   if (id !== undefined) {
-    await local.env.DOCUMENT_STATUS.publish(schemas.DocumentId.parse(id), schemas.Status.parse(value));
+    await local.env.DOCUMENT_STATUS.publish(schemas.DocumentId.parse(id), schemas.StoredStatus.parse(value));
   } else {
     await new R2Blobs(local.env.BLOBS).put(key, JSON.stringify(value), "application/json");
   }
@@ -231,6 +231,7 @@ export async function readyAt(id: DocumentId, v: string, state = "ready"): Promi
   }
   await putJson(statusKey(id), {
     state,
+    ...(state === "failed" ? { error: "ingest failed" } : {}),
     updated: NOW,
     analyzer: `pl/${v}`,
     lexicon: "lex/1",

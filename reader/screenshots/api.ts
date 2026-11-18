@@ -27,6 +27,7 @@ import {
 import { LANGUAGES } from "@skolia/shared/lang";
 import { partKey, statusKey, textKey } from "@skolia/shared/keys";
 import type { Blob, Bundle, Status } from "@skolia/shared/schema";
+import { statusForStorage } from "@skolia/shared/status";
 import { AnnotationId, CardId, DocumentId, LemmaId, Timestamp, UserId } from "@skolia/shared/schemas";
 
 type Deps = Parameters<typeof createApp>[0];
@@ -173,8 +174,27 @@ const LEVELS = (
 const documents: readonly StoredDocument[] = [lalka, PETIT_PRINCE, NOTATKI, PETER_RABBIT];
 
 const statuses: readonly (readonly [DocumentIdType, Status])[] = [
-  [LALKA, { state: "ready", updated: "2026-11-07T10:00:00.000Z", analysis: ANALYSIS, bundle: BUNDLE }],
-  [PETIT_PRINCE.id, { state: "ready", updated: "2026-11-07T10:00:00.000Z" }],
+  [
+    LALKA,
+    {
+      state: "ready",
+      updated: "2026-11-07T10:00:00.000Z",
+      artifacts: { analyzer: "pl/1", lexicon: "lex/1", analysis: ANALYSIS, bundle: BUNDLE },
+    },
+  ],
+  [
+    PETIT_PRINCE.id,
+    {
+      state: "ready",
+      updated: "2026-11-07T10:00:00.000Z",
+      artifacts: {
+        analyzer: "fr/1",
+        lexicon: "lex/1",
+        analysis: partKey(PETIT_PRINCE.id, "analysis", "s2-a1"),
+        bundle: partKey(PETIT_PRINCE.id, "bundle", "b1-a1-l1"),
+      },
+    },
+  ],
   [NOTATKI.id, { state: "queued", updated: "2026-11-09T09:55:00.000Z" }],
   [PETER_RABBIT.id, { state: "failed", updated: "2026-11-08T10:00:00.000Z", error: "The analyser stopped" }],
 ];
@@ -203,7 +223,8 @@ const blobs: ReadonlyMap<string, StoredBlob> = new Map([
   [ANALYSIS, { body: new Uint8Array(brotliCompressSync(fixture("lalka.analysis.json"))), contentType: JSON_TYPE }],
   [BUNDLE, { body: new Uint8Array(brotliCompressSync(fixture("lalka.bundle.json"))), contentType: JSON_TYPE }],
   ...statuses.map(
-    ([id, status]) => [statusKey(id), { body: new TextEncoder().encode(JSON.stringify(status)), contentType: JSON_TYPE }] as const,
+    ([id, status]) =>
+      [statusKey(id), { body: new TextEncoder().encode(JSON.stringify(statusForStorage(status))), contentType: JSON_TYPE }] as const,
   ),
 ]);
 

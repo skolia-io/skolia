@@ -36,6 +36,7 @@ ROOTS: list[object] = [
     ingest_schema.JobAnswer,
     ingest_schema.JobResult,
     ingest_schema.ReadyAnalysis,
+    ingest_schema.State,
     ingest_schema.Status,
     ingest_schema.Versions,
 ]

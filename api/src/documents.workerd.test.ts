@@ -79,6 +79,8 @@ test("listings keep the published status, versions and error without status blob
     state: "failed",
     updated: NOW,
     error: "ingest failed",
+    analyzer: "pl/1",
+    lexicon: "lex/1",
     analysis: `doc/${id}/analysis/s2-a1.json.br`,
     bundle: `doc/${id}/bundle/b1-a1-l1.json.br`,
   });

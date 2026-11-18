@@ -22,6 +22,7 @@ import {
 import type { PageRequest } from "@skolia/shared/page";
 import { PART_ENCODING, docId, partKey, statusKey, textKey, versionsKey } from "@skolia/shared/keys";
 import type { Status, Versions } from "@skolia/shared/schema";
+import { statusForStorage } from "@skolia/shared/status";
 import * as schemas from "@skolia/shared/schemas";
 import { log } from "@skolia/util/log";
 import type { BlobStore, Deps, EntryFields, IngestJobs, StoredDocument } from "../ports.ts";
@@ -268,11 +269,11 @@ async function requeue(
     previous: status?.state ?? null,
     since: status?.updated ?? null,
   });
-  const queued: Status = { state: "queued", updated: timestamp(at) };
-  for (const key of ["analyzer", "lexicon", "analysis", "bundle"] as const) {
-    const value = status?.[key];
-    if (value !== undefined) queued[key] = value;
-  }
+  const queued: Status = {
+    state: "queued",
+    updated: timestamp(at),
+    ...(status?.artifacts === undefined ? {} : { artifacts: status.artifacts }),
+  };
   await publishStatus(deps, record.id, queued);
   await deps.queue.start(record.id, record.lang, await versions(record.lang));
   return queued;
@@ -282,7 +283,7 @@ async function requeue(
  * until ingest has published its versions. */
 export function isOutdated(status: Status, latest: Versions | null): boolean {
   if (status.state !== "ready" || latest === null) return false;
-  return nameOf(status.analysis) !== latest.analysis || nameOf(status.bundle) !== latest.bundle;
+  return nameOf(status.artifacts.analysis) !== latest.analysis || nameOf(status.artifacts.bundle) !== latest.bundle;
 }
 
 /** Longer than a job takes, waiting its turn included, short of a run's retries. A document
@@ -346,17 +347,17 @@ function summarize(
     mine: user === viewer?.id,
     state: status?.state ?? "failed",
   };
-  const analysis = nameOf(status?.analysis);
-  const bundle = nameOf(status?.bundle);
+  const analysis = nameOf(status?.artifacts?.analysis);
+  const bundle = nameOf(status?.artifacts?.bundle);
   if (analysis !== undefined && bundle !== undefined) summary.reading = { analysis, bundle };
   if (status === null) summary.error = "no status";
-  else if (status.error !== undefined) summary.error = status.error;
+  else if (status.state === "failed") summary.error = status.error;
   return summary;
 }
 
 /** Publish the detail blob and its list projection together. Callers retry on failure. */
 export async function publishStatus(deps: Pick<Deps, "blobs" | "documents">, id: DocumentId, status: Status): Promise<void> {
-  await deps.blobs.put(statusKey(id), JSON.stringify(status), "application/json");
+  await deps.blobs.put(statusKey(id), JSON.stringify(statusForStorage(status)), "application/json");
   await deps.documents.setStatus(id, status);
 }
 
@@ -368,7 +369,7 @@ export async function readStatus(blobs: BlobStore, id: DocumentId): Promise<Stat
 
 /** The status blob ingest writes. */
 export function parseStatus(raw: string): Status | null {
-  return parseJson(schemas.Status, raw);
+  return parseJson(schemas.StoredStatus, raw);
 }
 
 export function countWords(text: string): number {

@@ -391,7 +391,13 @@ export const AnnotationRow = z
 
 export const State = gen.State;
 
-export const Status = z.object({
+export const Status = z.discriminatedUnion("state", [
+  z.object({ state: z.enum(["queued", "analysing"]), updated: z.string(), artifacts: gen.ReadyAnalysis.exactOptional() }),
+  z.object({ state: z.literal("ready"), updated: z.string(), artifacts: gen.ReadyAnalysis }),
+  z.object({ state: z.literal("failed"), updated: z.string(), error: z.string(), artifacts: gen.ReadyAnalysis.exactOptional() }),
+]) satisfies z.ZodType<StatusType>;
+
+const LegacyStatus = z.object({
   state: State,
   updated: z.string(),
   analyzer: z.string().exactOptional(),
@@ -399,7 +405,19 @@ export const Status = z.object({
   analysis: z.string().exactOptional(),
   bundle: z.string().exactOptional(),
   error: z.string().exactOptional(),
-}) satisfies z.ZodType<StatusType>;
+});
+
+/** Normalize the flat storage format at the boundary, not throughout the application.
+ * Also accept the domain shape, but never reinterpret malformed nested artifacts. */
+export const StoredStatus = z.preprocess((value) => {
+  if (typeof value !== "object" || value === null || "artifacts" in value) return value;
+  const legacy = LegacyStatus.safeParse(value);
+  if (!legacy.success) return null;
+  const { state, updated, error, ...fields } = legacy.data;
+  const artifacts = gen.ReadyAnalysis.safeParse(fields);
+  if (!artifacts.success && Object.values(fields).some((field) => field !== undefined)) return null;
+  return { state, updated, ...(artifacts.success ? { artifacts: artifacts.data } : {}), ...(state === "failed" ? { error } : {}) };
+}, Status);
 
 export const Versions = z.object({
   analyzer: z.string(),
@@ -414,7 +432,7 @@ export const DocumentRow = z.object({
     z
       .string()
       .transform((json) => JSON.parse(json) as unknown)
-      .pipe(Status.nullable()),
+      .pipe(StoredStatus.nullable()),
     z.null().transform(() => undefined),
   ]),
   id: DocumentId,
