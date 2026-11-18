@@ -7,7 +7,10 @@
   const anchorName = `--${menuId}`;
   let opened = $state(false);
   let menu: HTMLDivElement;
-  const entry = createReadingEntry(() => id, () => opened);
+  const entry = createReadingEntry(
+    () => id,
+    () => opened,
+  );
   const change = createReadingChange();
   const status = $derived(entry.data?.status ?? null);
 
@@ -24,9 +27,16 @@
   </svg>
 </button>
 
-<div id={menuId} class="dropdown" style:position-anchor={anchorName} popover bind:this={menu} ontoggle={(event) => {
-  if (event.newState === "open") opened = true;
-}}>
+<div
+  id={menuId}
+  class="dropdown"
+  style:position-anchor={anchorName}
+  popover
+  bind:this={menu}
+  ontoggle={(event) => {
+    if (event.newState === "open") opened = true;
+  }}
+>
   <p class="heading">{status === null ? "Add to reading list" : "Reading list"}</p>
   {#if entry.error}
     <p class="error" role="alert">{entry.error.message}</p>
@@ -37,7 +47,9 @@
     {#each READING_STATUSES as option (option)}
       <button type="button" aria-pressed={status === option} disabled={change.isPending} onclick={() => save(option)}>
         {READING_STATUS_LABELS[option]}
-        {#if status === option}<span aria-hidden="true">✓</span>{/if}
+        {#if status === option}
+          <span aria-hidden="true">✓</span>
+        {/if}
       </button>
     {/each}
     {#if status !== null}
