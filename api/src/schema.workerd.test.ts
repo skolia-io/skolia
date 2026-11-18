@@ -30,13 +30,13 @@ test("every D1 table is STRICT, and timestamps must be toISOString()'s", async (
       "background_migration",
       "document",
       "document_status",
+      "role",
       "session",
       "tag",
       "user",
       "user_document",
       "user_document_annotation",
       "user_document_tag",
-      "user_type",
       "verification",
     ].map((name) => ({ name, strict: 1 })),
   );
@@ -80,23 +80,20 @@ test("every D1 table is STRICT, and timestamps must be toISOString()'s", async (
   assert.notEqual(await env.DB.prepare("select 1 from document where id = 'a'").first(), null);
 });
 
-test("user types are seeded and new types can be added without changing the schema", async () => {
+test("roles are seeded and new roles can be added without changing the schema", async () => {
   const db = local.env.DB;
-  assert.deepEqual((await db.prepare("SELECT name FROM user_type ORDER BY name").all()).results, [
-    { name: "standard" },
-    { name: "system" },
-  ]);
+  assert.deepEqual((await db.prepare("SELECT name FROM role ORDER BY name").all()).results, [{ name: "standard" }, { name: "system" }]);
   const user = await local.signUp(ALICE);
   assert.equal(user.type, "standard");
   const assign = db.prepare(`UPDATE "user" SET "type" = 'future' WHERE id = ?`).bind(user.id);
   await assert.rejects(assign.run(), /FOREIGN KEY constraint failed/);
-  await db.prepare("INSERT INTO user_type VALUES ('future')").run();
+  await db.prepare("INSERT INTO role VALUES ('future')").run();
   try {
     await assign.run();
     assert.equal(await db.prepare(`SELECT "type" FROM "user" WHERE id = ?`).bind(user.id).first("type"), "future");
   } finally {
     await db.prepare(`UPDATE "user" SET "type" = 'standard' WHERE id = ?`).bind(user.id).run();
-    await db.prepare("DELETE FROM user_type WHERE name = 'future'").run();
+    await db.prepare("DELETE FROM role WHERE name = 'future'").run();
   }
 });
 

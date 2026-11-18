@@ -85,6 +85,10 @@ CREATE TABLE document_status (
   data TEXT NOT NULL CHECK (json_valid(data) AND json_type(data) = 'object')
 ) STRICT, WITHOUT ROWID;
 
+CREATE TABLE role (
+  name TEXT NOT NULL PRIMARY KEY
+) STRICT, WITHOUT ROWID;
+
 CREATE TABLE "session" (
   -- Better Auth: signed-in sessions.
   "id" TEXT NOT NULL PRIMARY KEY,
@@ -117,10 +121,10 @@ CREATE TABLE "user" (
   "image" TEXT,
   "createdAt" TEXT NOT NULL CHECK ("createdAt" IS strftime('%Y-%m-%dT%H:%M:%fZ', "createdAt")),
   "updatedAt" TEXT NOT NULL CHECK ("updatedAt" IS strftime('%Y-%m-%dT%H:%M:%fZ', "updatedAt")),
-  "type" TEXT NOT NULL DEFAULT 'standard' REFERENCES user_type (name)
+  "type" TEXT NOT NULL DEFAULT 'standard' REFERENCES role (name)
 ) STRICT;
 
-CREATE INDEX user_type_idx ON "user" ("type");
+CREATE INDEX user_role_idx ON "user" ("type");
 
 CREATE TABLE user_document (
   user_id TEXT NOT NULL REFERENCES "user" ("id") ON DELETE CASCADE,
@@ -176,10 +180,6 @@ CREATE TABLE user_document_tag (
 ) STRICT, WITHOUT ROWID;
 
 CREATE INDEX user_document_tag_value_idx ON user_document_tag (kind, value, user_id, document_id);
-
-CREATE TABLE user_type (
-  name TEXT NOT NULL PRIMARY KEY
-) STRICT, WITHOUT ROWID;
 
 CREATE TABLE "verification" (
   -- Better Auth: verification values and expiry.

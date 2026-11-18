@@ -101,6 +101,10 @@ CREATE TABLE "session" (
 
 CREATE INDEX "session_userId_idx" ON "session" ("userId");
 
+CREATE TABLE role (
+  name TEXT NOT NULL PRIMARY KEY
+) STRICT, WITHOUT ROWID;
+
 CREATE TABLE tag (
   kind TEXT NOT NULL CHECK (kind GLOB '[a-z]*' AND kind NOT GLOB '*[^a-z0-9-]*' AND length(kind) <= 32),
   value TEXT NOT NULL CHECK (value GLOB '[A-Za-z0-9]*' AND value NOT GLOB '*[^A-Za-z0-9.+-]*' AND length(value) <= 32),
@@ -119,10 +123,10 @@ CREATE TABLE "user" (
   "image" TEXT,
   "createdAt" TEXT NOT NULL CHECK ("createdAt" IS strftime('%Y-%m-%dT%H:%M:%fZ', "createdAt")),
   "updatedAt" TEXT NOT NULL CHECK ("updatedAt" IS strftime('%Y-%m-%dT%H:%M:%fZ', "updatedAt")),
-  "type" TEXT NOT NULL DEFAULT 'standard' REFERENCES user_type (name)
+  "type" TEXT NOT NULL DEFAULT 'standard' REFERENCES role (name)
 ) STRICT;
 
-CREATE INDEX user_type_idx ON "user" ("type");
+CREATE INDEX user_role_idx ON "user" ("type");
 
 CREATE TABLE user_document (
   user_id TEXT NOT NULL REFERENCES "user" ("id") ON DELETE CASCADE,
@@ -179,10 +183,6 @@ CREATE TABLE user_document_tag (
 
 CREATE INDEX user_document_tag_value_idx ON user_document_tag (kind, value, user_id, document_id);
 
-CREATE TABLE user_type (
-  name TEXT NOT NULL PRIMARY KEY
-) STRICT, WITHOUT ROWID;
-
 CREATE TABLE "verification" (
   -- Better Auth: verification values and expiry.
   "id" TEXT NOT NULL PRIMARY KEY,
@@ -195,7 +195,7 @@ CREATE TABLE "verification" (
 
 CREATE INDEX "verification_identifier_idx" ON "verification" ("identifier");
 
-INSERT INTO user_type (name) VALUES ('standard'), ('system');
+INSERT INTO role (name) VALUES ('standard'), ('system');
 
 -- E2E and curated importers, and the tags available to importers.
 INSERT INTO "user" ("id", "name", "email", "emailVerified", "image", "createdAt", "updatedAt", "type")
