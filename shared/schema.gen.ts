@@ -472,8 +472,6 @@ export interface Bundle {
 export interface IngestJob {
   doc: string;
   lang: string;
-  run: string;
-  attempt: number;
 }
 
 export interface Made {
@@ -481,6 +479,12 @@ export interface Made {
   lexicon: string;
   analysis: string;
   bundle: string;
+}
+
+export interface JobResult {
+  outcome: "ready" | "failed";
+  made: Made | null;
+  error: string | null;
 }
 
 export type State = "queued" | "analysing" | "ready" | "failed";

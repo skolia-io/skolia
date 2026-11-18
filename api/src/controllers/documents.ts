@@ -30,7 +30,6 @@ import { NO_CONTENT, fail, ok, type BlobResult, type Failed, type Json, type NoC
 const logger = log("documents");
 
 const NAME = /^[a-z0-9-]{1,64}$/;
-const JSON_TYPE = "application/json";
 
 /** A page of the entries the viewer can see that the filter keeps. Listing only reads
  * each entry's status; opening one (get) queues it again if it needs it. */
@@ -94,8 +93,16 @@ export async function importText(
   const id = await docId(body.lang, body.text);
   const known = await deps.documents.has(id);
   const own = known ? await ownEntry(deps, id, user) : null;
+  const versions = versionsOf(deps.blobs);
+  // A new text's run starts before its row is added: if starting it fails, there's no
+  // document waiting on a run that never comes, and importing it again starts over
+  const started = known
+    ? null
+    : await (async () => {
+        await deps.blobs.put(textKey(id), body.text, "text/plain; charset=utf-8");
+        return await requeue(deps, { id, lang: body.lang }, versions, null, deps.now(), "imported");
+      })();
   if (own === null) {
-    if (!known) await deps.blobs.put(textKey(id), body.text, "text/plain; charset=utf-8");
     await deps.documents.add(
       { id, lang: body.lang, words: countWords(body.text) },
       { id, user: user.id, importedAt: timestamp(deps.now()), ...fields },
@@ -105,12 +112,10 @@ export async function importText(
   }
   const record = await ownEntry(deps, id, user);
   if (!record) throw new Error(`document ${id} vanished after insert`);
-  const versions = versionsOf(deps.blobs);
-  if (known) {
-    const summary = await current(deps, record, versions, user);
-    if (summary.state !== "failed") return ok(summary);
-  }
-  const queued = await requeue(deps, record, versions, await readStatus(deps.blobs, id), deps.now(), known ? "reimported" : "imported");
+  if (started !== null) return { status: 202, body: summarize(record, started, user) };
+  const summary = await current(deps, record, versions, user);
+  if (summary.state !== "failed") return ok(summary);
+  const queued = await requeue(deps, record, versions, await readStatus(deps.blobs, id), deps.now(), "reimported");
   return { status: 202, body: summarize(record, queued, user) };
 }
 
@@ -156,7 +161,10 @@ export async function get(deps: Deps, id: string, viewer: User | null): Promise<
   if (!record) return noSuchDocument();
   const summary = await current(deps, record, versionsOf(deps.blobs), viewer);
   if (summary.mine && (summary.state === "queued" || summary.state === "analysing")) {
-    summary.queue = placeIn(await deps.queue.jobs(record.lang), record.id);
+    const jobs = await deps.queue.jobs(record.lang);
+    summary.queue = placeIn(jobs, record.id);
+    // The run writes no status while the container works on it: the container says
+    if (jobs?.running.includes(record.id)) summary.state = "analysing";
   }
   return ok(summary);
 }
@@ -226,32 +234,20 @@ async function ownEntry(deps: Deps, id: DocumentId, user: User): Promise<StoredD
   return entry?.user === user.id ? entry : null;
 }
 
-/** The summary, after queueing the document again if ingest now produces other
- * versions, or if its run seems lost: it's been queued or analysing too long, and its
- * container doesn't have the job. */
+/** The summary, after queueing the document again if ingest now produces other versions. */
 async function current(deps: Deps, record: StoredDocument, versions: VersionsOf, viewer: User | null): Promise<DocumentSummary> {
   const status = await readStatus(deps.blobs, record.id);
-  const now = deps.now();
-  if (status === null) return summarize(record, status, viewer);
-  if (isStuck(status, now)) {
-    if (holds(await deps.queue.jobs(record.lang), record.id)) return summarize(record, status, viewer);
-    return summarize(record, await requeue(deps, record, versions, status, now, "stuck"), viewer);
-  }
-  if (isOutdated(status, await versions(record.lang))) {
-    return summarize(record, await requeue(deps, record, versions, status, now, "outdated"), viewer);
+  if (status !== null && isOutdated(status, await versions(record.lang))) {
+    return summarize(record, await requeue(deps, record, versions, status, deps.now(), "outdated"), viewer);
   }
   return summarize(record, status, viewer);
 }
 
-/** Whether a language's container has the document's job, waiting or running */
-function holds(jobs: IngestJobs | null, id: DocumentId): boolean {
-  return jobs !== null && [...jobs.running, ...jobs.waiting].includes(id);
-}
+type RequeueReason = "imported" | "reimported" | "outdated";
 
-type RequeueReason = "imported" | "reimported" | "stuck" | "outdated";
-
-/** Queue the document and start a run of ingest for it, keeping the last analysis readable
- * until the new one is ready. The status is written first: from then on the run writes it. */
+/** Queues the document and starts a run of ingest for it, keeping the last analysis readable
+ * until the new one is ready. The queued status is written before the run exists, which
+ * writes the status from then on. */
 async function requeue(
   deps: Deps,
   record: Pick<StoredDocument, "id" | "lang">,
@@ -272,9 +268,8 @@ async function requeue(
     const value = status?.[key];
     if (value !== undefined) queued[key] = value;
   }
-  await deps.blobs.put(statusKey(record.id), JSON.stringify(queued), JSON_TYPE);
-  // A stuck document's run, if the engine says it's under way, has lost track of its job
-  await deps.queue.start(record.id, record.lang, await versions(record.lang), reason === "stuck" ? "restart" : "leave");
+  await deps.blobs.put(statusKey(record.id), JSON.stringify(queued), "application/json");
+  await deps.queue.start(record.id, record.lang, await versions(record.lang));
   return queued;
 }
 
@@ -283,21 +278,6 @@ async function requeue(
 export function isOutdated(status: Status, latest: Versions | null): boolean {
   if (status.state !== "ready" || latest === null) return false;
   return nameOf(status.analysis) !== latest.analysis || nameOf(status.bundle) !== latest.bundle;
-}
-
-/** Longer than any job takes (a text at the limit takes about a minute on a laptop), and than
- * a run of ingest goes without its container having the job (it hands it over again after at
- * most one HEAR_WITHIN, ingest/src/workflow.ts). So a document queued or analysing for this
- * long, whose container doesn't have it, has lost its run: never started, ended without
- * writing the status, or stopped (a local wrangler dev restart drops its runs, though it still
- * lists them as running). Running it again is safe: ingest reuses blobs that already exist,
- * and any event for the run is for this document and version. */
-export const STUCK_AFTER_MS = 30 * 60 * 1000;
-
-export function isStuck(status: Status, at: Date): boolean {
-  if (status.state !== "queued" && status.state !== "analysing") return false;
-  const updated = Date.parse(status.updated);
-  return Number.isNaN(updated) || at.getTime() - updated > STUCK_AFTER_MS;
 }
 
 /** The name in a blob key: doc/{id}/analysis/{name}.json.br -> {name}. */

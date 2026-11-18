@@ -15,10 +15,11 @@ from ..blob import SCHEMA
 from ..lexicon.schema import BUNDLE_SCHEMA, BUNDLER_VERSION, Bundle
 from ..schema import Blob
 from .blobs import BROTLI, BlobError, Blobs
-from .jobs import NO_PROGRESS, JobQueue, JobResult, Progress, Received, Stage
+from .jobs import NO_PROGRESS, JobQueue, Progress, Received, Stage
 from .schema import (
     MAX_TEXT_LENGTH,
     IngestJob,
+    JobResult,
     Made,
     Versions,
     analysis_key,

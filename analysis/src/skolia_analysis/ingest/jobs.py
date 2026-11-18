@@ -5,9 +5,9 @@ from __future__ import annotations
 
 import json
 from collections import deque
-from typing import Literal, Protocol, TypedDict, cast
+from typing import Literal, Protocol, cast
 
-from .schema import IngestJob, Made
+from .schema import IngestJob, JobResult
 
 Stage = Literal[
     "reading",
@@ -19,15 +19,6 @@ Stage = Literal[
     "compressing-bundle",
     "uploading-bundle",
 ]
-
-
-class JobResult(TypedDict):
-    """How a job ended: what it made, or why it failed. The run that asked for it writes
-    the document's status from it."""
-
-    outcome: Literal["ready", "failed"]
-    made: Made | None
-    error: str | None
 
 
 class InvalidJob(ValueError):
@@ -86,12 +77,10 @@ def parse_job(raw: str) -> IngestJob:
     if not isinstance(value, dict):
         raise InvalidJob(f"not an object: {raw!r}")
     fields = cast(dict[str, object], value)
-    doc, lang, run, attempt = (fields.get(k) for k in ("doc", "lang", "run", "attempt"))
-    if not isinstance(doc, str) or not isinstance(lang, str) or not isinstance(run, str):
-        raise InvalidJob(f"needs string doc, lang and run: {raw!r}")
-    if not isinstance(attempt, int) or isinstance(attempt, bool) or attempt < 1:
-        raise InvalidJob(f"needs a positive integer attempt: {raw!r}")
-    return {"doc": doc, "lang": lang, "run": run, "attempt": attempt}
+    doc, lang = fields.get("doc"), fields.get("lang")
+    if not isinstance(doc, str) or not isinstance(lang, str):
+        raise InvalidJob(f"needs string doc and lang: {raw!r}")
+    return {"doc": doc, "lang": lang}
 
 
 class MemoryQueue:

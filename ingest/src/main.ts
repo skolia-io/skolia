@@ -1,8 +1,8 @@
 // skolia-ingest on Cloudflare (ingest/wrangler.jsonc): runs ingest for a document as an
-// IngestWorkflow (workflow.ts), which hands the job to its language's analysis container
-// (analysis/flake.nix, one image per language, served by
-// analysis/src/skolia_analysis/ingest/http.py) and waits for the container's events. The
-// container reads and writes blobs in R2 through this Worker's binding (Blobs).
+// IngestWorkflow (workflow.ts), which asks its language's analysis container (analysis/flake.nix,
+// one image per language, served by analysis/src/skolia_analysis/ingest/http.py) to analyse it
+// and waits for the answer. The container reads and writes blobs in R2 through this Worker's
+// binding (Blobs).
 //
 // The containers use the durable_object scheduling policy, so each Ingester picks the
 // image it starts. Jobs go to the Ingester named after their language's image: when a
@@ -10,12 +10,12 @@
 // container finishes its jobs and stops.
 import { DurableObject, WorkerEntrypoint } from "cloudflare:workers";
 import { timestamp, type ContainerJobs, type IngestEvent, type IngestJobRecord, type Lang } from "@skolia/shared/api";
-import type { IngestJob } from "@skolia/shared/schema";
+import type { IngestJob, JobResult } from "@skolia/shared/schema";
 import * as schemas from "@skolia/shared/schemas";
 import { log } from "@skolia/util/log";
 import { D1IngestHistory, receiveEvent } from "./history.ts";
-import type { IngesterRpc, IngestParams } from "./rpc.ts";
-import { eventType, IngestWorkflow } from "./workflow.ts";
+import type { IngesterRpc } from "./rpc.ts";
+import { IngestWorkflow } from "./workflow.ts";
 
 export { IngestWorkflow };
 
@@ -28,8 +28,6 @@ interface Env {
   INGEST_DB: D1Database;
   /** The containers' events (IngestEvents), which this Worker consumes into INGEST_DB */
   INGEST_EVENTS: Queue<IngestEvent>;
-  /** Each document's runs of ingest, told of their jobs' events */
-  INGEST_WORKFLOW: Workflow<IngestParams>;
   /** How long the container stays up once idle; 1m by default, about what a start
    * costs (the models took 17 to 99 s to load, median 45 s, in 42 starts) */
   SLEEP_AFTER?: string;
@@ -59,9 +57,6 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 /** The container's blob store, served by Blobs */
 const BLOBS_HOST = "blobs.internal";
 
-/** What became of a job handed to the container */
-type Outcome = "accepted" | "malformed" | "failed";
-
 const UNIT_MS = { s: 1000, m: 60 * 1000, h: 60 * 60 * 1000 } as const;
 
 function milliseconds(duration: string): number {
@@ -72,7 +67,7 @@ function milliseconds(duration: string): number {
 
 /**
  * One per language that only routes, and one per image that runs its container:
- * route() on the Ingester named after a language passes the jobs to the one named after
+ * analyse() on the Ingester named after a language passes the job to the one named after
  * that language's image in this Worker version.
  *
  * An analysis makes no requests, so the container's inactivity timeout can't tell a
@@ -92,8 +87,10 @@ export class Ingester extends DurableObject<Env> implements IngesterRpc {
     }
   }
 
-  async route(lang: Lang, jobs: IngestJob[]): Promise<Outcome[]> {
-    return await this.env.INGESTER.getByName(this.image(lang)).run(this.image(lang), jobs);
+  /** The job's result, once the container has run it. Throws when the container can't be
+   * started or asked, or goes away before it answers: worth trying again. */
+  async analyse(lang: Lang, job: IngestJob): Promise<JobResult> {
+    return await this.env.INGESTER.getByName(this.image(lang)).run(this.image(lang), job);
   }
 
   /** The language's container's jobs (GET /jobs), on the Ingester named after the
@@ -135,7 +132,7 @@ export class Ingester extends DurableObject<Env> implements IngesterRpc {
     return image;
   }
 
-  async run(image: string, jobs: IngestJob[]): Promise<Outcome[]> {
+  async run(image: string, job: IngestJob): Promise<JobResult> {
     const container = this.container();
     if (!container.running) {
       // One start for concurrent calls: registering the intercepts is async
@@ -146,9 +143,7 @@ export class Ingester extends DurableObject<Env> implements IngesterRpc {
     }
     await this.ready(container);
     await this.ctx.storage.setAlarm(Date.now() + this.sleepAfterMs);
-    const outcomes: Outcome[] = [];
-    for (const job of jobs) outcomes.push(await this.post(container, job));
-    return outcomes;
+    return await this.post(container, job);
   }
 
   override async alarm(): Promise<void> {
@@ -231,27 +226,21 @@ export class Ingester extends DurableObject<Env> implements IngesterRpc {
     }
   }
 
-  private async post(container: Container, job: IngestJob): Promise<Outcome> {
-    try {
-      const response = await container.getTcpPort(PORT).fetch("http://ingest/jobs", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(job),
-      });
-      // Always read the body: the container counts a request as in flight until its
-      // body is consumed, and would never be idle
-      const body = await response.text();
-      if (response.status === 202) return "accepted";
-      if (response.status === 400) {
-        logger.error("ingest refused job", { doc: job.doc, lang: job.lang, body });
-        return "malformed";
-      }
-      logger.error("ingest answered with an error", { doc: job.doc, lang: job.lang, status: response.status, body });
-      return "failed";
-    } catch (error: unknown) {
-      logger.error("handing job to ingest failed", { doc: job.doc, lang: job.lang, error });
-      return "failed";
+  /** POST /jobs, which answers once the job has run. A job the container refuses fails:
+   * sent again, it would be refused again. */
+  private async post(container: Container, job: IngestJob): Promise<JobResult> {
+    const response = await container.getTcpPort(PORT).fetch("http://ingest/jobs", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(job),
+    });
+    const body = await response.text();
+    if (response.status === 400) {
+      logger.error("ingest refused job", { doc: job.doc, lang: job.lang, body });
+      return { outcome: "failed", made: null, error: `ingest refused the job: ${body}` };
     }
+    if (!response.ok) throw new Error(`ingest answered ${response.status}: ${body}`);
+    return schemas.JobResult.parse(JSON.parse(body));
   }
 
   private async busy(container: Container): Promise<boolean> {
@@ -286,33 +275,12 @@ export class Blobs extends WorkerEntrypoint<Env> {
 }
 
 /** A container's events: it POSTs each to EVENTS_HOST, and they're queued for this Worker
- * to store (store below), and sent on to the job's run */
+ * to store (store below) */
 export class IngestEvents extends WorkerEntrypoint<Env> {
   override async fetch(request: Request): Promise<Response> {
-    const send = async (event: IngestEvent) => {
-      // JSON, so a message can be read outside a Worker
-      await this.env.INGEST_EVENTS.send(event, { contentType: "json" });
-      await tellRun(this.env.INGEST_WORKFLOW, event);
-    };
+    // JSON, so a message can be read outside a Worker
+    const send = async (event: IngestEvent) => void (await this.env.INGEST_EVENTS.send(event, { contentType: "json" }));
     return await receiveEvent(send, request);
-  }
-}
-
-/** Sends a job's event to the run it's for. A retried job's isn't sent: the container runs it
- * again, and its run waits for the next. Nor is a job's from a container that predates runs. */
-async function tellRun(workflow: Workflow<IngestParams>, event: IngestEvent): Promise<void> {
-  if (event.run === undefined || event.attempt === undefined) return;
-  if (event.kind === "finished" && event.outcome === "retried") return;
-  try {
-    const instance = await workflow.get(event.run);
-    await instance.sendEvent({ type: eventType(event.kind, event.attempt), payload: event });
-  } catch (error: unknown) {
-    // A run deleted or past its retention won't come back, so the container isn't asked to retry
-    if (String(error).includes("instance.not_found")) {
-      logger.warn("no run for the event", { run: event.run, kind: event.kind, doc: event.doc });
-      return;
-    }
-    throw error;
   }
 }
 

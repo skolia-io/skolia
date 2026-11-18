@@ -1,9 +1,10 @@
 """Jobs over HTTP, for the Cloudflare container: a run of the ingest Worker's
-IngestWorkflow POSTs each here, then waits for its events. Jobs live in memory, so a
-container stopped mid-job loses them; the run, hearing nothing, sends it again. Each
-attempt at a job sends a started and a finished event (events.py).
+IngestWorkflow POSTs each here and waits for the answer. Jobs live in memory, so a
+container stopped mid-job loses them, and with them the request, which the run then
+sends again. Each attempt at a job sends a started and a finished event (events.py), for
+the analysis page.
 
-  POST /jobs   an IngestJob as JSON -> 202
+  POST /jobs   an IngestJob as JSON -> 200 JobResult, once the job has finished
   GET  /busy   {"busy": bool}: whether a job is waiting or running, so the container
                isn't put to sleep mid-analysis
   GET  /jobs   JobsState: whether the pipelines are still loading, and the jobs running
@@ -23,8 +24,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import TypedDict, override
 
 from .events import Events, FinishedEvent, LoggedEvents, Outcome, StageTime, StartedEvent
-from .jobs import InvalidJob, JobResult, Received, Stage, parse_job
-from .schema import IngestJob, Made
+from .jobs import InvalidJob, Received, Stage, parse_job
+from .schema import IngestJob, JobResult
 
 log = logging.getLogger(__name__)
 
@@ -61,14 +62,37 @@ def iso_now() -> str:
     return f"{moment:%Y-%m-%dT%H:%M:%S}.{moment.microsecond // 1000:03d}Z"
 
 
+class Answer:
+    """What POST /jobs waits for: the job's result, once its last attempt has finished."""
+
+    def __init__(self) -> None:
+        self._done = threading.Event()
+        self._result: JobResult | None = None
+
+    def give(self, result: JobResult) -> None:
+        self._result = result
+        self._done.set()
+
+    def wait(self) -> JobResult:
+        self._done.wait()
+        assert self._result is not None
+        return self._result
+
+
 class _Job:
     """One attempt at a job, from POST /jobs (or its release) until it's finished. It's
     the Progress of its Received, called from the worker thread."""
 
     def __init__(
-        self, lock: threading.Condition, job: IngestJob, raw: str, accepted_at: str
+        self,
+        lock: threading.Condition,
+        job: IngestJob,
+        raw: str,
+        accepted_at: str,
+        answer: Answer,
     ) -> None:
         self._lock = lock
+        self.answer = answer
         self.id = uuid.uuid4().hex
         self.accepted_at = accepted_at
         self.received = Received(job, raw, self)
@@ -115,16 +139,12 @@ class _Job:
             "id": self.id,
             "doc": job["doc"],
             "lang": job["lang"],
-            "run": job["run"],
-            "attempt": job["attempt"],
             "image": image,
             "acceptedAt": self.accepted_at,
             "startedAt": self.started_at,
         }
 
-    def finished(
-        self, image: str, outcome: Outcome, error: str | None, made: Made | None = None
-    ) -> FinishedEvent:
+    def finished(self, image: str, outcome: Outcome, error: str | None) -> FinishedEvent:
         job = self.received.job
         assert self.started_at is not None, "finished before it was received"
         return {
@@ -132,15 +152,12 @@ class _Job:
             "id": self.id,
             "doc": job["doc"],
             "lang": job["lang"],
-            "run": job["run"],
-            "attempt": job["attempt"],
             "image": image,
             "acceptedAt": self.accepted_at,
             "startedAt": self.started_at,
             "finishedAt": iso_now(),
             "outcome": outcome,
             "error": None if error is None else error[:MAX_ERROR],
-            "made": made,
             "chars": self._chars,
             "words": self._words,
             "stages": list(self._stages),
@@ -159,11 +176,13 @@ class HttpJobs:
         self._loading = True
         self._changed = threading.Condition()
 
-    def add(self, raw: str) -> None:
+    def add(self, raw: str) -> Answer:
         job = parse_job(raw)
+        answer = Answer()
         with self._changed:
-            self._pending.append(_Job(self._changed, job, raw, iso_now()))
+            self._pending.append(_Job(self._changed, job, raw, iso_now(), answer))
             self._changed.notify()
+        return answer
 
     def loaded(self) -> None:
         """The pipelines are ready: jobs run from now on."""
@@ -197,15 +216,16 @@ class HttpJobs:
     def ack(self, received: Received, result: JobResult) -> None:
         with self._changed:
             job = self._take(received)
-            self._events.send(
-                job.finished(self._image, result["outcome"], result["error"], result["made"])
-            )
+            self._events.send(job.finished(self._image, result["outcome"], result["error"]))
+        job.answer.give(result)
 
     def release(self, received: Received, error: str) -> None:
         # The next attempt has its own id, since the finished one keeps the old
         with self._changed:
             job = self._take(received)
-            self._pending.append(_Job(self._changed, received.job, received.raw, job.accepted_at))
+            self._pending.append(
+                _Job(self._changed, received.job, received.raw, job.accepted_at, job.answer)
+            )
             self._events.send(job.finished(self._image, "retried", error))
             self._changed.notify()
 
@@ -227,10 +247,10 @@ def serve(jobs: HttpJobs, host: str, port: int) -> ThreadingHTTPServer:
                 return self._reply(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, {"error": "too large"})
             raw = self.rfile.read(length).decode("utf-8", errors="replace")
             try:
-                jobs.add(raw)
+                answer = jobs.add(raw)
             except (InvalidJob, ValueError) as error:
                 return self._reply(HTTPStatus.BAD_REQUEST, {"error": str(error)})
-            self._reply(HTTPStatus.ACCEPTED, {"accepted": True})
+            self._reply(HTTPStatus.OK, answer.wait())
 
         def do_GET(self) -> None:
             if self.path == "/busy":

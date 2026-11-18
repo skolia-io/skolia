@@ -725,7 +725,7 @@ export class IngestRuns implements JobQueue {
     this.jobsOf = jobsOf;
   }
 
-  async start(doc: DocumentId, lang: Lang, versions: Versions | null, underWay: "leave" | "restart"): Promise<void> {
+  async start(doc: DocumentId, lang: Lang, versions: Versions | null): Promise<void> {
     const id = await runId(doc, versions);
     try {
       await this.workflow.create({ id, params: { doc, lang } });
@@ -738,7 +738,7 @@ export class IngestRuns implements JobQueue {
     }
     const instance = await this.workflow.get(id);
     const { status } = await instance.status();
-    if (!ENDED.has(status) && underWay === "leave") {
+    if (!ENDED.has(status)) {
       logger.info("a run of ingest is under way", { doc, lang, run: id, status });
       return;
     }

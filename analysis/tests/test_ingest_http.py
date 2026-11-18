@@ -12,10 +12,10 @@ import pytest
 
 from skolia_analysis.ingest.events import Event, HttpEvents, StartedEvent
 from skolia_analysis.ingest.http import HttpJobs, JobsState, serve
-from skolia_analysis.ingest.jobs import JobResult, Received
-from skolia_analysis.ingest.schema import IngestJob, Made
+from skolia_analysis.ingest.jobs import Received
+from skolia_analysis.ingest.schema import IngestJob, JobResult, Made
 
-JOB: IngestJob = {"doc": "a" * 64, "lang": "pl", "run": "run-a", "attempt": 1}
+JOB: IngestJob = {"doc": "a" * 64, "lang": "pl"}
 MADE: Made = {
     "analyzer": "pl/1",
     "lexicon": "lex/1",
@@ -72,9 +72,7 @@ def test_a_released_job_comes_back() -> None:
 
 def test_state_lists_running_then_waiting_documents_in_order() -> None:
     jobs = HttpJobs()
-    first, second, third = (
-        {"doc": c * 64, "lang": "pl", "run": f"run-{c}", "attempt": 1} for c in "abc"
-    )
+    first, second, third = ({"doc": c * 64, "lang": "pl"} for c in "abc")
     for job in (first, second, third):
         jobs.add(json.dumps(job))
     state = jobs.state()
@@ -116,8 +114,6 @@ def test_stages_are_recorded_in_order_and_sent_when_finished() -> None:
             "id": running["id"],
             "doc": JOB["doc"],
             "lang": "pl",
-            "run": "run-a",
-            "attempt": 1,
             "image": IMAGE,
             "acceptedAt": running["acceptedAt"],
             "startedAt": running["startedAt"],
@@ -147,15 +143,12 @@ def test_stages_are_recorded_in_order_and_sent_when_finished() -> None:
         "id": running["id"],
         "doc": JOB["doc"],
         "lang": "pl",
-        "run": "run-a",
-        "attempt": 1,
         "image": IMAGE,
         "acceptedAt": running["acceptedAt"],
         "startedAt": running["startedAt"],
         "finishedAt": finished["finishedAt"],
         "outcome": "ready",
         "error": None,
-        "made": MADE,
         "chars": 1200,
         "words": 200,
         "stages": running["stages"],
@@ -215,17 +208,52 @@ def server() -> Iterator[tuple[HttpJobs, int]]:
     httpd.shutdown()
 
 
-def test_jobs_are_posted_and_busy_reported(server: tuple[HttpJobs, int]) -> None:
+def posted(port: int, job: IngestJob) -> Callable[[], tuple[int, object]]:
+    """POSTs the job from another thread, since the answer waits for it to finish; returns
+    what gets that answer."""
+    answers: list[tuple[int, object]] = []
+    thread = threading.Thread(
+        target=lambda: answers.append(request(port, "POST", "/jobs", json.dumps(job).encode()))
+    )
+    thread.start()
+
+    def answer() -> tuple[int, object]:
+        thread.join(5)
+        (got,) = answers
+        return got
+
+    return answer
+
+
+def test_a_posted_job_is_answered_with_its_result_once_it_finishes(
+    server: tuple[HttpJobs, int],
+) -> None:
     jobs, port = server
     assert request(port, "GET", "/busy") == (200, {"busy": False})
-    assert request(port, "POST", "/jobs", json.dumps(JOB).encode()) == (202, {"accepted": True})
+    answer = posted(port, JOB)
+    until(jobs.busy)
     assert request(port, "GET", "/busy") == (200, {"busy": True})
     status, body = request(port, "GET", "/jobs")
     assert status == 200
     state = cast(JobsState, body)
     assert (state["loading"], state["running"], state["waiting"]) == (True, [], [JOB["doc"]])
     assert state == jobs.state()
-    assert started(jobs).job == JOB
+    received = started(jobs)
+    assert received.job == JOB
+    jobs.ack(received, READY)
+    assert answer() == (200, READY)
+
+
+def test_a_released_job_is_answered_when_it_finishes_on_a_later_attempt(
+    server: tuple[HttpJobs, int],
+) -> None:
+    jobs, port = server
+    answer = posted(port, JOB)
+    until(jobs.busy)
+    jobs.release(started(jobs), "BlobError: connection refused")
+    failed: JobResult = {"outcome": "failed", "made": None, "error": "no text at x"}
+    jobs.ack(started(jobs), failed)
+    assert answer() == (200, failed)
 
 
 def test_a_malformed_job_is_refused(server: tuple[HttpJobs, int]) -> None:
@@ -286,8 +314,6 @@ def event(event_id: str) -> StartedEvent:
         "id": event_id,
         "doc": JOB["doc"],
         "lang": "pl",
-        "run": "run-a",
-        "attempt": 1,
         "image": IMAGE,
         "acceptedAt": "2026-11-17T10:04:05.123Z",
         "startedAt": "2026-11-17T10:04:06.456Z",

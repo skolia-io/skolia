@@ -138,9 +138,9 @@ export type IngestJobs = ContainerJobs;
 
 export interface JobQueue {
   /** Starts a run of ingest for the document, made to the versions ingest now publishes (null
-   * before it has published any). One that has ended is run again; one under way is left to
-   * finish, or restarted. */
-  start(doc: DocumentId, lang: Lang, versions: Versions | null, underWay: "leave" | "restart"): Promise<void>;
+   * before it has published any). One under way is left to finish; one that has ended is run
+   * again. */
+  start(doc: DocumentId, lang: Lang, versions: Versions | null): Promise<void>;
   /** Null when no container is running for the language, or it can't be asked. */
   jobs(lang: Lang): Promise<IngestJobs | null>;
 }

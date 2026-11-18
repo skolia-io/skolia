@@ -48,7 +48,7 @@ def pipelines() -> dict[str, Pipeline]:
 
 
 def job(doc: str, lang: str = "pl") -> IngestJob:
-    return {"doc": doc, "lang": lang, "run": "run", "attempt": 1}
+    return {"doc": doc, "lang": lang}
 
 
 def made(blobs: DirBlobs, doc: str, pipelines: dict[str, Pipeline], lang: str = "pl") -> Made:
@@ -317,18 +317,9 @@ def test_worker_survives_a_failing_queue(tmp_path: Path) -> None:
 
 
 def test_parse_job_rejects_bad_messages() -> None:
-    assert parse_job('{"doc": "a", "lang": "pl", "run": "r", "attempt": 2}') == {
-        "doc": "a",
-        "lang": "pl",
-        "run": "r",
-        "attempt": 2,
-    }
+    assert parse_job('{"doc": "a", "lang": "pl"}') == {"doc": "a", "lang": "pl"}
     with pytest.raises(InvalidJob):
-        parse_job('{"doc": 1, "lang": "pl", "run": "r", "attempt": 1}')
-    with pytest.raises(InvalidJob):
-        parse_job('{"doc": "a", "lang": "pl"}')
-    with pytest.raises(InvalidJob):
-        parse_job('{"doc": "a", "lang": "pl", "run": "r", "attempt": 0}')
+        parse_job('{"doc": 1, "lang": "pl"}')
     with pytest.raises(InvalidJob):
         parse_job("[]")
 

@@ -56,8 +56,8 @@ export type App = ReturnType<typeof setup>;
 /** Notes each run of ingest the API asks for, then starts it */
 function recordingStarts(runs: JobQueue, started: IngestParams[]): JobQueue {
   return {
-    async start(doc, lang, versions, underWay) {
-      await runs.start(doc, lang, versions, underWay);
+    async start(doc, lang, versions) {
+      await runs.start(doc, lang, versions);
       started.push({ doc, lang });
     },
     jobs: (lang) => runs.jobs(lang),
