@@ -215,6 +215,14 @@ class Target:
 
 IMAGES = tuple(f"image-{lang}" for lang in LANGS)
 PLAN_INFRA = {"shared": "infra/shared", "staging": "infra", "production": "infra"}
+# These checks also depend on how CI runs them and the tools it installs.
+CHECK_RECIPE = (
+    ".github/workflows/ci.yml",
+    ".github/actions/setup",
+    "justfile",
+    "flake.nix",
+    "flake.lock",
+)
 
 
 @cache
@@ -229,9 +237,9 @@ def targets() -> dict[str, Target]:
         "worker": Target("build", (".#skolia-worker",)),
         # just check and just test read everything
         "check": Target("check", test=(".",)),
-        "screenshots": Target("check", test=("reader/screenshots",)),
+        "screenshots": Target("check", test=("reader/screenshots", *CHECK_RECIPE)),
         **{
-            f"plan-infra-{env}": Target("check", test=(root,))
+            f"plan-infra-{env}": Target("check", test=(root, *CHECK_RECIPE))
             for env, root in PLAN_INFRA.items()
         },
         "infra": Target("deploy", ("infra", *migrations("api/wrangler.jsonc"))),
