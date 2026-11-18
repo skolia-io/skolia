@@ -42,7 +42,7 @@ import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from functools import cache
+from functools import cache, cached_property
 from pathlib import Path
 from typing import Literal, cast
 
@@ -206,7 +206,7 @@ class Target:
     build: tuple[str, ...] = ()
     test: tuple[str, ...] = ()
     against: tuple[str, ...] = ()
-    content: Callable[[], str] = lambda: ""
+    content: Callable[["Planner"], str] = lambda _: ""
 
     @property
     def kinds(self) -> Kinds:
@@ -241,7 +241,9 @@ def targets() -> dict[str, Target]:
         "lexicon": Target(
             "deploy", tuple(f"./analysis#cards-lexicon-{lang}" for lang in LANGS)
         ),
-        "web": Target("deploy", (".#skolia-worker",), content=version),
+        "web": Target(
+            "deploy", (".#skolia-worker",), content=lambda planner: planner.version()
+        ),
         # The tests are in api/, so in the skolia Worker
         "e2e": Target("deploy", against=("infra", "ingest", "lexicon", "web")),
         "curated": Target("deploy", test=("curated",), against=("web",)),
@@ -256,7 +258,7 @@ def scope(of: str) -> list[str]:
     return [name for name, target in targets().items() if target.scope == of]
 
 
-# Versions, from Nix
+# Versions and keys
 
 
 def reach(names: list[str]) -> tuple[list[str], list[str]]:
@@ -278,16 +280,6 @@ def reach(names: list[str]) -> tuple[list[str], list[str]]:
     return [name for name in targets() if name in chosen], list(reached)
 
 
-# The targets this command keys (every one if empty), so it evaluates only their nodes: the
-# screenshots job runs on aarch64-linux, which the analysis flake doesn't build for
-WANTED: list[str] = []
-
-
-@cache
-def nodes() -> list[str]:
-    return reach(WANTED or list(targets()))[1]
-
-
 @cache
 def system() -> str:
     return run("nix", "eval", "--raw", "--impure", "--expr", "builtins.currentSystem")
@@ -299,43 +291,6 @@ def nix_eval(flake: str, attr: str, apply: str) -> dict[str, str]:
 
 def out_paths(attrs: list[str]) -> str:
     return "{ " + " ".join(f'"{a}" = packages."{a}".outPath;' for a in attrs) + " }"
-
-
-@cache
-def versions() -> dict[str, str]:
-    """Each node's version but an LFS one's, in one nix eval per flake."""
-    sources = {
-        node: terraform_files(node) if is_terraform_root(node) else [node]
-        for node in nodes()
-        if "#" not in node and node not in LFS
-    }
-    flakes: dict[str, list[str]] = {}
-    for node in nodes():
-        if "#" in node:
-            flake, attr = node.split("#")
-            flakes.setdefault(flake, []).append(attr)
-    root = flakes.pop(".", [])
-    found = nix_eval(
-        ".",
-        "planner",
-        f"p: let packages = p.packages.{system()}; in "
-        f"{{ sources = p.hashes (builtins.fromJSON ''{json.dumps(sources)}''); "
-        f"packages = {out_paths(root)}; }}",
-    )
-    result = cast(dict[str, str], found["sources"]) | {
-        f".#{attr}": path
-        for attr, path in cast(dict[str, str], found["packages"]).items()
-    }
-    for flake, attrs in flakes.items():
-        built = nix_eval(flake, f"packages.{system()}", f"packages: {out_paths(attrs)}")
-        result |= {f"{flake}#{attr}": path for attr, path in built.items()}
-    return result
-
-
-def node_version(node: str) -> str:
-    if node in LFS:
-        return run("git", "rev-parse", f"HEAD:{node}")
-    return versions()[node]
 
 
 def describe(*args: str) -> str | None:
@@ -351,36 +306,84 @@ def describe(*args: str) -> str | None:
     return done.stdout.strip() if done.returncode == 0 else None
 
 
-def version() -> str:
-    if (tag := describe("--exact-match")) is not None:
-        return tag
-    worker = versions()[".#skolia-worker"].removeprefix("/nix/store/")[:12]
-    return f"{describe('--abbrev=0') or 'untagged'}+{worker}"
+class Planner:
+    """The keys of some targets and of the nodes they reach, as ci-planner's Planner. It
+    evaluates only those nodes' versions, one nix eval per flake: the screenshots job runs on
+    aarch64-linux, which the analysis flake doesn't build for."""
 
+    def __init__(self, names: list[str]) -> None:
+        self.targets, self.nodes = reach(names)
+        self.checksums: dict[tuple[str, Kinds], str] = {}
+        self.keys: dict[str, str] = {}
 
-# Checksums and keys
+    @cached_property
+    def versions(self) -> dict[str, str]:
+        """Each node's version but an LFS one's."""
+        sources = {
+            node: terraform_files(node) if is_terraform_root(node) else [node]
+            for node in self.nodes
+            if "#" not in node and node not in LFS
+        }
+        flakes: dict[str, list[str]] = {}
+        for node in self.nodes:
+            if "#" in node:
+                flake, attr = node.split("#")
+                flakes.setdefault(flake, []).append(attr)
+        root = flakes.pop(".", [])
+        found = nix_eval(
+            ".",
+            "planner",
+            f"p: let packages = p.packages.{system()}; in "
+            f"{{ sources = p.hashes (builtins.fromJSON ''{json.dumps(sources)}''); "
+            f"packages = {out_paths(root)}; }}",
+        )
+        result = cast(dict[str, str], found["sources"]) | {
+            f".#{attr}": path
+            for attr, path in cast(dict[str, str], found["packages"]).items()
+        }
+        for flake, attrs in flakes.items():
+            built = nix_eval(
+                flake, f"packages.{system()}", f"packages: {out_paths(attrs)}"
+            )
+            result |= {f"{flake}#{attr}": path for attr, path in built.items()}
+        return result
 
+    def node_version(self, node: str) -> str:
+        if node in LFS:
+            return run("git", "rev-parse", f"HEAD:{node}")
+        return self.versions[node]
 
-@cache
-def checksum(node: str, kinds: Kinds, path: tuple[str, ...] = ()) -> str:
-    if node in path:
-        raise SystemExit(f"a cycle in the graph: {' -> '.join((*path, node))}")
-    deps = [(kind, dep) for kind, dep in direct_deps(node) if kind in kinds]
-    return digest(
-        node_version(node),
-        *(f"{kind} {dep} {checksum(dep, kinds, (*path, node))}" for kind, dep in deps),
-    )
+    def version(self) -> str:
+        """The skolia Worker's."""
+        if (tag := describe("--exact-match")) is not None:
+            return tag
+        worker = self.versions[".#skolia-worker"].removeprefix("/nix/store/")[:12]
+        return f"{describe('--abbrev=0') or 'untagged'}+{worker}"
 
+    def checksum(self, node: str, kinds: Kinds, path: tuple[str, ...] = ()) -> str:
+        if node in path:
+            raise SystemExit(f"a cycle in the graph: {' -> '.join((*path, node))}")
+        if (node, kinds) not in self.checksums:
+            deps = [(kind, dep) for kind, dep in direct_deps(node) if kind in kinds]
+            self.checksums[node, kinds] = digest(
+                self.node_version(node),
+                *(
+                    f"{kind} {dep} {self.checksum(dep, kinds, (*path, node))}"
+                    for kind, dep in deps
+                ),
+            )
+        return self.checksums[node, kinds]
 
-@cache
-def key(name: str) -> str:
-    target = targets()[name]
-    return digest(
-        target.content(),
-        *(f"build {node} {checksum(node, target.kinds)}" for node in target.build),
-        *(f"test {node} {checksum(node, target.kinds)}" for node in target.test),
-        *(f"against {dep} {key(dep)}" for dep in target.against),
-    )
+    def key(self, name: str) -> str:
+        if name not in self.keys:
+            target = targets()[name]
+            self.keys[name] = digest(
+                target.content(self),
+                *(f"build {n} {self.checksum(n, target.kinds)}" for n in target.build),
+                *(f"test {n} {self.checksum(n, target.kinds)}" for n in target.test),
+                *(f"against {dep} {self.key(dep)}" for dep in target.against),
+            )
+        return self.keys[name]
 
 
 # skolia-ci
@@ -436,12 +439,12 @@ def has_token() -> bool:
     return False
 
 
-def built(names: list[str]) -> dict[str, bool]:
+def built(planner: Planner, names: list[str]) -> dict[str, bool]:
     """Whether each build or check has a row for its key: one seek each."""
     results = d1(
         " ".join(
             f"SELECT EXISTS (SELECT 1 FROM build WHERE package = {quote(name)} "
-            f"AND key = {quote(key(name))}) AS done;"
+            f"AND key = {quote(planner.key(name))}) AS done;"
             for name in names
         )
     )
@@ -465,20 +468,24 @@ def last_keys(env: str, names: list[str]) -> dict[str, object]:
 # The plan
 
 
-def needed(what: str, done: dict[str, bool]) -> dict[str, bool]:
+def needed(planner: Planner, what: str, done: dict[str, bool]) -> dict[str, bool]:
     for name, current in done.items():
         log.info(
-            "%s %s: %s (%s)", what, name, "current" if current else "needed", key(name)
+            "%s %s: %s (%s)",
+            what,
+            name,
+            "current" if current else "needed",
+            planner.key(name),
         )
     return {name: not current for name, current in done.items()}
 
 
-def plan_deploys(env: str) -> dict[str, bool] | None:
+def plan_deploys(planner: Planner, env: str) -> dict[str, bool] | None:
     """Whether each of env's deploys is needed, or None for a preview that would be staging."""
     names = scope("shared" if env == "shared" else "deploy")
     if not has_token():
         return dict.fromkeys(names, True)
-    keys = {name: key(name) for name in names}
+    keys = {name: planner.key(name) for name in names}
     last = last_keys(env, names)
     if (
         env.startswith("pr-")
@@ -487,24 +494,28 @@ def plan_deploys(env: str) -> dict[str, bool] | None:
     ):
         log.info("%s: never deployed, and would be staging, so skipped", env)
         return None
-    return needed(env, {name: last[name] == keys[name] for name in names})
+    return needed(planner, env, {name: last[name] == keys[name] for name in names})
 
 
-def plan(envs: list[str]) -> dict[str, object]:
+def plan(planner: Planner, envs: list[str]) -> dict[str, object]:
     """The run's: the checks still to pass, and each env's deploys with the builds they need
     (none for a preview that would be staging). terraform is whether anything needs the
     providers mirrored (ci.yml mirror-providers)."""
     checks = scope("check")
     check = needed(
-        "check", built(checks) if has_token() else dict.fromkeys(checks, False)
+        planner,
+        "check",
+        built(planner, checks) if has_token() else dict.fromkeys(checks, False),
     )
     builds = scope("build")
     unbuilt = needed(
-        "build", built(builds) if has_token() else dict.fromkeys(builds, False)
+        planner,
+        "build",
+        built(planner, builds) if has_token() else dict.fromkeys(builds, False),
     )
     deploys: dict[str, dict[str, object]] = {}
     for env in envs:
-        if (todo := plan_deploys(env)) is None:
+        if (todo := plan_deploys(planner, env)) is None:
             continue
         deploys[env] = dict(todo)
         if env != "shared":
@@ -527,12 +538,12 @@ def plan(envs: list[str]) -> dict[str, object]:
     }
 
 
-def record_build(name: str) -> None:
+def record_build(planner: Planner, name: str) -> None:
     d1(
         "INSERT INTO build (package, key, built_at) "
-        f"VALUES ({quote(name)}, {quote(key(name))}, {quote(now())})"
+        f"VALUES ({quote(name)}, {quote(planner.key(name))}, {quote(now())})"
     )
-    log.info("built %s: %s", name, key(name))
+    log.info("built %s: %s", name, planner.key(name))
 
 
 def record_deployment(env: str, name: str, value: str | None) -> None:
@@ -546,9 +557,9 @@ def record_deployment(env: str, name: str, value: str | None) -> None:
 # The graph, to read
 
 
-def print_graph(names: list[str], as_dot: bool) -> None:
-    """The targets named (every one by default) and the nodes they reach."""
-    chosen, reached = reach(names or list(targets()))
+def print_graph(planner: Planner, as_dot: bool) -> None:
+    """The planner's targets and the nodes they reach."""
+    chosen, reached = planner.targets, planner.nodes
     if not as_dot:
         for name in chosen:
             target = targets()[name]
@@ -556,10 +567,14 @@ def print_graph(names: list[str], as_dot: bool) -> None:
                 f"test:{n}" for n in target.test
             ]
             edges += [f"against:{t}" for t in target.against]
-            print(f"{target.scope} {name} {key(name)} {' '.join(edges)}".rstrip())
+            print(
+                f"{target.scope} {name} {planner.key(name)} {' '.join(edges)}".rstrip()
+            )
         for node in sorted(reached):
             edges = [f"{kind}:{dep}" for kind, dep in direct_deps(node)]
-            print(f"node {node} {checksum(node, TEST)} {' '.join(edges)}".rstrip())
+            print(
+                f"node {node} {planner.checksum(node, TEST)} {' '.join(edges)}".rstrip()
+            )
         return
     shapes = {
         "build": "box",
@@ -640,28 +655,24 @@ def main(args: list[str]) -> None:
     commands.add_parser("version", help="print the skolia Worker's version")
 
     parsed = parser.parse_args(args)
-    global WANTED
-    if parsed.command in ("passed", "built", "deployed"):
-        WANTED = [parsed.name]
-    elif parsed.command == "graph":
-        WANTED = parsed.names
     match parsed.command:
         case "plan":
-            print(json.dumps(plan(parsed.envs)))
+            print(json.dumps(plan(Planner(list(targets())), parsed.envs)))
         case "passed":
             if has_token():
-                record_build(parsed.name)
+                record_build(Planner([parsed.name]), parsed.name)
         case "built":
-            record_build(parsed.name)
+            record_build(Planner([parsed.name]), parsed.name)
         case "deployed":
-            record_deployment(parsed.env, parsed.name, key(parsed.name))
+            key = Planner([parsed.name]).key(parsed.name)
+            record_deployment(parsed.env, parsed.name, key)
         case "torn-down":
             for name in scope("deploy"):
                 record_deployment(parsed.env, name, None)
         case "graph":
-            print_graph(parsed.names, parsed.dot)
+            print_graph(Planner(parsed.names or list(targets())), parsed.dot)
         case "version":
-            print(version())
+            print(Planner(["web"]).version())
 
 
 if __name__ == "__main__":
