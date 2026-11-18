@@ -49,7 +49,7 @@
     "consumers": [{ "queue": "skolia-ingest-events", "max_batch_size": 100, "max_batch_timeout": 5, "max_retries": 10 }]
   },
   // The containers' blobs, served to them through an intercept (Blobs in src/main.ts)
-  "r2_buckets": [{ "binding": "BLOBS", "bucket_name": "skolia" }],
+  "r2_buckets": [{ "binding": "BLOBS", "bucket_name": "skolia-documents" }],
   // INGEST_WORKFLOW: a run of ingest for a document (src/workflow.ts), started by the API
   "workflows": [{ "name": "skolia-ingest", "binding": "INGEST_WORKFLOW", "class_name": "IngestWorkflow" }],
   // Deployed as skolia-ingest-staging. Bindings and containers aren't inherited.
@@ -77,7 +77,7 @@
         "producers": [{ "binding": "INGEST_EVENTS", "queue": "skolia-ingest-events-staging" }],
         "consumers": [{ "queue": "skolia-ingest-events-staging", "max_batch_size": 100, "max_batch_timeout": 5, "max_retries": 10 }]
       },
-      "r2_buckets": [{ "binding": "BLOBS", "bucket_name": "skolia-staging" }],
+      "r2_buckets": [{ "binding": "BLOBS", "bucket_name": "skolia-documents-staging" }],
       "workflows": [{ "name": "skolia-ingest-staging", "binding": "INGEST_WORKFLOW", "class_name": "IngestWorkflow" }]
     }
   }

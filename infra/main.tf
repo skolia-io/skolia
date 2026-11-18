@@ -1,12 +1,13 @@
-resource "cloudflare_r2_bucket" "blobs" {
+resource "cloudflare_r2_bucket" "documents" {
   account_id = var.account_id
-  name       = "skolia${local.suffix}"
+  name       = "skolia-documents${local.suffix}"
+  location   = local.location
 }
 
 resource "cloudflare_d1_database" "skolia" {
   account_id            = var.account_id
   name                  = "skolia${local.suffix}"
-  primary_location_hint = local.d1_location
+  primary_location_hint = local.location
   read_replication      = { mode = "auto" }
 }
 
@@ -16,7 +17,7 @@ resource "cloudflare_d1_database" "lexicon" {
   for_each              = toset(local.langs)
   account_id            = var.account_id
   name                  = "skolia-lexicon-${each.key}${local.suffix}"
-  primary_location_hint = local.d1_location
+  primary_location_hint = local.location
   read_replication      = { mode = "auto" }
 }
 
@@ -25,7 +26,7 @@ resource "cloudflare_d1_database" "lexicon" {
 resource "cloudflare_d1_database" "ingest" {
   account_id            = var.account_id
   name                  = "skolia-ingest${local.suffix}"
-  primary_location_hint = local.d1_location
+  primary_location_hint = local.location
 }
 
 # What the ingest containers send as each job starts and ends: the ingest Worker puts them

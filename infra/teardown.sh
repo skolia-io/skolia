@@ -19,7 +19,7 @@ web=skolia-$env
 ingest=skolia-ingest-$env
 queue=skolia-ingest-$env
 events=skolia-ingest-events-$env
-bucket=skolia-$env
+bucket=skolia-documents-$env
 
 # Listed first, so a failed listing stops the teardown rather than skipping a step
 workers=$(cf GET workers/scripts | jq -r '.result[].id')
