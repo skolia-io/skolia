@@ -140,6 +140,9 @@ load-lexicon env *flags:
 deployed env package:
     infra/plan.py deployed {{ env }} {{ package }}
 
+# The account's resources that aren't any environment's (infra/shared/), then skolia-ci's tables
+deploy-shared: (apply "shared") migrate-ci && (deployed "shared" "infra-shared")
+
 # skolia-ci's tables (infra/skolia-ci/migrations), after just apply shared made it
 migrate-ci:
     pnpm --dir api exec wrangler d1 migrations apply DB --remote -c "$PWD/infra/skolia-ci/wrangler.jsonc"
@@ -188,7 +191,8 @@ deploy-oauth-proxy:
     trap 'rm -rf "$dir"' EXIT
     jq -n '{GOOGLE_CLIENT_ID: env.GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET: env.GOOGLE_CLIENT_SECRET, OAUTH_PROXY_SECRET: env.OAUTH_PROXY_SECRET}
       | if any(.[]; (. // "") == "") then error("GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and OAUTH_PROXY_SECRET must be set") end' > "$dir/secrets.json"
-    cd oauth-proxy && pnpm exec wrangler deploy --secrets-file "$dir/secrets.json"
+    (cd oauth-proxy && pnpm exec wrangler deploy --secrets-file "$dir/secrets.json")
+    infra/plan.py deployed shared oauth-proxy
 
 # Build, push and deploy the ingest container
 deploy-ingest env:

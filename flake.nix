@@ -146,7 +146,7 @@
       # infra/plan.py's, in one nix eval
       planner = {
         inherit hashes;
-        worker = builtins.mapAttrs (_: s: s.packages.skolia-worker.outPath) systems;
+        packages = builtins.mapAttrs (_: s: s.packages) systems;
       };
       packages = builtins.mapAttrs (_: s: s.packages) systems;
       devShells = builtins.mapAttrs (_: s: s.devShells) systems;

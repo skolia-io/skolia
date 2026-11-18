@@ -1,14 +1,13 @@
 name: Deploy
 
-# One environment: the plan; then Terraform and migrations, beside the images it says are
-# missing and the skolia Worker's build; then the ingest Worker and the lexicon; then the
-# skolia Worker (reader and API);
-# then, side by side, the end-to-end tests (e2e) and the curated texts in curated/
-# (sync-curated, sync-curated.yml). The ingest Worker consumes the queue the skolia Worker
-# feeds, so it goes first. The plan (infra/plan.py) skips each build or deployment whose
-# Nix key skolia-ci has a row for, the end-to-end tests and the curated sync included. One deploy
-# of an environment runs at a time (ci.yml's concurrency), so no older deploy lands
-# between the plan and what it skipped. A newer push cancels the run, but a step that
+# One environment, as ci.yml's plan (infra/plan.py) says: the images and the skolia
+# Worker's build it says are missing, beside Terraform and migrations; then the ingest Worker
+# and the lexicon; then the skolia Worker (reader and API); then, side by side, the end-to-end
+# tests (e2e) and the curated texts in curated/ (sync-curated, sync-curated.yml). The ingest
+# Worker consumes the queue the skolia Worker feeds, so it goes first. Each job runs only if
+# the plan says its key isn't what the environment has, and records its key once it's done.
+# One deploy of an environment runs at a time (ci.yml's concurrency), so no older deploy
+# lands between the plan and what it skipped. A newer push cancels the run, but a step that
 # changes what's deployed finishes first (.github/uninterruptible.sh). Previews (pr-<N>)
 # share one GitHub environment, preview.
 
@@ -18,13 +17,17 @@ on:
       env:
         type: string
         required: true
+      plan:
+        description: The environment's plan, from ci.yml's (infra/plan.py plan)
+        type: string
+        required: true
     outputs:
-      url:
-        description: The environment's URL, set once the skolia Worker's deployed or current, even if a later step fails
-        value: ${{ jobs.plan.outputs.plan && (jobs.deploy-web.outputs.deployed || !fromJSON(jobs.plan.outputs.plan).web) && jobs.plan.outputs.url || '' }}
+      serving:
+        description: true once the skolia Worker's deployed or current, even if a later step fails
+        value: ${{ (jobs.deploy-web.outputs.deployed || !fromJSON(inputs.plan).web) && 'true' || '' }}
       e2e:
         description: The end-to-end tests' result (success, failure or cancelled), current if they passed against what's deployed before, empty if they didn't run
-        value: ${{ jobs.e2e.outputs.result || (jobs.plan.outputs.plan && !fromJSON(jobs.plan.outputs.plan).e2e && 'current') || '' }}
+        value: ${{ jobs.e2e.outputs.result || (!fromJSON(inputs.plan).e2e && 'current') || '' }}
 
 permissions:
   contents: read
@@ -35,34 +38,15 @@ env:
   CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
 
 jobs:
-  # What isn't built yet, for any environment, and what this one doesn't serve yet: each
-  # package whose key skolia-ci has no record of (infra/plan.py). The jobs record theirs.
-  plan:
-    runs-on: ubuntu-24.04
-    outputs:
-      plan: ${{ steps.plan.outputs.plan }}
-      url: ${{ steps.url.outputs.url }}
-    steps:
-      # The tags and history, for the version
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-      - uses: ./.github/actions/setup
-      - id: plan
-        run: echo "plan=$(infra/plan.py ${{ inputs.env }})" >> "$GITHUB_OUTPUT"
-      - id: url
-        run: echo "url=$(just url ${{ inputs.env }})" >> "$GITHUB_OUTPUT"
-
   # The images are named by their inputs, not the environment, so one built for a preview
   # serves staging and production too
   build-ingest-image:
-    needs: plan
-    if: toJSON(fromJSON(needs.plan.outputs.plan).images) != '[]'
+    if: toJSON(fromJSON(inputs.plan).images) != '[]'
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
-        lang: ${{ fromJSON(needs.plan.outputs.plan).images }}
+        lang: ${{ fromJSON(inputs.plan).images }}
     steps:
       - uses: actions/checkout@v7
       # The model downloads read HF_TOKEN (impureEnvVars) from the daemon, not this job
@@ -78,8 +62,7 @@ jobs:
   # The skolia Worker (flake.nix skolia-worker), into Cachix for deploy-web, while what it
   # waits for runs; built once for every environment
   build-web:
-    needs: plan
-    if: fromJSON(needs.plan.outputs.plan).worker
+    if: fromJSON(inputs.plan).worker
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -91,8 +74,7 @@ jobs:
           CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
 
   deploy-infra:
-    needs: plan
-    if: fromJSON(needs.plan.outputs.plan).infra
+    if: fromJSON(inputs.plan).infra
     runs-on: ubuntu-24.04
     environment: ${{ startsWith(inputs.env, 'pr-') && 'preview' || inputs.env }}
     env:
@@ -107,8 +89,8 @@ jobs:
   # The lexicon for cards, built with Nix from the lexicon and venv build-ingest-image put
   # in Cachix (just load-lexicon), so after it when it runs
   load-lexicon:
-    needs: [plan, deploy-infra, build-ingest-image]
-    if: ${{ !cancelled() && !failure() && fromJSON(needs.plan.outputs.plan).lexicon }}
+    needs: [deploy-infra, build-ingest-image]
+    if: ${{ !cancelled() && !failure() && fromJSON(inputs.plan).lexicon }}
     runs-on: ubuntu-24.04
     environment: ${{ startsWith(inputs.env, 'pr-') && 'preview' || inputs.env }}
     steps:
@@ -120,8 +102,8 @@ jobs:
 
   # After deploy-infra: the queue and bucket must exist
   deploy-ingest:
-    needs: [plan, deploy-infra, build-ingest-image]
-    if: ${{ !cancelled() && !failure() && fromJSON(needs.plan.outputs.plan).ingest }}
+    needs: [deploy-infra, build-ingest-image]
+    if: ${{ !cancelled() && !failure() && fromJSON(inputs.plan).ingest }}
     runs-on: ubuntu-24.04
     environment: ${{ startsWith(inputs.env, 'pr-') && 'preview' || inputs.env }}
     env:
@@ -133,8 +115,8 @@ jobs:
 
   # After the lexicon is loaded: the end-to-end tests' card and lexicon journeys read it
   deploy-web:
-    needs: [plan, build-web, deploy-infra, deploy-ingest, load-lexicon]
-    if: ${{ !cancelled() && !failure() && fromJSON(needs.plan.outputs.plan).web }}
+    needs: [build-web, deploy-infra, deploy-ingest, load-lexicon]
+    if: ${{ !cancelled() && !failure() && fromJSON(inputs.plan).web }}
     runs-on: ubuntu-24.04
     environment: ${{ startsWith(inputs.env, 'pr-') && 'preview' || inputs.env }}
     # Shared with sync-curated.yml, so a sync without a deploy waits for one
@@ -166,8 +148,8 @@ jobs:
   # skipped says what it needs: deploy-web deployed or current. Each runs only if the plan
   # says what it ran against, or its input, changed since it last passed.
   e2e:
-    needs: [plan, deploy-web]
-    if: ${{ !cancelled() && !failure() && fromJSON(needs.plan.outputs.plan).e2e }}
+    needs: deploy-web
+    if: ${{ !cancelled() && !failure() && fromJSON(inputs.plan).e2e }}
     runs-on: ubuntu-24.04
     environment: ${{ startsWith(inputs.env, 'pr-') && 'preview' || inputs.env }}
     outputs:
@@ -184,8 +166,8 @@ jobs:
         run: echo "result=${{ job.status }}" >> "$GITHUB_OUTPUT"
 
   sync-curated:
-    needs: [plan, deploy-web]
-    if: ${{ !cancelled() && !failure() && fromJSON(needs.plan.outputs.plan).curated }}
+    needs: deploy-web
+    if: ${{ !cancelled() && !failure() && fromJSON(inputs.plan).curated }}
     uses: ./.github/workflows/sync-curated.yml
     with:
       env: ${{ inputs.env }}

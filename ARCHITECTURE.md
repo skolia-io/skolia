@@ -125,7 +125,7 @@ flowchart TB
     IMG["ingest-{lang} image"]
   end
   subgraph CI["GitHub Actions (ci.yml, deploy.yml)"]
-    PL["plan: what's current (infra/plan.py)"]
+    PL["plan: what the run needs (infra/plan.py), at its start"]
     BII["build-ingest-image (per missing image)"]
     DI["deploy-infra: terraform, D1 migrations"]
     LL["load-lexicon"]
