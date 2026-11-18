@@ -132,7 +132,11 @@ load-lexicon env *flags:
       infra/load-lexicon.py {{ env }} "$out/$lang.cards.sqlite" --built-from "$out" $sample {{ flags }}
     done
 
-# Terraform: an environment's storage, queue and ingest's R2 token; shared: the account's billing alerts, provider mirror and lexicon sources
+# skolia-ci's tables (infra/skolia-ci/migrations), after just apply shared made it
+migrate-ci:
+    pnpm --dir api exec wrangler d1 migrations apply DB --remote -c "$PWD/infra/skolia-ci/wrangler.jsonc"
+
+# Terraform: an environment's storage, queue and ingest's R2 token; shared: the account's billing alerts, provider mirror, lexicon sources and CI's records (skolia-ci)
 apply env:
     infra/tf.sh {{ env }} apply -input=false
 
