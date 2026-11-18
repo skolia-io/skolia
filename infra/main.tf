@@ -4,9 +4,8 @@ resource "cloudflare_r2_bucket" "blobs" {
 }
 
 resource "cloudflare_d1_database" "skolia" {
-  account_id       = var.account_id
-  name             = "skolia${local.suffix}"
-  read_replication = var.env == "production" ? null : { mode = "auto" }
+  account_id = var.account_id
+  name       = "skolia${local.suffix}"
 }
 
 # Each language's lexicon for flashcards, skolia-lexicon-pl[-env] (infra/load-lexicon.py
