@@ -1,0 +1,11 @@
+name: uv cache
+description: analysis/'s Python dependencies (torch among them, most of the cache) and interpreters, cached per lock file, for the jobs that run uv in analysis/
+runs:
+  using: composite
+  steps:
+    - uses: actions/cache@v6.1.0
+      with:
+        path: |
+          ~/.cache/uv
+          ~/.local/share/uv/python
+        key: uv-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('analysis/uv.lock', 'analysis/.python-version') }}

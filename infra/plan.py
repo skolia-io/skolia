@@ -219,6 +219,8 @@ PLAN_INFRA = {"shared": "infra/shared", "staging": "infra", "production": "infra
 CHECK_RECIPE = (
     ".github/workflows/ci.yml",
     ".github/actions/setup",
+    ".github/actions/pnpm",
+    ".github/actions/uv",
     "justfile",
     "flake.nix",
     "flake.lock",
