@@ -4,24 +4,28 @@ resource "cloudflare_r2_bucket" "blobs" {
 }
 
 resource "cloudflare_d1_database" "skolia" {
-  account_id       = var.account_id
-  name             = "skolia${local.suffix}"
-  read_replication = { mode = "auto" }
+  account_id            = var.account_id
+  name                  = "skolia${local.suffix}"
+  primary_location_hint = local.d1_location
+  read_replication      = { mode = "auto" }
 }
 
 # Each language's lexicon for flashcards, skolia-lexicon-pl[-env] (infra/load-lexicon.py
 # loads it)
 resource "cloudflare_d1_database" "lexicon" {
-  for_each   = toset(local.langs)
-  account_id = var.account_id
-  name       = "skolia-lexicon-${each.key}${local.suffix}"
+  for_each              = toset(local.langs)
+  account_id            = var.account_id
+  name                  = "skolia-lexicon-${each.key}${local.suffix}"
+  primary_location_hint = local.d1_location
+  read_replication      = { mode = "auto" }
 }
 
 # The ingest Worker's job history (ingest/migrations), apart from skolia so that one
 # stays small and the ingest Worker binds no user data
 resource "cloudflare_d1_database" "ingest" {
-  account_id = var.account_id
-  name       = "skolia-ingest${local.suffix}"
+  account_id            = var.account_id
+  name                  = "skolia-ingest${local.suffix}"
+  primary_location_hint = local.d1_location
 }
 
 # What the ingest containers send as each job starts and ends: the ingest Worker puts them

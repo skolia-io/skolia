@@ -195,12 +195,16 @@ export function lexiconsOf(env: LexiconBindings): Record<Lang, D1Database> {
 
 /** Each language's lexicon database, loaded by infra/load-lexicon.py from the same build
  * as the ingest images, serving its loaded version. Its JSON is ours, so it's trusted to
- * match. */
+ * match. It's only written when a new build is loaded, so a session can start at any
+ * replica (first-unconstrained). */
 export class D1Lexicon implements Lexicon {
   private readonly dbs: Record<Lang, D1DatabaseSession>;
 
   constructor(dbs: Record<Lang, D1Database>) {
-    this.dbs = Object.fromEntries(LANGS.map((lang) => [lang, dbs[lang].withSession("first-primary")])) as Record<Lang, D1DatabaseSession>;
+    this.dbs = Object.fromEntries(LANGS.map((lang) => [lang, dbs[lang].withSession("first-unconstrained")])) as Record<
+      Lang,
+      D1DatabaseSession
+    >;
   }
 
   async entries(ids: readonly LemmaId[]): Promise<Lookup> {
