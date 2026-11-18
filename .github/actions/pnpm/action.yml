@@ -1,0 +1,13 @@
+name: pnpm install
+description: The JS dependencies, from a pnpm store cached per lock file. After ./.github/actions/setup, which puts pnpm on the PATH.
+runs:
+  using: composite
+  steps:
+    # No restore-keys: an older store restored and saved again under a new key keeps
+    # every package it ever had
+    - uses: actions/cache@v6.1.0
+      with:
+        path: ~/.local/share/pnpm/store
+        key: pnpm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
+    - run: pnpm install --frozen-lockfile --store-dir ~/.local/share/pnpm/store
+      shell: bash

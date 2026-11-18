@@ -102,6 +102,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
+      - if: matrix.project != 'analysis'
+        uses: ./.github/actions/pnpm
+      - if: matrix.project == 'analysis'
+        uses: ./.github/actions/uv
       - run: just check-project ${{ matrix.project }}
       - run: python3 -I infra/plan.py passed check-${{ matrix.project }}
         env:
@@ -119,6 +123,7 @@ jobs:
         with:
           lfs: true
       - uses: ./.github/actions/setup
+      - uses: ./.github/actions/pnpm
       - run: just screenshot
       - run: python3 -I infra/plan.py passed screenshots
         env:
@@ -240,6 +245,7 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.base.ref }}
       - uses: ./.github/actions/setup
+      - uses: ./.github/actions/pnpm
       - run: .github/uninterruptible.sh just teardown pr-${{ github.event.number }}
       # Only edits a comment a deploy left: one that didn't deploy has nothing to say
       - run: |
@@ -262,6 +268,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
+      - uses: ./.github/actions/pnpm
       - run: .github/uninterruptible.sh just deploy-shared
 
   # A tag's and main's runs both deploy staging: one at a time, as the plan reads what's
@@ -292,6 +299,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
+      - uses: ./.github/actions/pnpm
       - run: .github/uninterruptible.sh just deploy-oauth-proxy
 
   check-tag-on-main:

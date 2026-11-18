@@ -33,4 +33,5 @@ jobs:
         with:
           fetch-depth: 0
       - uses: ./.github/actions/setup
+      - uses: ./.github/actions/pnpm
       - run: just sync-curated ${{ inputs.env }}

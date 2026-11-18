@@ -30,4 +30,5 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
+      - uses: ./.github/actions/pnpm
       - run: infra/sweep.sh

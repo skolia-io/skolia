@@ -55,6 +55,7 @@ jobs:
           nix-conf: |
             extra-experimental-features = configurable-impure-env
             impure-env = HF_TOKEN=${{ secrets.HF_TOKEN }}
+      - uses: ./.github/actions/pnpm
       - run: infra/deploy-ingest.sh build ${{ matrix.lang }}
         env:
           CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
@@ -84,6 +85,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
+      - uses: ./.github/actions/pnpm
       - run: .github/uninterruptible.sh just deploy-infra ${{ inputs.env }}
 
   # The lexicon for cards, built with Nix from the lexicon and venv build-ingest-image put
@@ -96,6 +98,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
+      - uses: ./.github/actions/pnpm
       - run: just load-lexicon ${{ inputs.env }}
         env:
           CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
@@ -109,6 +112,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
+      - uses: ./.github/actions/pnpm
       - run: .github/uninterruptible.sh just deploy-internal ${{ inputs.env }}
 
   # Its status publisher, storage and images must exist first.
@@ -122,6 +126,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
+      - uses: ./.github/actions/pnpm
       - run: .github/uninterruptible.sh infra/deploy-ingest.sh ${{ inputs.env }} deploy
 
   # After the lexicon is loaded: the end-to-end tests' card and lexicon journeys read it
@@ -150,6 +155,7 @@ jobs:
         with:
           fetch-depth: 0
       - uses: ./.github/actions/setup
+      - uses: ./.github/actions/pnpm
       - id: deploy
         run: |
           .github/uninterruptible.sh just deploy-web ${{ inputs.env }}
@@ -171,6 +177,7 @@ jobs:
         with:
           fetch-depth: 0
       - uses: ./.github/actions/setup
+      - uses: ./.github/actions/pnpm
       - run: just e2e ${{ inputs.env }}
       - id: result
         if: always()

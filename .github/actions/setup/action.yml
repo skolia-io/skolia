@@ -1,5 +1,5 @@
 name: Setup
-description: Nix with flake.nix's packages.ci (terraform, just, Node, pnpm and uv), substituting from the andyyu2004 Cachix cache, and the JS dependencies
+description: Nix with flake.nix's packages.ci (terraform, just, Node, pnpm and uv), substituting from the andyyu2004 Cachix cache. The JS dependencies are ./.github/actions/pnpm, the Python ones' cache ./.github/actions/uv, in the jobs that use them.
 inputs:
   nix-conf:
     description: Extra nix.conf lines for the Nix install
@@ -16,25 +16,9 @@ runs:
       with:
         name: andyyu2004
         skipPush: true
-    # Fetched in the background while the caches are restored; the build below waits for it
-    - run: nohup nix build --no-link .#ci >"$RUNNER_TEMP/nix-ci.log" 2>&1 &
-      shell: bash
-    - uses: actions/cache@v6.1.0
-      with:
-        path: |
-          ~/.local/share/pnpm
-          ~/.cache/uv
-          ~/.local/share/uv/python
-        key: setup-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'analysis/uv.lock') }}
-        restore-keys: setup-${{ runner.os }}-
     - run: |
-        if ! out=$(nix build --no-link --print-out-paths .#ci); then
-          cat "$RUNNER_TEMP/nix-ci.log"
-          exit 1
-        fi
+        out=$(nix build --no-link --print-out-paths .#ci)
         echo "$out/bin" >> "$GITHUB_PATH"
-      shell: bash
-    - run: pnpm install --frozen-lockfile --store-dir ~/.local/share/pnpm/store
       shell: bash
     - run: echo "TF_CLI_CONFIG_FILE=$GITHUB_WORKSPACE/infra/terraformrc" >> "$GITHUB_ENV"
       shell: bash
