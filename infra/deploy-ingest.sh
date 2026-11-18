@@ -85,8 +85,27 @@ build_lang() {
   fi
 }
 
+# Wrangler at times deploys the version but leaves the containers' settings half applied,
+# and says running the same deploy again finishes it (skolia-io/tracking#71). Its output
+# is kept in $log too, to tell that error from others.
+deploy_worker() {
+  local config=$1 log=$2 attempt status attempts=3
+  for ((attempt = 1; ; attempt++)); do
+    if wrangler deploy -c "$config" 2>&1 | tee "$log"; then
+      return
+    else
+      status=$?
+    fi
+    if ((attempt == attempts)) || ! grep -q "were not fully applied" "$log"; then
+      exit "$status"
+    fi
+    echo "wrangler deploy left the container settings not fully applied (attempt $attempt of $attempts): retrying in 30s" >&2
+    sleep 30
+  done
+}
+
 deploy() {
-  local lang tag digest images=() pair config copies
+  local lang tag digest images=() pair config log copies
   for lang in "${langs[@]}"; do
     tag=$(tag_of "$lang")
     if ! in_registry "skolia-ingest-$lang" "$tag"; then
@@ -104,8 +123,9 @@ deploy() {
   # The committed config builds analysis/image/Dockerfile (for wrangler dev); deploy the
   # pushed images, each under its language's name in images
   config=$root/ingest/wrangler.deploy.jsonc
+  log=$(mktemp)
   # Expanded now: the trap runs at exit, after deploy's locals are gone
-  trap "rm -f '$config'" EXIT
+  trap "rm -f '$config' '$log'" EXIT
   if [[ $env == pr-* ]]; then
     # A preview's config is JSON (infra/preview.py) and holds only the preview
     [ -f "$root/ingest/wrangler.$env.json" ] || "$root/infra/preview.py" config "$env" >&2
@@ -138,7 +158,7 @@ deploy() {
     fi
   done
 
-  wrangler deploy -c "$config"
+  deploy_worker "$config" "$log"
 }
 
 case $mode in
