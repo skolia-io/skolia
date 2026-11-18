@@ -222,7 +222,7 @@ async function cards(base: string, key: string, lang: Lang): Promise<void> {
   const { newLemmasPerDay } = await body("settings", api.me.settings.$get());
   assert.ok(newLemmasPerDay >= 1, `${lang}: a new user's settings allow ${newLemmasPerDay} new words a day`);
   const none = { due: 0, new: 0 };
-  assert.deepEqual(await counts(), { lang, words: none, forms: none }, `${lang}: a new user has cards`);
+  assert.equal(await counts(), undefined, `${lang}: a new user has cards`);
 
   for (const kind of ["recognition", "production"] as const) {
     await expectStatus(`making ${word}'s ${kind} card`, api.me.cards.$post({ json: { kind, lemmaId: word } }), 201);

@@ -285,10 +285,11 @@ export class User extends DurableObject<UserEnv> {
     return { cards: [...dueNow, ...fresh].slice(0, limit).map(scheduled), newLeft };
   }
 
-  /** Each language's cards due by now, and what new it would show today, by group: words'
-   * lemmas, as their allowance counts them, and forms' cards. */
+  /** For languages with cards, the due and new tallies by group: words' lemmas, as
+   * their allowance counts them, and forms' cards. */
   counts(now: Timestamp, dayStart: Timestamp): CardCounts[] {
-    return LANGS.map((lang) => {
+    const languages = LANGS.filter((lang) => this.#exec(sql`SELECT 1 FROM card WHERE lang = ${lang} LIMIT 1`).toArray().length > 0);
+    return languages.map((lang) => {
       const newLeft = this.#newLeft(lang, dayStart);
       const tally = (group: CardGroup): Tally => {
         const dueNow = this.#exec(select({ n: fn.count() }).from("card").where(due(lang, now), IN_GROUP[group])).one()["n"];

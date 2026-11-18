@@ -59,7 +59,7 @@ function counts(app: App, headers: Headers): Promise<CardCounts[]> {
   return body("counts", client(app, headers).me.cards.counts.$get({ query: { dayStart: DAY_START } }));
 }
 
-/** Counts for a language with no cards. */
+/** Counts for a language with cards and nothing to review today. */
 function none(lang: Lang): CardCounts {
   return { lang, words: { due: 0, new: 0 }, forms: { due: 0, new: 0 } };
 }
@@ -167,6 +167,17 @@ test("a word's recognition and production cards are new and due now, with its le
   ]);
 });
 
+test("counts omit languages without cards but include cards scheduled for later", async () => {
+  const app = setup();
+  const headers = await signedIn();
+  assert.deepEqual(await counts(app, headers), []);
+  await learn(app, headers, "pl:pies:NOUN");
+  for (const card of (await due(app, headers, "pl")).cards) {
+    await body("review", review(app, headers, answer(card.id, 4)));
+  }
+  assert.deepEqual(await counts(app, headers), [none("pl")]);
+});
+
 test("a known card isn't reviewed, and learning puts it back where it was in its schedule", async () => {
   const app = setup();
   const headers = await signedIn();
@@ -183,7 +194,7 @@ test("a known card isn't reviewed, and learning puts it back where it was in its
   assert.equal(before.length, 2);
   await markWord(app, headers, "pl:pies:NOUN", "known");
   assert.deepEqual(await pies(), []);
-  assert.deepEqual((await counts(later, headers))[2], none("pl"));
+  assert.deepEqual(await counts(later, headers), [none("pl")]);
   assert.deepEqual(
     (await wordCards(app, headers, "pl:pies:NOUN")).map((c) => c.state),
     ["known", "known"],
@@ -245,7 +256,7 @@ test("a word uses one place in the day's allowance, however many of its cards ar
   );
   // Counts give new words in lemmas, as the allowance does, not their four cards
   assert.equal(first.newLeft.words, 2);
-  assert.deepEqual((await counts(app, headers))[2]?.words, { due: 0, new: 2 });
+  assert.deepEqual((await counts(app, headers))[0]?.words, { due: 0, new: 2 });
   for (const card of first.cards.filter((c) => c.lemmaId === "pl:a:NOUN")) await body("review", review(app, headers, answer(card.id, 3)));
   const left = await due(app, headers, "pl");
   assert.equal(left.newLeft.words, 1);
@@ -253,7 +264,7 @@ test("a word uses one place in the day's allowance, however many of its cards ar
     left.cards.map((c) => c.lemmaId),
     ["pl:b:NOUN", "pl:b:NOUN"],
   );
-  assert.deepEqual((await counts(app, headers))[2]?.words, { due: 0, new: 1 });
+  assert.deepEqual((await counts(app, headers))[0]?.words, { due: 0, new: 1 });
   const [bRecognition, bProduction] = left.cards;
   assert.ok(bRecognition && bProduction);
   await body("review", review(app, headers, answer(bRecognition.id, 3)));
@@ -283,7 +294,7 @@ test("cloze cards have their own daily allowance, and a new one waits for its wo
   const kinds = async (group?: CardGroup) => (await due(app, headers, "pl", { group })).cards.map((c) => c.kind);
   assert.deepEqual(await kinds(), ["recognition", "production"]);
   assert.deepEqual(await kinds("forms"), []);
-  assert.deepEqual(await counts(app, headers), [none("en"), none("fr"), { ...none("pl"), words: { due: 0, new: 1 } }]);
+  assert.deepEqual(await counts(app, headers), [{ ...none("pl"), words: { due: 0, new: 1 } }]);
 
   const [recognition] = (await due(app, headers, "pl", { group: "words" })).cards;
   assert.equal(recognition?.kind, "recognition");
@@ -300,11 +311,7 @@ test("cloze cards have their own daily allowance, and a new one waits for its wo
   assert.ok(cloze);
   // Made at the same time, either can come first
   assert.ok(clozes.some((c) => c.cardId === cloze.id));
-  assert.deepEqual(await counts(app, headers), [
-    none("en"),
-    none("fr"),
-    { lang: "pl", words: { due: 0, new: 1 }, forms: { due: 0, new: 1 } },
-  ]);
+  assert.deepEqual(await counts(app, headers), [{ lang: "pl", words: { due: 0, new: 1 }, forms: { due: 0, new: 1 } }]);
 
   await body("review", review(app, headers, answer(cloze.id, 1)));
   assert.deepEqual((await due(app, headers, "pl")).newLeft, { words: 0, forms: 0 });
@@ -319,7 +326,7 @@ test("cloze cards have their own daily allowance, and a new one waits for its wo
     (await due(later, headers, "pl", { group: "words" })).cards.map((c) => c.kind),
     ["production"],
   );
-  assert.deepEqual((await counts(later, headers))[2], { lang: "pl", words: { due: 0, new: 1 }, forms: { due: 1, new: 0 } });
+  assert.deepEqual((await counts(later, headers))[0], { lang: "pl", words: { due: 0, new: 1 }, forms: { due: 1, new: 0 } });
 });
 
 test("a cloze card of a word with no cards being learnt, none or all known, doesn't wait for them", async () => {
@@ -353,7 +360,10 @@ test("each language is reviewed on its own, with its own daily allowance of new 
   await learn(app, headers, "en:dog:NOUN");
   await learn(app, headers, "en:cat:NOUN");
   const words = (due: number, fresh: number) => ({ due, new: fresh });
-  assert.deepEqual(await counts(app, headers), [{ ...none("en"), words: words(0, 1) }, none("fr"), { ...none("pl"), words: words(0, 1) }]);
+  assert.deepEqual(await counts(app, headers), [
+    { ...none("en"), words: words(0, 1) },
+    { ...none("pl"), words: words(0, 1) },
+  ]);
   const [polish] = (await due(app, headers, "pl")).cards;
   assert.equal(polish?.lemmaId, "pl:pies:NOUN");
   assert.equal((await review(app, headers, answer(polish.id, 1))).status, 200);
@@ -361,7 +371,6 @@ test("each language is reviewed on its own, with its own daily allowance of new 
   // new; English still has its own new word
   assert.deepEqual(await counts(setup({ at: "2026-11-04T00:30:00Z" }), headers), [
     { ...none("en"), words: words(0, 1) },
-    none("fr"),
     { ...none("pl"), words: words(1, 1) },
   ]);
   assert.deepEqual(
