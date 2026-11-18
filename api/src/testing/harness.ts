@@ -6,13 +6,12 @@ import { createTestHarness, type TestHarness } from "wrangler";
 import { LANGS, type User } from "@skolia/shared/api";
 import { UserId, UserType } from "@skolia/shared/schemas";
 import * as z from "zod";
-import type { IngestJob } from "@skolia/shared/schema";
+import type { IngestParams } from "@skolia/ingest/rpc";
 import { authOptions, toAuth, type AuthConfig } from "../auth.ts";
 import type { Auth } from "../ports.ts";
 import { sql } from "@skolia/util/sql";
 import { lexiconBinding, lexiconsOf, prepare, type LexiconBindings } from "../worker/adapters.ts";
 import type { User as UserObject } from "../worker/user.ts";
-import type IngestRecorder from "./ingest-recorder.ts";
 import type { RecorderEnv } from "./ingest-recorder.ts";
 
 export const ORIGIN = "http://localhost:5173";
@@ -20,15 +19,11 @@ export const ORIGIN = "http://localhost:5173";
 const API = new URL("../../", import.meta.url).pathname;
 const DIST = `${API}dist/`;
 
-interface Flush {
-  flush: number;
-}
-
 export interface TestEnv extends LexiconBindings {
   DB: D1Database;
   USER: DurableObjectNamespace<UserObject>;
   BLOBS: R2Bucket;
-  INGEST: Queue<IngestJob | Flush>;
+  INGEST_WORKFLOW: Workflow<IngestParams>;
 }
 
 export function authConfig(database: D1Database): AuthConfig {
@@ -47,7 +42,9 @@ export interface Local {
   auth: Auth;
   signUp(fields: { name: string; email: string }): Promise<User>;
   signIn(userId: string): Promise<Headers>;
-  takeQueued(): Promise<IngestJob[]>;
+  /** What the API has asked to start runs of ingest for (testing/app.ts setup) */
+  readonly started: IngestParams[];
+  takeQueued(): Promise<IngestParams[]>;
   reset(): Promise<void>;
   close(): Promise<void>;
 }
@@ -65,28 +62,17 @@ export async function startLocal(): Promise<Local> {
   const worker = server.getWorker<TestEnv>();
   await worker.applyD1Migrations("DB");
   for (const lang of LANGS) await worker.applyD1Migrations(lexiconBinding(lang));
-  const ingest = server.getWorker<RecorderEnv, { default: typeof IngestRecorder }>("skolia-ingest");
+  const ingest = server.getWorker<RecorderEnv>("skolia-ingest");
   await ingest.applyD1Migrations("INGEST_DB");
   const { INGEST_DB } = await ingest.getEnv();
   const env = { ...(await worker.getEnv()), INGEST_DB };
-  const recorder = await ingest.getExport();
   const options = authOptions(authConfig(env.DB));
   const instance = betterAuth({ ...options, plugins: [...options.plugins, testUtils()] });
   const { test } = await instance.$context;
-  let flushes = 0;
+  const started: IngestParams[] = [];
 
-  async function takeQueued(): Promise<IngestJob[]> {
-    const flush = ++flushes;
-    await env.INGEST.send({ flush });
-    for (let tries = 0; tries < 250; tries++) {
-      const received = (await recorder.received()) as (IngestJob | Flush)[];
-      if (received.some((m) => "flush" in m && m.flush === flush)) {
-        await recorder.clear();
-        return received.filter((m): m is IngestJob => !("flush" in m));
-      }
-      await new Promise((resolve) => setTimeout(resolve, 20));
-    }
-    throw new Error("the queue didn't deliver within 5 s");
+  async function takeQueued(): Promise<IngestParams[]> {
+    return started.splice(0);
   }
 
   return {
@@ -100,6 +86,7 @@ export async function startLocal(): Promise<Local> {
       return { id: UserId.parse(id), name, email, image: image ?? null, type };
     },
     signIn: (userId) => test.getAuthHeaders({ userId }),
+    started,
     takeQueued,
     async reset() {
       const tables = ["user_document", "document", "apikey", "session", "account", "verification"];

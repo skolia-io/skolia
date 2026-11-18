@@ -1,5 +1,5 @@
-"""The job queue ingest takes from: HttpJobs (http.py), fed by the queue consumer Worker,
-and MemoryQueue for tests."""
+"""The job queue ingest takes from: HttpJobs (http.py), fed by the ingest Worker's
+IngestWorkflow runs, and MemoryQueue for tests."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import json
 from collections import deque
 from typing import Literal, Protocol, cast
 
-from .schema import IngestJob, Status
+from .schema import IngestJob, JobResult
 
 Stage = Literal[
     "reading",
@@ -63,8 +63,8 @@ class JobQueue(Protocol):
         """The next job, waiting up to timeout seconds. None if there's none."""
         ...
 
-    def ack(self, received: Received, status: Status) -> None:
-        """Done with the job, ready or failed as status says: don't deliver it again."""
+    def ack(self, received: Received, result: JobResult) -> None:
+        """Done with the job, ready or failed as result says: don't deliver it again."""
         ...
 
     def release(self, received: Received, error: str) -> None:
@@ -100,7 +100,7 @@ class MemoryQueue:
         raw = self.pending.popleft()
         return Received(parse_job(raw), raw)
 
-    def ack(self, received: Received, status: Status) -> None:
+    def ack(self, received: Received, result: JobResult) -> None:
         self.acked.append(received.job)
 
     def release(self, received: Received, error: str) -> None:

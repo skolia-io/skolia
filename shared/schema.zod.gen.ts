@@ -478,6 +478,19 @@ export const IngestJob: z.ZodType<types.IngestJob> = /* @__PURE__ */ (() => z.ob
   lang: z.string(),
 }).meta({ id: "IngestJob" }))();
 
+export const ReadyAnalysis: z.ZodType<types.ReadyAnalysis> = /* @__PURE__ */ (() => z.object({
+  analyzer: z.string(),
+  lexicon: z.string(),
+  analysis: z.string(),
+  bundle: z.string(),
+}).meta({ id: "ReadyAnalysis" }))();
+
+export const JobResult: z.ZodType<types.JobResult> = /* @__PURE__ */ (() => z.object({
+  outcome: z.enum(["ready", "failed"]),
+  analysis: ReadyAnalysis.nullable(),
+  error: z.string().nullable(),
+}).meta({ id: "JobResult" }))();
+
 export const State: z.ZodType<types.State> = /* @__PURE__ */ (() => z.enum(["queued", "analysing", "ready", "failed"]).meta({ id: "State" }))();
 
 export const Status: z.ZodType<types.Status> = /* @__PURE__ */ (() => z.object({

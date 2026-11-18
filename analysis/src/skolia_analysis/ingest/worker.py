@@ -1,4 +1,5 @@
-"""Process import jobs: text blob -> analysis + bundle blobs, with the status kept current."""
+"""Process import jobs: text blob -> analysis + bundle blobs. The run that asked for a job
+keeps the document's status (ingest/src/workflow.ts), from the job's result."""
 
 import json
 import logging
@@ -6,7 +7,6 @@ import time
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from typing import Literal, cast
 
 import brotli
@@ -19,15 +19,14 @@ from .jobs import NO_PROGRESS, JobQueue, Progress, Received, Stage
 from .schema import (
     MAX_TEXT_LENGTH,
     IngestJob,
-    State,
-    Status,
+    JobResult,
+    ReadyAnalysis,
     Versions,
     analysis_key,
     analysis_name,
     bundle_key,
     bundle_name,
     doc_id,
-    status_key,
     text_key,
     versions_key,
 )
@@ -74,10 +73,6 @@ class Pipeline:
         }
 
 
-def now() -> str:
-    return datetime.now(UTC).isoformat(timespec="seconds")
-
-
 def compressed_json(value: object) -> bytes:
     data = json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode()
     return brotli.compress(data, quality=BROTLI_QUALITY)
@@ -111,22 +106,25 @@ class Ingester:
         for lang, pipeline in self._pipelines.items():
             self._blobs.put(versions_key(lang), json.dumps(pipeline.versions()).encode(), JSON)
 
-    def process(self, job: IngestJob, progress: Progress = NO_PROGRESS) -> Status:
+    def process(self, job: IngestJob, progress: Progress = NO_PROGRESS) -> JobResult:
         """Raises BlobError when storage fails: that's worth retrying, unlike a failed
         analysis, which would fail the same way again."""
-        doc = job["doc"]
         try:
-            status = self._process(job, progress)
+            analysis = self._process(job, progress)
         except BlobError:
             raise
         except JobError as error:
-            status = self._status(doc, "failed", error=str(error))
+            return {"outcome": "failed", "analysis": None, "error": str(error)}
         except Exception as error:
-            log.exception("ingest of %s failed", doc)
-            status = self._status(doc, "failed", error=f"{type(error).__name__}: {error}")
-        return status
+            log.exception("ingest of %s failed", job["doc"])
+            return {
+                "outcome": "failed",
+                "analysis": None,
+                "error": f"{type(error).__name__}: {error}",
+            }
+        return {"outcome": "ready", "analysis": analysis, "error": None}
 
-    def _process(self, job: IngestJob, progress: Progress) -> Status:
+    def _process(self, job: IngestJob, progress: Progress) -> ReadyAnalysis:
         doc = job["doc"]
         pipeline = self._pipelines.get(job["lang"])
         if pipeline is None:
@@ -145,8 +143,8 @@ class Ingester:
         versions = pipeline.versions()
         a_key = analysis_key(doc, versions["analysis"])
         b_key = bundle_key(doc, versions["bundle"])
-        # Already made (the job was queued twice, or the API wrote "queued" over a fresh
-        # "ready"): the keys name the versions, so the blobs are current
+        # Already made (an earlier attempt made them, or the document was queued again):
+        # the keys name the versions, so the blobs are current
         if not self._blobs.exists(b_key):
             # A new bundler or lexicon with the same analyser: only the bundle is remade
             stored = self._blobs.get(a_key)
@@ -154,7 +152,6 @@ class Ingester:
                 with timed(progress, doc, words, "loading-analysis", "reading the stored analysis"):
                     analysis = cast(Blob, json.loads(brotli.decompress(stored)))
             else:
-                self._status(doc, "analysing")
                 with timed(progress, doc, words, "analysing", "analysis"):
                     analysis = pipeline.analyze(text)
                 if analysis["analyzer"] != pipeline.analyzer:
@@ -169,14 +166,12 @@ class Ingester:
             self._put_compressed(progress, doc, words, "bundle", b_key, bundle)
         else:
             log.info("%s (%d words): bundle %s already made", doc, words, versions["bundle"])
-        return self._status(
-            doc,
-            "ready",
-            analyzer=pipeline.analyzer,
-            lexicon=pipeline.lexicon_version,
-            analysis=a_key,
-            bundle=b_key,
-        )
+        return {
+            "analyzer": pipeline.analyzer,
+            "lexicon": pipeline.lexicon_version,
+            "analysis": a_key,
+            "bundle": b_key,
+        }
 
     def _put_compressed(
         self,
@@ -192,48 +187,6 @@ class Ingester:
             data = compressed_json(value)
         with timed(progress, doc, words, uploading, f"uploading the {name} ({len(data)} bytes)"):
             self._blobs.put(key, data, JSON, BROTLI)
-
-    def _status(
-        self,
-        doc: str,
-        state: State,
-        *,
-        analyzer: str | None = None,
-        lexicon: str | None = None,
-        analysis: str | None = None,
-        bundle: str | None = None,
-        error: str | None = None,
-    ) -> Status:
-        status: Status = {"state": state, "updated": now()}
-        previous = self._read_status(doc) if state != "ready" else None
-        if previous is not None:
-            # Keep serving the last analysis until the new one is ready
-            analyzer = analyzer or previous.get("analyzer")
-            lexicon = lexicon or previous.get("lexicon")
-            analysis = analysis or previous.get("analysis")
-            bundle = bundle or previous.get("bundle")
-        if analyzer is not None:
-            status["analyzer"] = analyzer
-        if lexicon is not None:
-            status["lexicon"] = lexicon
-        if analysis is not None:
-            status["analysis"] = analysis
-        if bundle is not None:
-            status["bundle"] = bundle
-        if error is not None:
-            status["error"] = error
-        self._blobs.put(status_key(doc), json.dumps(status).encode(), JSON)
-        return status
-
-    def _read_status(self, doc: str) -> Status | None:
-        raw = self._blobs.get(status_key(doc))
-        if raw is None:
-            return None
-        try:
-            value: Status = json.loads(raw)
-        except ValueError:
-            return None
-        return value
 
     def run(
         self,
@@ -258,7 +211,7 @@ class Ingester:
             log.info("ingesting %s (%s)", received.job["doc"], received.job["lang"])
             start = time.perf_counter()
             try:
-                status = self.process(received.job, received.progress)
+                result = self.process(received.job, received.progress)
             except BlobError as error:
                 # Storage is down: put the job back for later rather than fail the document
                 failures += 1
@@ -268,6 +221,6 @@ class Ingester:
                 sleep(delay)
                 continue
             failures = 0
-            queue.ack(received, status)
+            queue.ack(received, result)
             elapsed = time.perf_counter() - start
-            log.info("%s: %s after %.2f s", received.job["doc"], status["state"], elapsed)
+            log.info("%s: %s after %.2f s", received.job["doc"], result["outcome"], elapsed)

@@ -396,7 +396,7 @@ function deps(signedIn: boolean, annotations: readonly Annotation[]): Deps {
       put: async () => {},
     },
     queue: {
-      send: async () => {},
+      start: async () => {},
       jobs: async (lang) => INGEST[lang],
     },
     ingestHistory: { recent: async () => INGEST_HISTORY },

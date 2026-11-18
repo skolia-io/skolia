@@ -474,6 +474,19 @@ export interface IngestJob {
   lang: string;
 }
 
+export interface ReadyAnalysis {
+  analyzer: string;
+  lexicon: string;
+  analysis: string;
+  bundle: string;
+}
+
+export interface JobResult {
+  outcome: "ready" | "failed";
+  analysis: ReadyAnalysis | null;
+  error: string | null;
+}
+
 export type State = "queued" | "analysing" | "ready" | "failed";
 
 export interface Status {

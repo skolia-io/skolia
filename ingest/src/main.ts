@@ -1,24 +1,23 @@
-// skolia-ingest on Cloudflare (ingest/wrangler.jsonc): consumes the ingest queue
-// and hands each job to its language's analysis container (analysis/flake.nix, one
-// image per language, served by analysis/src/skolia_analysis/ingest/http.py), which
-// reads and writes status and blobs in R2 through this Worker's binding (Blobs).
-//
-// A message is acked once the container has accepted the job, not when the analysis
-// is done: a queue consumer may run for at most 15 minutes, and a long text can take
-// longer. A job lost with its container is caught by the API, which queues a document
-// again once it has been queued or analysing for too long (STUCK_AFTER_MS in app.ts).
+// skolia-ingest on Cloudflare (ingest/wrangler.jsonc): runs ingest for a document as an
+// IngestWorkflow (workflow.ts), which asks its language's analysis container (analysis/flake.nix,
+// one image per language, served by analysis/src/skolia_analysis/ingest/http.py) to analyse it
+// and waits for the answer. The container reads and writes blobs in R2 through this Worker's
+// binding (Blobs).
 //
 // The containers use the durable_object scheduling policy, so each Ingester picks the
 // image it starts. Jobs go to the Ingester named after their language's image: when a
 // deploy changes an image, new jobs start a container with the new one while the old
 // container finishes its jobs and stops.
 import { DurableObject, WorkerEntrypoint } from "cloudflare:workers";
-import { isLang, timestamp, type ContainerJobs, type IngestEvent, type IngestJobRecord, type Lang } from "@skolia/shared/api";
-import type { IngestJob } from "@skolia/shared/schema";
+import { timestamp, type ContainerJobs, type IngestEvent, type IngestJobRecord, type Lang } from "@skolia/shared/api";
+import type { IngestJob, JobResult } from "@skolia/shared/schema";
 import * as schemas from "@skolia/shared/schemas";
 import { log } from "@skolia/util/log";
 import { D1IngestHistory, receiveEvent } from "./history.ts";
 import type { IngesterRpc } from "./rpc.ts";
+import { IngestWorkflow } from "./workflow.ts";
+
+export { IngestWorkflow };
 
 const logger = log("ingest");
 
@@ -29,8 +28,6 @@ interface Env {
   INGEST_DB: D1Database;
   /** The containers' events (IngestEvents), which this Worker consumes into INGEST_DB */
   INGEST_EVENTS: Queue<IngestEvent>;
-  /** INGEST_EVENTS's name, which tells its batches from the jobs' */
-  INGEST_EVENTS_QUEUE: string;
   /** How long the container stays up once idle; 1m by default, about what a start
    * costs (the models took 17 to 99 s to load, median 45 s, in 42 starts) */
   SLEEP_AFTER?: string;
@@ -40,7 +37,6 @@ const PORT = 8080;
 // The host a container sends its events to: Ingester routes it to IngestEvents
 // (interceptOutboundHttp), so they never leave the machine
 const EVENTS_HOST = "events.internal";
-const RETRY_DELAY_SECONDS = 60;
 const START_TIMEOUT_MS = 2 * 60 * 1000;
 const PROBE_TIMEOUT_MS = 5 * 1000;
 // 1 vCPU, 6 GiB: Polish ingest peaked at 4.3 GiB on a 2,800-word text, English at 4.7 GiB
@@ -61,9 +57,6 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 /** The container's blob store, served by Blobs */
 const BLOBS_HOST = "blobs.internal";
 
-/** What became of a job handed to the container */
-type Outcome = "accepted" | "malformed" | "failed";
-
 const UNIT_MS = { s: 1000, m: 60 * 1000, h: 60 * 60 * 1000 } as const;
 
 function milliseconds(duration: string): number {
@@ -74,7 +67,7 @@ function milliseconds(duration: string): number {
 
 /**
  * One per language that only routes, and one per image that runs its container:
- * route() on the Ingester named after a language passes the jobs to the one named after
+ * analyse() on the Ingester named after a language passes the job to the one named after
  * that language's image in this Worker version.
  *
  * An analysis makes no requests, so the container's inactivity timeout can't tell a
@@ -94,8 +87,10 @@ export class Ingester extends DurableObject<Env> implements IngesterRpc {
     }
   }
 
-  async route(lang: Lang, jobs: IngestJob[]): Promise<Outcome[]> {
-    return await this.env.INGESTER.getByName(this.image(lang)).run(this.image(lang), jobs);
+  /** The job's result, once the container has run it. Throws when the container can't be
+   * started or asked, or goes away before it answers: worth trying again. */
+  async analyse(lang: Lang, job: IngestJob): Promise<JobResult> {
+    return await this.env.INGESTER.getByName(this.image(lang)).run(this.image(lang), job);
   }
 
   /** The language's container's jobs (GET /jobs), on the Ingester named after the
@@ -137,7 +132,7 @@ export class Ingester extends DurableObject<Env> implements IngesterRpc {
     return image;
   }
 
-  async run(image: string, jobs: IngestJob[]): Promise<Outcome[]> {
+  async run(image: string, job: IngestJob): Promise<JobResult> {
     const container = this.container();
     if (!container.running) {
       // One start for concurrent calls: registering the intercepts is async
@@ -148,9 +143,7 @@ export class Ingester extends DurableObject<Env> implements IngesterRpc {
     }
     await this.ready(container);
     await this.ctx.storage.setAlarm(Date.now() + this.sleepAfterMs);
-    const outcomes: Outcome[] = [];
-    for (const job of jobs) outcomes.push(await this.post(container, job));
-    return outcomes;
+    return await this.post(container, job);
   }
 
   override async alarm(): Promise<void> {
@@ -233,27 +226,21 @@ export class Ingester extends DurableObject<Env> implements IngesterRpc {
     }
   }
 
-  private async post(container: Container, job: IngestJob): Promise<Outcome> {
-    try {
-      const response = await container.getTcpPort(PORT).fetch("http://ingest/jobs", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(job),
-      });
-      // Always read the body: the container counts a request as in flight until its
-      // body is consumed, and would never be idle
-      const body = await response.text();
-      if (response.status === 202) return "accepted";
-      if (response.status === 400) {
-        logger.error("ingest refused job", { doc: job.doc, lang: job.lang, body });
-        return "malformed";
-      }
-      logger.error("ingest answered with an error", { doc: job.doc, lang: job.lang, status: response.status, body });
-      return "failed";
-    } catch (error: unknown) {
-      logger.error("handing job to ingest failed", { doc: job.doc, lang: job.lang, error });
-      return "failed";
+  /** POST /jobs, which answers once the job has run. A job the container refuses fails:
+   * sent again, it would be refused again. */
+  private async post(container: Container, job: IngestJob): Promise<JobResult> {
+    const response = await container.getTcpPort(PORT).fetch("http://ingest/jobs", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(job),
+    });
+    const body = await response.text();
+    if (response.status === 400) {
+      logger.error("ingest refused job", { doc: job.doc, lang: job.lang, body });
+      return { outcome: "failed", analysis: null, error: `ingest refused the job: ${body}` };
     }
+    if (!response.ok) throw new Error(`ingest answered ${response.status}: ${body}`);
+    return schemas.JobResult.parse(JSON.parse(body));
   }
 
   private async busy(container: Container): Promise<boolean> {
@@ -270,28 +257,9 @@ export class Ingester extends DurableObject<Env> implements IngesterRpc {
 
 export default {
   async queue(batch, env) {
-    if (batch.queue === env.INGEST_EVENTS_QUEUE) {
-      await store(env, batch as MessageBatch<unknown>);
-      return;
-    }
-    logger.info("received jobs", {
-      docs: batch.messages.map((message) => message.body.doc),
-      attempts: batch.messages.map((message) => message.attempts),
-    });
-    const byLang = new Map<Lang, Message<IngestJob>[]>();
-    for (const message of batch.messages) {
-      const lang = message.body.lang;
-      if (!isLang(lang)) {
-        // The API only queues languages it knows: retrying won't help
-        logger.error("no ingest for language", { job: message.body });
-        message.ack();
-        continue;
-      }
-      byLang.set(lang, [...(byLang.get(lang) ?? []), message]);
-    }
-    await Promise.all([...byLang].map(([lang, messages]) => handOver(env, lang, messages)));
+    await store(env, batch);
   },
-} satisfies ExportedHandler<Env, IngestJob>;
+} satisfies ExportedHandler<Env, unknown>;
 
 /** GET and PUT /{key} on BLOBS_HOST for the container, from the R2 binding */
 export class Blobs extends WorkerEntrypoint<Env> {
@@ -310,7 +278,7 @@ export class Blobs extends WorkerEntrypoint<Env> {
  * to store (store below) */
 export class IngestEvents extends WorkerEntrypoint<Env> {
   override async fetch(request: Request): Promise<Response> {
-    // JSON, as the jobs' queue, so a message can be read outside a Worker
+    // JSON, so a message can be read outside a Worker
     const send = async (event: IngestEvent) => void (await this.env.INGEST_EVENTS.send(event, { contentType: "json" }));
     return await receiveEvent(send, request);
   }
@@ -346,32 +314,4 @@ async function store(env: Env, batch: MessageBatch<unknown>): Promise<void> {
       }
     }
   }
-}
-
-/** One container per image: its jobs wait in its memory and run one at a time. */
-async function handOver(env: Env, lang: Lang, messages: Message<IngestJob>[]): Promise<void> {
-  let outcomes: Outcome[];
-  try {
-    outcomes = await env.INGESTER.getByName(lang).route(
-      lang,
-      messages.map((message) => message.body),
-    );
-  } catch (error: unknown) {
-    logger.error("starting ingest failed", { lang, docs: messages.map((message) => message.body.doc), error });
-    for (const message of messages) message.retry({ delaySeconds: RETRY_DELAY_SECONDS });
-    return;
-  }
-  messages.forEach((message, i) => {
-    switch (outcomes[i]) {
-      case "accepted":
-      case "malformed":
-        // Malformed: retrying won't help
-        message.ack();
-        break;
-      case "failed":
-      case undefined:
-        message.retry({ delaySeconds: RETRY_DELAY_SECONDS });
-        break;
-    }
-  });
 }

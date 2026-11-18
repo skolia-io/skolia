@@ -523,6 +523,16 @@ const StartedFields = {
   startedAt: Timestamp,
 };
 
+/** What an ingest container answers to POST /jobs, once the job has run (ingest/schema.py) */
+export const JobResult = gen.JobResult;
+
+/** An IngestWorkflow instance (ingest/src/workflow.ts): one document made to one bundle
+ * version, `{doc}-{short hash of the bundle name}` (api/src/worker/adapters.ts runId) */
+export const IngestRunId = z
+  .string()
+  .regex(/^[0-9a-f]{64}-[0-9a-f]{12}$/u)
+  .brand<"IngestRunId">();
+
 /** What an ingest container sends as a job starts and as it ends, to the ingest Worker,
  * which stores them (ingest/migrations). */
 export const IngestEvent = z

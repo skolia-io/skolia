@@ -224,6 +224,7 @@ export type StageTime = z.output<typeof schemas.StageTime>;
 export type ContainerJobs = z.output<typeof schemas.ContainerJobs>;
 export type IngestResult = z.output<typeof schemas.IngestResult>;
 export type IngestEvent = z.output<typeof schemas.IngestEvent>;
+export type IngestRunId = z.output<typeof schemas.IngestRunId>;
 /** A job as stored, its result null until it's finished */
 export type IngestJobRecord = z.output<typeof schemas.IngestJobRow>;
 export type IngestedDocument = z.output<typeof schemas.IngestedDocument>;

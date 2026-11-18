@@ -10,6 +10,27 @@ class IngestJob(TypedDict):
     lang: str
 
 
+class ReadyAnalysis(TypedDict):
+    """The analysis a ready document reads: its blob keys, and the analyser and lexicon that
+    made them. A job that succeeds answers with it, and the run puts it in the status."""
+
+    analyzer: str
+    lexicon: str
+    analysis: str
+    """Blob key of the analysis."""
+    bundle: str
+    """Blob key of the lexicon bundle."""
+
+
+class JobResult(TypedDict):
+    """How a job ended, the answer to POST /jobs: its analysis, or why it failed. The
+    ingest Worker's run that asked for it writes the document's status from it."""
+
+    outcome: Literal["ready", "failed"]
+    analysis: ReadyAnalysis | None
+    error: str | None
+
+
 type State = Literal["queued", "analysing", "ready", "failed"]
 
 

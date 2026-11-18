@@ -13,10 +13,16 @@ import pytest
 from skolia_analysis.ingest.events import Event, HttpEvents, StartedEvent
 from skolia_analysis.ingest.http import HttpJobs, JobsState, serve
 from skolia_analysis.ingest.jobs import Received
-from skolia_analysis.ingest.schema import Status
+from skolia_analysis.ingest.schema import IngestJob, JobResult, ReadyAnalysis
 
-JOB = {"doc": "a" * 64, "lang": "pl"}
-READY: Status = {"state": "ready", "updated": "2026-11-17T10:04:05+00:00"}
+JOB: IngestJob = {"doc": "a" * 64, "lang": "pl"}
+ANALYSIS: ReadyAnalysis = {
+    "analyzer": "pl/1",
+    "lexicon": "lex/1",
+    "analysis": f"doc/{'a' * 64}/analysis/s2-a1.json.br",
+    "bundle": f"doc/{'a' * 64}/bundle/b1-v1-a1-l1.json.br",
+}
+READY: JobResult = {"outcome": "ready", "analysis": ANALYSIS, "error": None}
 ISO = re.compile(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z")
 IMAGE = "skolia-ingest:test"
 
@@ -153,7 +159,7 @@ def test_stages_are_recorded_in_order_and_sent_when_finished() -> None:
 def test_a_failed_job_is_sent_with_its_error() -> None:
     jobs, recorder = recorded()
     jobs.add(json.dumps(JOB))
-    jobs.ack(started(jobs), {"state": "failed", "updated": "", "error": "no text at x"})
+    jobs.ack(started(jobs), {"outcome": "failed", "analysis": None, "error": "no text at x"})
     started_event, finished = recorder.events
     assert started_event["kind"] == "started" and finished["kind"] == "finished"
     assert finished["id"] == started_event["id"]
@@ -202,17 +208,52 @@ def server() -> Iterator[tuple[HttpJobs, int]]:
     httpd.shutdown()
 
 
-def test_jobs_are_posted_and_busy_reported(server: tuple[HttpJobs, int]) -> None:
+def posted(port: int, job: IngestJob) -> Callable[[], tuple[int, object]]:
+    """POSTs the job from another thread, since the answer waits for it to finish; returns
+    what gets that answer."""
+    answers: list[tuple[int, object]] = []
+    thread = threading.Thread(
+        target=lambda: answers.append(request(port, "POST", "/jobs", json.dumps(job).encode()))
+    )
+    thread.start()
+
+    def answer() -> tuple[int, object]:
+        thread.join(5)
+        (got,) = answers
+        return got
+
+    return answer
+
+
+def test_a_posted_job_is_answered_with_its_result_once_it_finishes(
+    server: tuple[HttpJobs, int],
+) -> None:
     jobs, port = server
     assert request(port, "GET", "/busy") == (200, {"busy": False})
-    assert request(port, "POST", "/jobs", json.dumps(JOB).encode()) == (202, {"accepted": True})
+    answer = posted(port, JOB)
+    until(jobs.busy)
     assert request(port, "GET", "/busy") == (200, {"busy": True})
     status, body = request(port, "GET", "/jobs")
     assert status == 200
     state = cast(JobsState, body)
     assert (state["loading"], state["running"], state["waiting"]) == (True, [], [JOB["doc"]])
     assert state == jobs.state()
-    assert started(jobs).job == JOB
+    received = started(jobs)
+    assert received.job == JOB
+    jobs.ack(received, READY)
+    assert answer() == (200, READY)
+
+
+def test_a_released_job_is_answered_when_it_finishes_on_a_later_attempt(
+    server: tuple[HttpJobs, int],
+) -> None:
+    jobs, port = server
+    answer = posted(port, JOB)
+    until(jobs.busy)
+    jobs.release(started(jobs), "BlobError: connection refused")
+    failed: JobResult = {"outcome": "failed", "analysis": None, "error": "no text at x"}
+    jobs.ack(started(jobs), failed)
+    assert answer() == (200, failed)
 
 
 def test_a_malformed_job_is_refused(server: tuple[HttpJobs, int]) -> None:

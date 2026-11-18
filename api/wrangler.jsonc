@@ -50,11 +50,10 @@
   "r2_buckets": [{ "binding": "BLOBS", "bucket_name": "skolia" }],
   // wrangler dev takes BASE_URL from api/.env, and the auth secrets from api/.env.local (DEVELOP.md); deployed, they're wrangler secrets.
   "vars": { "BASE_URL": "https://skolia.io" },
-  "queues": {
-    "producers": [{ "binding": "INGEST", "queue": "skolia-ingest" }]
-  },
-  // INGESTER: the ingest Worker's (ingest/wrangler.jsonc), asked where a document is in
-  // its queue
+  // INGEST_WORKFLOW: the ingest Worker's runs of ingest (ingest/wrangler.jsonc), one started
+  // for each document to analyse
+  "workflows": [{ "name": "skolia-ingest", "binding": "INGEST_WORKFLOW", "class_name": "IngestWorkflow", "script_name": "skolia-ingest" }],
+  // INGESTER: the ingest Worker's, asked where a document is in its container's line
   "durable_objects": {
     "bindings": [{ "name": "USER", "class_name": "User" }, { "name": "INGESTER", "class_name": "Ingester", "script_name": "skolia-ingest" }]
   },
@@ -89,9 +88,14 @@
       ],
       "r2_buckets": [{ "binding": "BLOBS", "bucket_name": "skolia-staging" }],
       "vars": { "BASE_URL": "https://staging.skolia.io" },
-      "queues": {
-        "producers": [{ "binding": "INGEST", "queue": "skolia-ingest-staging" }]
-      },
+      "workflows": [
+        {
+          "name": "skolia-ingest-staging",
+          "binding": "INGEST_WORKFLOW",
+          "class_name": "IngestWorkflow",
+          "script_name": "skolia-ingest-staging"
+        }
+      ],
       "durable_objects": {
         "bindings": [
           { "name": "USER", "class_name": "User" },
