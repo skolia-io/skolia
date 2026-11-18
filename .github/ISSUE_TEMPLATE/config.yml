@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Skolia issue tracking
+    url: https://github.com/skolia-io/tracking/issues
+    about: Issues and follow-ups are tracked in skolia-io/tracking, a private repository. Access is required.
