@@ -32,6 +32,7 @@
     "bindings": [{ "name": "INGESTER", "class_name": "Ingester" }]
   },
   // The jobs the containers ran, which each run of IngestWorkflow adds to
+  "services": [{ "binding": "DOCUMENT_STATUS", "service": "skolia-internal", "entrypoint": "DocumentStatus" }],
   "d1_databases": [{ "binding": "INGEST_DB", "database_name": "skolia-ingest", "migrations_dir": "migrations" }],
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["Ingest"] },
@@ -66,6 +67,7 @@
       "durable_objects": {
         "bindings": [{ "name": "INGESTER", "class_name": "Ingester" }]
       },
+      "services": [{ "binding": "DOCUMENT_STATUS", "service": "skolia-internal-staging", "entrypoint": "DocumentStatus" }],
       "d1_databases": [{ "binding": "INGEST_DB", "database_name": "skolia-ingest-staging", "migrations_dir": "migrations" }],
       "r2_buckets": [{ "binding": "BLOBS", "bucket_name": "skolia-documents-staging" }],
       "workflows": [{ "name": "skolia-ingest-staging", "binding": "INGEST_WORKFLOW", "class_name": "IngestWorkflow" }]

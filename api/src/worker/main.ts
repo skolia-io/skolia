@@ -1,6 +1,8 @@
 // skolia-api on Cloudflare Workers (api/wrangler.jsonc). Static assets (the reader) are
 // served before the Worker runs, except for /api/*.
 import { createApp } from "../app.ts";
+import { BACKGROUND_MIGRATIONS } from "./background-migrations/index.ts";
+import { runBackgroundMigrations } from "./background-migrations/runner.ts";
 import { NO_AUTH, createAuth } from "../auth.ts";
 import type { IngesterRpc, IngestParams } from "@skolia/ingest/rpc";
 import { log } from "@skolia/util/log";
@@ -57,6 +59,9 @@ function authFor(env: Env): Auth {
 }
 
 export default {
+  async scheduled(_event, env) {
+    await runBackgroundMigrations({ db: env.DB.withSession("first-primary"), blobs: new R2Blobs(env.BLOBS) }, BACKGROUND_MIGRATIONS);
+  },
   fetch(request, env, ctx) {
     const app = createApp({
       auth: authFor(env),

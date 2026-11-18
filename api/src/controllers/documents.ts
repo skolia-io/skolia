@@ -22,6 +22,7 @@ import {
 import type { PageRequest } from "@skolia/shared/page";
 import { PART_ENCODING, docId, partKey, statusKey, textKey, versionsKey } from "@skolia/shared/keys";
 import type { Status, Versions } from "@skolia/shared/schema";
+import { statusForStorage } from "@skolia/shared/status";
 import * as schemas from "@skolia/shared/schemas";
 import { log } from "@skolia/util/log";
 import type { BlobStore, Deps, EntryFields, IngestJobs, StoredDocument } from "../ports.ts";
@@ -32,7 +33,7 @@ const logger = log("documents");
 const NAME = /^[a-z0-9-]{1,64}$/;
 
 /** A page of the entries the viewer can see that the filter keeps. Listing only reads
- * each entry's status; opening one (get) queues it again if it needs it. */
+ * the stored status projection; opening one (get) queues it again if it needs it. */
 export async function list(
   deps: Deps,
   viewer: User | null,
@@ -44,9 +45,11 @@ export async function list(
   return ok({ items: await Promise.all(items.map((r) => listed(deps, r, viewer))), next });
 }
 
-/** An entry as a list shows it, with only its status read. */
+/** Backfill compatibility: only rows not yet projected read a blob. Once migration 1
+ * completes, even missing or malformed statuses have a projection and never read R2. */
 export async function listed(deps: Deps, record: StoredDocument, viewer: User | null): Promise<DocumentSummary> {
-  return summarize(record, await readStatus(deps.blobs, record.id), viewer);
+  const status = record.status === undefined ? await readStatus(deps.blobs, record.id) : record.status;
+  return summarize(record, status, viewer);
 }
 
 /** A page of the documents the user imported, public or private. */
@@ -266,12 +269,12 @@ async function requeue(
     previous: status?.state ?? null,
     since: status?.updated ?? null,
   });
-  const queued: Status = { state: "queued", updated: timestamp(at) };
-  for (const key of ["analyzer", "lexicon", "analysis", "bundle"] as const) {
-    const value = status?.[key];
-    if (value !== undefined) queued[key] = value;
-  }
-  await deps.blobs.put(statusKey(record.id), JSON.stringify(queued), "application/json");
+  const queued: Status = {
+    state: "queued",
+    updated: timestamp(at),
+    ...(status?.artifacts === undefined ? {} : { artifacts: status.artifacts }),
+  };
+  await publishStatus(deps, record.id, queued);
   await deps.queue.start(record.id, record.lang, await versions(record.lang));
   return queued;
 }
@@ -280,7 +283,7 @@ async function requeue(
  * until ingest has published its versions. */
 export function isOutdated(status: Status, latest: Versions | null): boolean {
   if (status.state !== "ready" || latest === null) return false;
-  return nameOf(status.analysis) !== latest.analysis || nameOf(status.bundle) !== latest.bundle;
+  return nameOf(status.artifacts.analysis) !== latest.analysis || nameOf(status.artifacts.bundle) !== latest.bundle;
 }
 
 /** Longer than a job takes, waiting its turn included, short of a run's retries. A document
@@ -333,19 +336,29 @@ export function parseVersions(raw: string): Versions | null {
   return parseJson(schemas.Versions, raw);
 }
 
-function summarize({ user, importerName, ...record }: StoredDocument, status: Status | null, viewer: User | null): DocumentSummary {
+function summarize(
+  { user, importerName, status: _status, ...record }: StoredDocument,
+  status: Status | null,
+  viewer: User | null,
+): DocumentSummary {
   const summary: DocumentSummary = {
     ...record,
     importer: { id: user, name: importerName },
     mine: user === viewer?.id,
     state: status?.state ?? "failed",
   };
-  const analysis = nameOf(status?.analysis);
-  const bundle = nameOf(status?.bundle);
+  const analysis = nameOf(status?.artifacts?.analysis);
+  const bundle = nameOf(status?.artifacts?.bundle);
   if (analysis !== undefined && bundle !== undefined) summary.reading = { analysis, bundle };
   if (status === null) summary.error = "no status";
-  else if (status.error !== undefined) summary.error = status.error;
+  else if (status.state === "failed") summary.error = status.error;
   return summary;
+}
+
+/** Publish the detail blob and its list projection together. Callers retry on failure. */
+export async function publishStatus(deps: Pick<Deps, "blobs" | "documents">, id: DocumentId, status: Status): Promise<void> {
+  await deps.blobs.put(statusKey(id), JSON.stringify(statusForStorage(status)), "application/json");
+  await deps.documents.setStatus(id, status);
 }
 
 export async function readStatus(blobs: BlobStore, id: DocumentId): Promise<Status | null> {
@@ -356,7 +369,7 @@ export async function readStatus(blobs: BlobStore, id: DocumentId): Promise<Stat
 
 /** The status blob ingest writes. */
 export function parseStatus(raw: string): Status | null {
-  return parseJson(schemas.Status, raw);
+  return parseJson(schemas.StoredStatus, raw);
 }
 
 export function countWords(text: string): number {

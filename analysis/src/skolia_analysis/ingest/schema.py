@@ -77,17 +77,27 @@ class JobAnswer(TypedDict):
 type State = Literal["queued", "analysing", "ready", "failed"]
 
 
-class Status(TypedDict):
-    state: State
+class QueuedStatus(TypedDict):
+    state: Literal["queued", "analysing"]
     updated: str
-    """ISO 8601 time of the last change."""
-    analyzer: NotRequired[str]
-    lexicon: NotRequired[str]
-    analysis: NotRequired[str]
-    """Blob key of the analysis, once ready."""
-    bundle: NotRequired[str]
-    """Blob key of the lexicon bundle, once ready."""
-    error: NotRequired[str]
+    artifacts: NotRequired[ReadyAnalysis]
+    """The previous analysis stays readable while its replacement is being made."""
+
+
+class ReadyStatus(TypedDict):
+    state: Literal["ready"]
+    updated: str
+    artifacts: ReadyAnalysis
+
+
+class FailedStatus(TypedDict):
+    state: Literal["failed"]
+    updated: str
+    error: str
+    artifacts: NotRequired[ReadyAnalysis]
+
+
+type Status = QueuedStatus | ReadyStatus | FailedStatus
 
 
 class Versions(TypedDict):

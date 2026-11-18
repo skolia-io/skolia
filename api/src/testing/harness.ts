@@ -56,6 +56,7 @@ export async function startLocal(): Promise<Local> {
     workers: [
       { configPath: "./wrangler.jsonc", env: "", prebuiltWorkerDir: DIST, vars: { MUTABLE_FINAL_USER_MIGRATION: "true" } },
       { configPath: "./src/testing/ingest-recorder.jsonc" },
+      { configPath: "./wrangler.internal.jsonc", env: "" },
     ],
   });
   await server.listen();
@@ -64,8 +65,8 @@ export async function startLocal(): Promise<Local> {
   for (const lang of LANGS) await worker.applyD1Migrations(lexiconBinding(lang));
   const ingest = server.getWorker<RecorderEnv>("skolia-ingest");
   await ingest.applyD1Migrations("INGEST_DB");
-  const { INGEST_DB } = await ingest.getEnv();
-  const env = { ...(await worker.getEnv()), INGEST_DB };
+  const { INGEST_DB, DOCUMENT_STATUS } = await ingest.getEnv();
+  const env = { ...(await worker.getEnv()), INGEST_DB, DOCUMENT_STATUS };
   const options = authOptions(authConfig(env.DB));
   const instance = betterAuth({ ...options, plugins: [...options.plugins, testUtils()] });
   const { test } = await instance.$context;
@@ -89,7 +90,16 @@ export async function startLocal(): Promise<Local> {
     started,
     takeQueued,
     async reset() {
-      const tables = ["user_document", "document", "apikey", "session", "account", "verification"];
+      const tables = [
+        "background_migration",
+        "document_status",
+        "user_document",
+        "document",
+        "apikey",
+        "session",
+        "account",
+        "verification",
+      ];
       await env.DB.batch([
         ...tables.map((t) => prepare(env.DB, sql`DELETE FROM ${sql.id(t)}`)),
         // The system users are the migrations'

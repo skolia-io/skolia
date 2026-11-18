@@ -273,6 +273,7 @@ def targets() -> dict[str, Target]:
                 *migrations("ingest/wrangler.jsonc"),
             ),
         ),
+        "internal": Target("deploy", ("api",)),
         "ingest": Target(
             "deploy", ("ingest", *(f"./analysis#ingest-{lang}" for lang in LANGS))
         ),
@@ -283,7 +284,7 @@ def targets() -> dict[str, Target]:
             "deploy", (".#skolia-worker",), content=lambda planner: planner.version()
         ),
         # The tests are in api/, so in the skolia Worker
-        "e2e": Target("deploy", against=("infra", "ingest", "lexicon", "web")),
+        "e2e": Target("deploy", against=("infra", "internal", "ingest", "lexicon", "web")),
         "curated": Target("deploy", test=("curated",), against=("web",)),
         "infra-shared": Target(
             "shared", ("infra/shared", *migrations("infra/skolia-ci/wrangler.jsonc"))

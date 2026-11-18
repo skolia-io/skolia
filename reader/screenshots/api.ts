@@ -27,6 +27,7 @@ import {
 import { LANGUAGES } from "@skolia/shared/lang";
 import { partKey, statusKey, textKey } from "@skolia/shared/keys";
 import type { Blob, Bundle, Status } from "@skolia/shared/schema";
+import { statusForStorage } from "@skolia/shared/status";
 import { AnnotationId, CardId, DocumentId, LemmaId, Timestamp, UserId } from "@skolia/shared/schemas";
 
 type Deps = Parameters<typeof createApp>[0];
@@ -110,6 +111,7 @@ const ANALYSIS = partKey(LALKA, "analysis", "s2-ac973bfbdb066");
 const BUNDLE = partKey(LALKA, "bundle", "b1-v2-ac973bfbdb066-l5da30b8a5747");
 
 const lalka: StoredDocument = {
+  status: null,
   id: LALKA,
   title: "Lalka",
   lang: "pl",
@@ -172,8 +174,27 @@ const LEVELS = (
 const documents: readonly StoredDocument[] = [lalka, PETIT_PRINCE, NOTATKI, PETER_RABBIT];
 
 const statuses: readonly (readonly [DocumentIdType, Status])[] = [
-  [LALKA, { state: "ready", updated: "2026-11-07T10:00:00.000Z", analysis: ANALYSIS, bundle: BUNDLE }],
-  [PETIT_PRINCE.id, { state: "ready", updated: "2026-11-07T10:00:00.000Z" }],
+  [
+    LALKA,
+    {
+      state: "ready",
+      updated: "2026-11-07T10:00:00.000Z",
+      artifacts: { analyzer: "pl/1", lexicon: "lex/1", analysis: ANALYSIS, bundle: BUNDLE },
+    },
+  ],
+  [
+    PETIT_PRINCE.id,
+    {
+      state: "ready",
+      updated: "2026-11-07T10:00:00.000Z",
+      artifacts: {
+        analyzer: "fr/1",
+        lexicon: "lex/1",
+        analysis: partKey(PETIT_PRINCE.id, "analysis", "s2-a1"),
+        bundle: partKey(PETIT_PRINCE.id, "bundle", "b1-a1-l1"),
+      },
+    },
+  ],
   [NOTATKI.id, { state: "queued", updated: "2026-11-09T09:55:00.000Z" }],
   [PETER_RABBIT.id, { state: "failed", updated: "2026-11-08T10:00:00.000Z", error: "The analyser stopped" }],
 ];
@@ -202,7 +223,8 @@ const blobs: ReadonlyMap<string, StoredBlob> = new Map([
   [ANALYSIS, { body: new Uint8Array(brotliCompressSync(fixture("lalka.analysis.json"))), contentType: JSON_TYPE }],
   [BUNDLE, { body: new Uint8Array(brotliCompressSync(fixture("lalka.bundle.json"))), contentType: JSON_TYPE }],
   ...statuses.map(
-    ([id, status]) => [statusKey(id), { body: new TextEncoder().encode(JSON.stringify(status)), contentType: JSON_TYPE }] as const,
+    ([id, status]) =>
+      [statusKey(id), { body: new TextEncoder().encode(JSON.stringify(statusForStorage(status))), contentType: JSON_TYPE }] as const,
   ),
 ]);
 
@@ -297,7 +319,10 @@ function listed(
 /** The API's ports, in memory, for one test. Writes the pages make are accepted and
  * forgotten, except settings. */
 function deps(signedIn: boolean, annotations: readonly Annotation[]): Deps {
-  const visible = (viewer: UserIdType | null) => documents.filter((d) => d.visibility === "public" || d.user === viewer);
+  const visible = (viewer: UserIdType | null) =>
+    documents
+      .filter((d) => d.visibility === "public" || d.user === viewer)
+      .map((d) => ({ ...d, status: statuses.find(([id]) => id === d.id)?.[1] ?? null }));
   let settings: Settings = { newLemmasPerDay: 10, newFormsPerDay: 5, formsWithWords: true };
   let kept = listedCards;
   return {
@@ -383,6 +408,7 @@ function deps(signedIn: boolean, annotations: readonly Annotation[]): Deps {
             .map((d) => [d.id, d] as const),
         ),
       has: async (id) => documents.some((d) => d.id === id),
+      setStatus: async () => {},
       add: async () => {},
       update: async () => {},
       remove: async () => {},

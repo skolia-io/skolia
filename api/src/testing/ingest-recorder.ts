@@ -1,10 +1,12 @@
 import { DurableObject, WorkerEntrypoint, WorkflowEntrypoint } from "cloudflare:workers";
 
 import { D1IngestHistory } from "@skolia/ingest/history";
+import type { StatusPublisher } from "@skolia/shared/status";
 import type { IngestJobRecord } from "@skolia/shared/api";
 
 export interface RecorderEnv {
   INGEST_DB: D1Database;
+  DOCUMENT_STATUS: StatusPublisher;
 }
 
 /** No container runs in the tests; they give the API their own jobs (testing/app.ts setup) */

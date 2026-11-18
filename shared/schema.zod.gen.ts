@@ -516,15 +516,26 @@ export const JobAnswer: z.ZodType<types.JobAnswer> = /* @__PURE__ */ (() => z.ob
 
 export const State: z.ZodType<types.State> = /* @__PURE__ */ (() => z.enum(["queued", "analysing", "ready", "failed"]).meta({ id: "State" }))();
 
-export const Status: z.ZodType<types.Status> = /* @__PURE__ */ (() => z.object({
-  state: State,
+export const QueuedStatus: z.ZodType<types.QueuedStatus> = /* @__PURE__ */ (() => z.object({
+  state: z.enum(["queued", "analysing"]),
   updated: z.string(),
-  analyzer: z.string().exactOptional(),
-  lexicon: z.string().exactOptional(),
-  analysis: z.string().exactOptional(),
-  bundle: z.string().exactOptional(),
-  error: z.string().exactOptional(),
-}).meta({ id: "Status" }))();
+  artifacts: ReadyAnalysis.exactOptional(),
+}).meta({ id: "QueuedStatus" }))();
+
+export const ReadyStatus: z.ZodType<types.ReadyStatus> = /* @__PURE__ */ (() => z.object({
+  state: z.enum(["ready"]),
+  updated: z.string(),
+  artifacts: ReadyAnalysis,
+}).meta({ id: "ReadyStatus" }))();
+
+export const FailedStatus: z.ZodType<types.FailedStatus> = /* @__PURE__ */ (() => z.object({
+  state: z.enum(["failed"]),
+  updated: z.string(),
+  error: z.string(),
+  artifacts: ReadyAnalysis.exactOptional(),
+}).meta({ id: "FailedStatus" }))();
+
+export const Status: z.ZodType<types.Status> = /* @__PURE__ */ (() => z.union([QueuedStatus, ReadyStatus, FailedStatus]).meta({ id: "Status" }))();
 
 export const Versions: z.ZodType<types.Versions> = /* @__PURE__ */ (() => z.object({
   analyzer: z.string(),

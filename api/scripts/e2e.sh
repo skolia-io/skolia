@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Local end to end: wrangler dev with both Workers, the ingest containers and empty local
+# Local end to end: wrangler dev with all three Workers, the ingest containers and empty local
 # D1, R2 and queue, each language's lexicon sample (as a preview has) loaded, then the
 # end-to-end tests (src/e2e.ts) and the curated texts' sync (src/sync-curated.ts, twice: the second run must find
 # nothing to do) against it. Needs Docker, the reader build and the ingest images (just
@@ -26,7 +26,7 @@ for lang in "$@"; do d1 migrations apply "LEXICON_$(tr a-z A-Z <<<"$lang")"; don
 d1 migrations apply INGEST_DB -c ../ingest/wrangler.jsonc
 just load-lexicon local --sample 3000 --persist-to "$api/$state"
 
-pnpm exec wrangler dev -c wrangler.jsonc -c ../ingest/wrangler.jsonc --persist-to "$state" --port "$port" --show-interactive-dev-session=false >"$log" 2>&1 &
+pnpm exec wrangler dev -c wrangler.jsonc -c wrangler.internal.jsonc -c ../ingest/wrangler.jsonc --persist-to "$state" --port "$port" --show-interactive-dev-session=false >"$log" 2>&1 &
 dev=$!
 trap 'kill "$dev" 2>/dev/null; wait "$dev" 2>/dev/null || true' EXIT
 

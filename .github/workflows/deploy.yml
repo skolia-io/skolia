@@ -100,9 +100,20 @@ jobs:
         env:
           CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
 
-  # After deploy-infra: the queue and bucket must exist
+  # API-owned internal capabilities: no ingest bindings, so deploy before callers.
+  deploy-internal:
+    needs: deploy-infra
+    if: ${{ !cancelled() && !failure() && fromJSON(inputs.plan).internal }}
+    runs-on: ubuntu-24.04
+    environment: ${{ startsWith(inputs.env, 'pr-') && 'preview' || inputs.env }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
+      - run: .github/uninterruptible.sh just deploy-internal ${{ inputs.env }}
+
+  # Its status publisher, storage and images must exist first.
   deploy-ingest:
-    needs: [deploy-infra, build-ingest-image]
+    needs: [deploy-infra, deploy-internal, build-ingest-image]
     if: ${{ !cancelled() && !failure() && fromJSON(inputs.plan).ingest }}
     runs-on: ubuntu-24.04
     environment: ${{ startsWith(inputs.env, 'pr-') && 'preview' || inputs.env }}
@@ -115,7 +126,7 @@ jobs:
 
   # After the lexicon is loaded: the end-to-end tests' card and lexicon journeys read it
   deploy-web:
-    needs: [build-web, deploy-infra, deploy-ingest, load-lexicon]
+    needs: [build-web, deploy-infra, deploy-internal, deploy-ingest, load-lexicon]
     if: ${{ !cancelled() && !failure() && fromJSON(inputs.plan).web }}
     runs-on: ubuntu-24.04
     environment: ${{ startsWith(inputs.env, 'pr-') && 'preview' || inputs.env }}
