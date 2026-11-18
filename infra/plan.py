@@ -594,7 +594,7 @@ def record_deployment(env: str, name: str, value: str | None) -> None:
         "INSERT INTO deployment (env, package, key, deployed_at) "
         f"VALUES ({quote(env)}, {quote(name)}, {'NULL' if value is None else quote(value)}, {quote(now())})"
     )
-    log.info("%s deployed %s: %s", env, name, value)
+    log.info("%s %s %s: %s", env, "deployed" if value else "deploying", name, value)
 
 
 # The graph, to read
@@ -677,11 +677,13 @@ def main(args: list[str]) -> None:
     commands.add_parser(
         "built", help="record a build's key once it's in the registry or Cachix"
     ).add_argument("name", choices=scope("build"))
-    deployed = commands.add_parser(
-        "deployed", help="record a deploy's key once it's deployed"
-    )
-    deployed.add_argument("env", type=environment)
-    deployed.add_argument("name", choices=scope("deploy") + scope("shared"))
+    for command, help in (
+        ("deploying", "record that a deploy has started, before it changes anything"),
+        ("deployed", "record a deploy's key once it's deployed"),
+    ):
+        deploy = commands.add_parser(command, help=help)
+        deploy.add_argument("env", type=environment)
+        deploy.add_argument("name", choices=scope("deploy") + scope("shared"))
     commands.add_parser(
         "torn-down", help="record that a preview serves nothing (infra/teardown.sh)"
     ).add_argument("env", type=preview)
@@ -704,6 +706,8 @@ def main(args: list[str]) -> None:
                 record_build(Planner([parsed.name]), parsed.name)
         case "built":
             record_build(Planner([parsed.name]), parsed.name)
+        case "deploying":
+            record_deployment(parsed.env, parsed.name, None)
         case "deployed":
             key = Planner([parsed.name]).key(parsed.name)
             record_deployment(parsed.env, parsed.name, key)

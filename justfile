@@ -131,6 +131,7 @@ load-lexicon env *flags:
       if [ "$state" = current ]; then echo "{{ env }}: $lang already serves $out"; continue; fi
       out=$(nix build --no-link --print-out-paths "$build")
       if [ -n "${CACHIX_AUTH_TOKEN:-}" ]; then cachix push andyyu2004 "$out"; fi
+      if [ {{ env }} != local ]; then infra/plan.py deploying {{ env }} lexicon; fi
       infra/load-lexicon.py {{ env }} "$out/$lang.cards.sqlite" --built-from "$out" $sample {{ flags }}
     done
     if [ {{ env }} != local ]; then infra/plan.py deployed {{ env }} lexicon; fi
@@ -140,8 +141,13 @@ load-lexicon env *flags:
 deployed env package:
     infra/plan.py deployed {{ env }} {{ package }}
 
+# Record in skolia-ci that env's package is being deployed, so a deploy that fails part way is needed again
+[private]
+deploying env package:
+    infra/plan.py deploying {{ env }} {{ package }}
+
 # The account's resources that aren't any environment's (infra/shared/), then skolia-ci's tables
-deploy-shared: (apply "shared") migrate-ci && (deployed "shared" "infra-shared")
+deploy-shared: (deploying "shared" "infra-shared") (apply "shared") migrate-ci && (deployed "shared" "infra-shared")
 
 # skolia-ci's tables (infra/skolia-ci/migrations), after just apply shared made it
 migrate-ci:
@@ -155,7 +161,7 @@ apply env:
 deploy env: (deploy-infra env) (deploy-ingest env) (deploy-web env)
 
 # Terraform, then D1 migrations; for a preview, its wrangler configs in between
-deploy-infra env: (apply env) && (migrate env) (deployed env "infra")
+deploy-infra env: (deploying env "infra") (apply env) && (migrate env) (deployed env "infra")
     case {{ env }} in pr-*) infra/preview.py config {{ env }} ;; esac
 
 # The skolia Worker (reader and API) with wrangler, with Terraform's BETTER_AUTH_SECRET and, if set,
@@ -178,6 +184,7 @@ deploy-web env:
       pr-*) config=wrangler.{{ env }}.json; [ -f "api/$config" ] || infra/preview.py config {{ env }} ;;
       *) config=wrangler.jsonc ;;
     esac
+    infra/plan.py deploying {{ env }} web
     infra/wrangler.sh {{ env }} deploy "$out/worker/main.js" -c "$config" --no-bundle --assets "$out/assets" --var "VERSION:$version" \
       --secrets-file "$dir/secrets.json"
     infra/plan.py deployed {{ env }} web
@@ -191,6 +198,7 @@ deploy-oauth-proxy:
     trap 'rm -rf "$dir"' EXIT
     jq -n '{GOOGLE_CLIENT_ID: env.GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET: env.GOOGLE_CLIENT_SECRET, OAUTH_PROXY_SECRET: env.OAUTH_PROXY_SECRET}
       | if any(.[]; (. // "") == "") then error("GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and OAUTH_PROXY_SECRET must be set") end' > "$dir/secrets.json"
+    infra/plan.py deploying shared oauth-proxy
     (cd oauth-proxy && pnpm exec wrangler deploy --secrets-file "$dir/secrets.json")
     infra/plan.py deployed shared oauth-proxy
 
@@ -226,6 +234,7 @@ sync-curated env *flags:
     url=$(just url {{ env }})
     SYNC_CURATED_API_KEY=$(openssl rand -hex 32)
     export SYNC_CURATED_API_KEY
+    case "{{ env }} {{ flags }}" in local* | *--check*) ;; *) infra/plan.py deploying {{ env }} curated ;; esac
     just d1-sql {{ env }} api/src/sync-curated-key.ts
     case {{ env }} in pr-*) sample="--sample 5" ;; *) sample= ;; esac
     node api/src/sync-curated.ts "$url" curated $sample {{ flags }}
