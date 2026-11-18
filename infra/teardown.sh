@@ -33,6 +33,11 @@ containers=$(wrangler containers list --json |
 buckets=$(r2_buckets "$bucket")
 
 "$root/infra/plan.py" torn-down "$env"
+# A Worker can't be deleted while another binds it: the skolia Worker binds ingest's
+# Ingester and workflow, and ingest binds the internal Worker's DocumentStatus.
+if grep -qx "$web" <<<"$workers"; then
+  wrangler delete "$web" </dev/null
+fi
 if grep -qx "$ingest" <<<"$consumers"; then
   wrangler queues consumer remove "$queue" "$ingest" </dev/null
 fi
@@ -47,10 +52,6 @@ while read -r id name; do
   echo "deleting container application $name"
   wrangler containers delete "$id" </dev/null
 done <<<"$containers"
-if grep -qx "$web" <<<"$workers"; then
-  wrangler delete "$web" </dev/null
-fi
-# Ingest's service binding must be gone before its internal API target.
 if grep -qx "$internal" <<<"$workers"; then
   wrangler delete "$internal" </dev/null
 fi
