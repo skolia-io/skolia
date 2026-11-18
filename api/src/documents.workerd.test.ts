@@ -74,7 +74,7 @@ test("listings keep the published status, versions and error without status blob
   const ready = await body("ready", api.documents[":id"].$get({ param: { id } }));
   await putJson(statusKey(id), {
     state: "failed",
-    updated: NOW,
+    updated: new Date(NOW).toISOString(),
     error: "ingest failed",
     artifacts: {
       analyzer: "pl/1",
@@ -129,7 +129,7 @@ test("importing the same text again doesn't queue it twice, unless it failed", a
   assert.equal(again.status, 200);
   assert.equal((await local.takeQueued()).length, 1);
   const id = await docId("pl", TEXT);
-  await putJson(statusKey(id), { state: "failed", updated: "x", error: "boom" });
+  await putJson(statusKey(id), { state: "failed", updated: new Date(NOW).toISOString(), error: "boom" });
   const retry = await importText(app);
   assert.equal(retry.status, 202);
   assert.equal((await local.takeQueued()).length, 1);

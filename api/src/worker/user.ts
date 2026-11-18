@@ -418,16 +418,14 @@ export class User extends DurableObject<UserEnv> {
           name TEXT NOT NULL,
           direction TEXT NOT NULL CHECK (direction IN ('up', 'down')),
           checksum TEXT NOT NULL,
-          applied_at TEXT NOT NULL CHECK (applied_at IS strftime('%Y-%m-%dT%H:%M:%fZ', applied_at))
+          applied_at TEXT NOT NULL CHECK (applied_at IS strftime('%Y-%m-%dT%H:%M:%fZ', applied_at)),
+          down TEXT CHECK (direction = 'up' OR down IS NULL)
         ) STRICT;
         CREATE TRIGGER IF NOT EXISTS migration_log_no_update BEFORE UPDATE ON migration_log
           BEGIN SELECT RAISE(ABORT, 'migration_log is append-only'); END;
         CREATE TRIGGER IF NOT EXISTS migration_log_no_delete BEFORE DELETE ON migration_log
           BEGIN SELECT RAISE(ABORT, 'migration_log is append-only'); END;
       `);
-      if (this.#exec(sql`SELECT 1 FROM pragma_table_info('migration_log') WHERE name = 'down'`).toArray().length === 0) {
-        this.#exec(sql`ALTER TABLE migration_log ADD COLUMN down TEXT CHECK (direction = 'up' OR down IS NULL)`);
-      }
     });
     return this.#exec(sql`SELECT seq, version, name, direction, checksum, down, applied_at AS "appliedAt" FROM migration_log ORDER BY seq`)
       .toArray()

@@ -404,29 +404,36 @@ export const Versions = z.object({
   bundle: z.string(),
 }) satisfies z.ZodType<VersionsType>;
 
-export const DocumentRow = z.object({
-  status: z
-    .string()
-    .transform((json) => JSON.parse(json) as unknown)
-    .pipe(Status)
-    .nullable(),
-  id: DocumentId,
-  title: z.string(),
-  lang: Lang,
-  importedAt: Timestamp,
-  words: z.number().int(),
-  user: UserId,
-  visibility: Visibility,
-  licence: Licence,
-  author: z.string().nullable(),
-  source: z.string().nullable(),
-  importerName: z.string(),
-  /** The entry's user_document_tag rows, as a JSON object of kind to value. */
-  tags: z
-    .string()
-    .transform((json) => JSON.parse(json) as unknown)
-    .pipe(Tags),
-});
+export const DocumentRow = z
+  .object({
+    statusState: z.enum(["queued", "ready", "failed"]).nullable(),
+    statusUpdatedAt: Timestamp.nullable(),
+    statusData: z
+      .string()
+      .transform((json) => JSON.parse(json) as unknown)
+      .pipe(z.record(z.string(), z.unknown()))
+      .nullable(),
+    id: DocumentId,
+    title: z.string(),
+    lang: Lang,
+    importedAt: Timestamp,
+    words: z.number().int(),
+    user: UserId,
+    visibility: Visibility,
+    licence: Licence,
+    author: z.string().nullable(),
+    source: z.string().nullable(),
+    importerName: z.string(),
+    /** The entry's user_document_tag rows, as a JSON object of kind to value. */
+    tags: z
+      .string()
+      .transform((json) => JSON.parse(json) as unknown)
+      .pipe(Tags),
+  })
+  .transform(({ statusState, statusUpdatedAt, statusData, ...document }) => ({
+    ...document,
+    status: statusState === null ? null : Status.parse({ ...statusData, state: statusState, updated: statusUpdatedAt }),
+  }));
 
 // Responses. The API's types (api.ts) are these schemas' outputs, and its OpenAPI spec is
 // made from them; the API doesn't parse what it sends with them.

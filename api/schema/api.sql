@@ -1,4 +1,5 @@
 CREATE TABLE "account" (
+  -- Better Auth: provider identities and credentials.
   "id" TEXT NOT NULL PRIMARY KEY,
   "accountId" TEXT NOT NULL,
   "providerId" TEXT NOT NULL,
@@ -14,7 +15,10 @@ CREATE TABLE "account" (
   "updatedAt" TEXT NOT NULL CHECK ("updatedAt" IS strftime('%Y-%m-%dT%H:%M:%fZ', "updatedAt"))
 ) STRICT;
 
+CREATE INDEX "account_userId_idx" ON "account" ("userId");
+
 CREATE TABLE "apikey" (
+  -- Better Auth API key plugin.
   "id" TEXT NOT NULL PRIMARY KEY,
   "configId" TEXT NOT NULL,
   "name" TEXT,
@@ -39,6 +43,12 @@ CREATE TABLE "apikey" (
   "metadata" TEXT
 ) STRICT;
 
+CREATE INDEX "apikey_configId_idx" ON "apikey" ("configId");
+
+CREATE INDEX "apikey_key_idx" ON "apikey" ("key");
+
+CREATE INDEX "apikey_referenceId_idx" ON "apikey" ("referenceId");
+
 CREATE TABLE attribution (
   id INTEGER PRIMARY KEY,
   licence TEXT NOT NULL CHECK (licence IN (
@@ -50,6 +60,8 @@ CREATE TABLE attribution (
   author TEXT CHECK (author != ''),
   source TEXT CHECK (source GLOB 'http://?*' OR source GLOB 'https://?*')
 ) STRICT;
+
+CREATE UNIQUE INDEX attribution_credit_idx ON attribution (licence, ifnull(author, ''), ifnull(source, ''));
 
 CREATE TABLE background_migration (
   version INTEGER PRIMARY KEY CHECK (version > 0),
@@ -64,17 +76,22 @@ CREATE TABLE background_migration (
 
 CREATE TABLE document (
   id TEXT NOT NULL PRIMARY KEY,
-  lang TEXT NOT NULL,
-  words INTEGER NOT NULL
+  lang TEXT NOT NULL CHECK (lang IN ('en', 'fr', 'pl')),
+  words INTEGER NOT NULL CHECK (words >= 0)
 ) STRICT, WITHOUT ROWID;
 
 CREATE TABLE document_status (
-  document_id TEXT PRIMARY KEY,
+  -- No FK to document: import publishes queued status and starts ingest before
+  -- inserting the document. A failed start must not leave a visible entry, and
+  -- a fast run can publish its result before the document exists.
+  document_id TEXT NOT NULL PRIMARY KEY,
+  state TEXT NOT NULL CHECK (state IN ('queued', 'ready', 'failed')),
   updated_at TEXT NOT NULL CHECK (updated_at IS strftime('%Y-%m-%dT%H:%M:%fZ', updated_at)),
-  status TEXT NOT NULL CHECK (json_valid(status) AND json_type(status) IN ('object', 'null'))
-) STRICT;
+  data TEXT NOT NULL CHECK (json_valid(data) AND json_type(data) = 'object')
+) STRICT, WITHOUT ROWID;
 
 CREATE TABLE "session" (
+  -- Better Auth: signed-in sessions.
   "id" TEXT NOT NULL PRIMARY KEY,
   "expiresAt" TEXT NOT NULL CHECK ("expiresAt" IS strftime('%Y-%m-%dT%H:%M:%fZ', "expiresAt")),
   "token" TEXT NOT NULL UNIQUE,
@@ -84,6 +101,8 @@ CREATE TABLE "session" (
   "userAgent" TEXT,
   "userId" TEXT NOT NULL REFERENCES "user" ("id") ON DELETE CASCADE
 ) STRICT;
+
+CREATE INDEX "session_userId_idx" ON "session" ("userId");
 
 CREATE TABLE tag (
   kind TEXT NOT NULL CHECK (kind GLOB '[a-z]*' AND kind NOT GLOB '*[^a-z0-9-]*' AND length(kind) <= 32),
@@ -95,14 +114,16 @@ CREATE TABLE tag (
 ) STRICT, WITHOUT ROWID;
 
 CREATE TABLE "user" (
+  -- Better Auth identity; type is Skolia's application-specific field.
   "id" TEXT NOT NULL PRIMARY KEY,
   "name" TEXT NOT NULL,
   "email" TEXT NOT NULL UNIQUE,
   "emailVerified" INTEGER NOT NULL,
   "image" TEXT,
   "createdAt" TEXT NOT NULL CHECK ("createdAt" IS strftime('%Y-%m-%dT%H:%M:%fZ', "createdAt")),
-  "updatedAt" TEXT NOT NULL CHECK ("updatedAt" IS strftime('%Y-%m-%dT%H:%M:%fZ', "updatedAt"))
-, "type" TEXT NOT NULL DEFAULT 'standard' CHECK ("type" IN ('standard', 'system'))) STRICT;
+  "updatedAt" TEXT NOT NULL CHECK ("updatedAt" IS strftime('%Y-%m-%dT%H:%M:%fZ', "updatedAt")),
+  "type" TEXT NOT NULL DEFAULT 'standard' CHECK ("type" IN ('standard', 'system'))
+) STRICT;
 
 CREATE TABLE user_document (
   user_id TEXT NOT NULL REFERENCES "user" ("id") ON DELETE CASCADE,
@@ -114,6 +135,10 @@ CREATE TABLE user_document (
   annotations_count INTEGER NOT NULL DEFAULT 0 CHECK (annotations_count >= 0),
   PRIMARY KEY (user_id, document_id)
 ) STRICT, WITHOUT ROWID;
+
+CREATE INDEX user_document_document_idx ON user_document (document_id);
+
+CREATE INDEX user_document_public_idx ON user_document (user_id, document_id) WHERE visibility = 'public';
 
 CREATE TABLE user_document_annotation (
   user_id TEXT NOT NULL,
@@ -129,50 +154,7 @@ CREATE TABLE user_document_annotation (
   FOREIGN KEY (user_id, document_id) REFERENCES user_document (user_id, document_id) ON DELETE CASCADE
 ) STRICT, WITHOUT ROWID;
 
-CREATE TABLE user_document_tag (
-  user_id TEXT NOT NULL,
-  document_id TEXT NOT NULL,
-  kind TEXT NOT NULL,
-  value TEXT NOT NULL,
-  PRIMARY KEY (user_id, document_id, kind),
-  FOREIGN KEY (user_id, document_id) REFERENCES user_document (user_id, document_id) ON DELETE CASCADE,
-  FOREIGN KEY (kind, value) REFERENCES tag (kind, value)
-) STRICT, WITHOUT ROWID;
-
-CREATE TABLE "verification" (
-  "id" TEXT NOT NULL PRIMARY KEY,
-  "identifier" TEXT NOT NULL,
-  "value" TEXT NOT NULL,
-  "expiresAt" TEXT NOT NULL CHECK ("expiresAt" IS strftime('%Y-%m-%dT%H:%M:%fZ', "expiresAt")),
-  "createdAt" TEXT NOT NULL CHECK ("createdAt" IS strftime('%Y-%m-%dT%H:%M:%fZ', "createdAt")),
-  "updatedAt" TEXT NOT NULL CHECK ("updatedAt" IS strftime('%Y-%m-%dT%H:%M:%fZ', "updatedAt"))
-) STRICT;
-
-CREATE INDEX "account_userId_idx" ON "account" ("userId");
-
-CREATE INDEX "apikey_configId_idx" ON "apikey" ("configId");
-
-CREATE INDEX "apikey_key_idx" ON "apikey" ("key");
-
-CREATE INDEX "apikey_referenceId_idx" ON "apikey" ("referenceId");
-
-CREATE UNIQUE INDEX attribution_credit_idx ON attribution (licence, ifnull(author, ''), ifnull(source, ''));
-
-CREATE INDEX "session_userId_idx" ON "session" ("userId");
-
 CREATE INDEX user_document_annotation_start_idx ON user_document_annotation (user_id, document_id, start, id);
-
-CREATE INDEX user_document_document_idx ON user_document (document_id);
-
-CREATE INDEX user_document_public_idx ON user_document (user_id, document_id) WHERE visibility = 'public';
-
-CREATE INDEX user_document_public_imported_idx ON user_document (imported_at DESC) WHERE visibility = 'public';
-
-CREATE INDEX user_document_tag_value_idx ON user_document_tag (kind, value, user_id, document_id);
-
-CREATE INDEX user_document_user_imported_idx ON user_document (user_id, imported_at DESC);
-
-CREATE INDEX "verification_identifier_idx" ON "verification" ("identifier");
 
 CREATE TRIGGER user_document_annotation_added AFTER INSERT ON user_document_annotation
 BEGIN
@@ -185,3 +167,27 @@ BEGIN
   UPDATE user_document SET annotations_count = annotations_count - 1
   WHERE user_id = OLD.user_id AND document_id = OLD.document_id;
 END;
+
+CREATE TABLE user_document_tag (
+  user_id TEXT NOT NULL,
+  document_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  value TEXT NOT NULL,
+  PRIMARY KEY (user_id, document_id, kind),
+  FOREIGN KEY (user_id, document_id) REFERENCES user_document (user_id, document_id) ON DELETE CASCADE,
+  FOREIGN KEY (kind, value) REFERENCES tag (kind, value)
+) STRICT, WITHOUT ROWID;
+
+CREATE INDEX user_document_tag_value_idx ON user_document_tag (kind, value, user_id, document_id);
+
+CREATE TABLE "verification" (
+  -- Better Auth: verification values and expiry.
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "identifier" TEXT NOT NULL,
+  "value" TEXT NOT NULL,
+  "expiresAt" TEXT NOT NULL CHECK ("expiresAt" IS strftime('%Y-%m-%dT%H:%M:%fZ', "expiresAt")),
+  "createdAt" TEXT NOT NULL CHECK ("createdAt" IS strftime('%Y-%m-%dT%H:%M:%fZ', "createdAt")),
+  "updatedAt" TEXT NOT NULL CHECK ("updatedAt" IS strftime('%Y-%m-%dT%H:%M:%fZ', "updatedAt"))
+) STRICT;
+
+CREATE INDEX "verification_identifier_idx" ON "verification" ("identifier");

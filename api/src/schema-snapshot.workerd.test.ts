@@ -6,7 +6,7 @@ import { startLocal } from "./testing/harness.ts";
 
 const SCHEMA = `SELECT name, sql FROM sqlite_schema WHERE sql IS NOT NULL
   AND name NOT GLOB 'sqlite_*' AND name NOT GLOB '_cf_*' AND name NOT GLOB '__miniflare_*'
-  ORDER BY CASE type WHEN 'table' THEN 0 WHEN 'index' THEN 1 ELSE 2 END, name`;
+  ORDER BY tbl_name, CASE type WHEN 'table' THEN 0 WHEN 'index' THEN 1 ELSE 2 END, name`;
 type Definition = { name: string; sql: string };
 
 function ddl(rows: readonly Definition[]): string {

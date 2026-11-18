@@ -82,6 +82,23 @@ test("every D1 table is STRICT, and timestamps must be toISOString()'s", async (
   assert.notEqual(await env.DB.prepare("select 1 from document where id = 'a'").first(), null);
 });
 
+test("a status may precede its document, but its state, timestamp and data must be valid", async () => {
+  const db = local.env.DB;
+  const at = "2026-11-07T00:00:00.000Z";
+  const put = (id: string, state: string, updated: string, data: string) =>
+    db
+      .prepare("INSERT INTO document_status (document_id, state, updated_at, data) VALUES (?, ?, ?, ?)")
+      .bind(id, state, updated, data)
+      .run();
+  await put("new-import", "queued", at, "{}");
+  assert.equal(await db.prepare("SELECT * FROM document WHERE id = 'new-import'").first(), null);
+  await assert.rejects(put("bad-state", "analysing", at, "{}"), /CHECK constraint failed/);
+  await assert.rejects(put("bad-date", "queued", "yesterday", "{}"), /CHECK constraint failed/);
+  for (const data of ["[]", "null", "not json"]) await assert.rejects(put("bad-data", "queued", at, data));
+  await assert.rejects(db.prepare("INSERT INTO document VALUES ('bad-lang', 'de', 1)").run(), /CHECK constraint failed/);
+  await assert.rejects(db.prepare("INSERT INTO document VALUES ('bad-words', 'pl', -1)").run(), /CHECK constraint failed/);
+});
+
 test("a D1 column is a toISOString() timestamp exactly when its name ends in _at, Better Auth's tables aside", async () => {
   const query = tableColumns(["d1_migrations", "user", "session", "account", "verification", "apikey"]);
   const { results } = await local.env.DB.prepare(query.text)
