@@ -8,6 +8,23 @@ class IngestJob(TypedDict):
     doc: str
     """Document id: sha256 hex of the UTF-8 text."""
     lang: str
+    run: str
+    """The ingest Worker's IngestWorkflow instance the job is for, told of its progress
+    through the job's events."""
+    attempt: int
+    """Which of the run's attempts this is, from 1: a late event from an earlier one
+    doesn't count for a later one."""
+
+
+class Made(TypedDict):
+    """What a job that succeeded made, for the run to point the document's status at."""
+
+    analyzer: str
+    lexicon: str
+    analysis: str
+    """Blob key of the analysis."""
+    bundle: str
+    """Blob key of the lexicon bundle."""
 
 
 type State = Literal["queued", "analysing", "ready", "failed"]

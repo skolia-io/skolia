@@ -11,6 +11,8 @@ from skolia_analysis.ingest.blobs import BlobError, DirBlobs
 from skolia_analysis.ingest.jobs import InvalidJob, MemoryQueue, Received, Stage, parse_job
 from skolia_analysis.ingest.schema import (
     MAX_TEXT_LENGTH,
+    IngestJob,
+    Made,
     doc_id,
     status_key,
     text_key,
@@ -45,22 +47,27 @@ def pipelines() -> dict[str, Pipeline]:
     return {"pl": Pipeline("pl", fake_analysis, fake_bundle, "test/1", "lex/1")}
 
 
-def status(blobs: DirBlobs, doc: str) -> dict[str, str]:
-    raw = blobs.get(status_key(doc))
-    assert raw is not None
-    return json.loads(raw)
+def job(doc: str, lang: str = "pl") -> IngestJob:
+    return {"doc": doc, "lang": lang, "run": "run", "attempt": 1}
 
 
-def test_job_writes_analysis_bundle_and_ready_status(tmp_path: Path) -> None:
+def made(blobs: DirBlobs, doc: str, pipelines: dict[str, Pipeline], lang: str = "pl") -> Made:
+    result = Ingester(blobs, pipelines).process(job(doc, lang))
+    assert result["made"] is not None, result
+    return result["made"]
+
+
+def test_job_writes_analysis_and_bundle_but_no_status(tmp_path: Path) -> None:
     blobs = DirBlobs(tmp_path)
     doc = doc_id("pl", TEXT)
     blobs.put(text_key(doc), TEXT.encode(), "text/plain")
     queue = MemoryQueue()
-    queue.send({"doc": doc, "lang": "pl"})
+    queue.send(job(doc))
     Ingester(blobs, pipelines()).run(queue, stop=lambda: not queue.pending)
-    assert queue.acked == [{"doc": doc, "lang": "pl"}]
-    ready = status(blobs, doc)
-    assert ready["state"] == "ready"
+    assert queue.acked == [job(doc)]
+    # The run that asked for it writes the status (ingest/src/workflow.ts)
+    assert blobs.get(status_key(doc)) is None
+    ready = made(blobs, doc, pipelines())
     analysis = blobs.get(ready["analysis"])
     assert analysis is not None
     assert json.loads(brotli.decompress(analysis))["analyzer"] == "test/1"
@@ -74,7 +81,7 @@ def test_each_stage_of_a_job_logs_its_time(
     doc = doc_id("pl", TEXT)
     blobs.put(text_key(doc), TEXT.encode(), "text/plain")
     queue = MemoryQueue()
-    queue.send({"doc": doc, "lang": "pl"})
+    queue.send(job(doc))
     with caplog.at_level(logging.INFO, logger="skolia_analysis.ingest.worker"):
         Ingester(blobs, pipelines()).run(queue, stop=lambda: not queue.pending)
     stages = [
@@ -116,7 +123,7 @@ def test_each_stage_is_reported_to_the_jobs_progress(tmp_path: Path) -> None:
     doc = doc_id("pl", TEXT)
     blobs.put(text_key(doc), TEXT.encode(), "text/plain")
     progress = Recorded()
-    Ingester(blobs, pipelines()).process({"doc": doc, "lang": "pl"}, progress)
+    Ingester(blobs, pipelines()).process(job(doc), progress)
     stages: list[Stage] = [
         "reading",
         "analysing",
@@ -137,10 +144,10 @@ def test_a_rebundle_reports_loading_the_stored_analysis(tmp_path: Path) -> None:
     blobs = DirBlobs(tmp_path)
     doc = doc_id("pl", TEXT)
     blobs.put(text_key(doc), TEXT.encode(), "text/plain")
-    Ingester(blobs, pipelines()).process({"doc": doc, "lang": "pl"})
+    Ingester(blobs, pipelines()).process(job(doc))
     progress = Recorded()
     newer = Pipeline("pl", fake_analysis, fake_bundle, "test/1", "lex/2")
-    Ingester(blobs, {"pl": newer}).process({"doc": doc, "lang": "pl"}, progress)
+    Ingester(blobs, {"pl": newer}).process(job(doc), progress)
     assert [stage for event, stage in progress.events if event == "finished"] == [
         "reading",
         "loading-analysis",
@@ -154,20 +161,20 @@ def test_all_of_a_document_is_under_one_prefix(tmp_path: Path) -> None:
     blobs = DirBlobs(tmp_path)
     doc = doc_id("pl", TEXT)
     blobs.put(text_key(doc), TEXT.encode(), "text/plain")
-    ready = Ingester(blobs, pipelines()).process({"doc": doc, "lang": "pl"})
-    keys = [text_key(doc), status_key(doc), ready.get("analysis", ""), ready.get("bundle", "")]
+    ready = made(blobs, doc, pipelines())
+    keys = [text_key(doc), status_key(doc), ready["analysis"], ready["bundle"]]
     assert all(key.startswith(f"doc/{doc}/") for key in keys), keys
 
 
 def test_missing_text_and_unknown_language_fail_without_retry(tmp_path: Path) -> None:
     blobs = DirBlobs(tmp_path)
     ingester = Ingester(blobs, pipelines())
-    assert ingester.process({"doc": "abc", "lang": "pl"})["state"] == "failed"
+    assert ingester.process(job("abc"))["outcome"] == "failed"
     doc = doc_id("pl", TEXT)
     blobs.put(text_key(doc), TEXT.encode(), "text/plain")
-    failed = ingester.process({"doc": doc, "lang": "xx"})
-    assert failed["state"] == "failed"
-    assert "xx" in failed.get("error", "")
+    failed = ingester.process(job(doc, "xx"))
+    assert failed["outcome"] == "failed"
+    assert "xx" in (failed["error"] or "")
 
 
 def test_text_over_the_limit_fails_before_analysis(tmp_path: Path) -> None:
@@ -179,15 +186,15 @@ def test_text_over_the_limit_fails_before_analysis(tmp_path: Path) -> None:
     pipeline = Pipeline(
         "pl", lambda t: analysed.append(t) or fake_analysis(t), fake_bundle, "test/1", ""
     )
-    failed = Ingester(blobs, {"pl": pipeline}).process({"doc": doc, "lang": "pl"})
-    assert failed["state"] == "failed"
+    failed = Ingester(blobs, {"pl": pipeline}).process(job(doc))
+    assert failed["outcome"] == "failed"
     assert analysed == []
 
 
 def test_text_must_match_its_id(tmp_path: Path) -> None:
     blobs = DirBlobs(tmp_path)
     blobs.put(text_key("abc"), TEXT.encode(), "text/plain")
-    assert Ingester(blobs, pipelines()).process({"doc": "abc", "lang": "pl"})["state"] == "failed"
+    assert Ingester(blobs, pipelines()).process(job("abc"))["outcome"] == "failed"
 
 
 def test_versions_are_published_for_the_api(tmp_path: Path) -> None:
@@ -204,14 +211,14 @@ def test_versions_are_published_for_the_api(tmp_path: Path) -> None:
     assert versions["bundle"].startswith(f"b{BUNDLE_SCHEMA}-v{BUNDLER_VERSION}-a")
 
 
-def test_the_status_points_at_the_published_names(tmp_path: Path) -> None:
+def test_what_a_job_made_has_the_published_names(tmp_path: Path) -> None:
     blobs = DirBlobs(tmp_path)
     doc = doc_id("pl", TEXT)
     blobs.put(text_key(doc), TEXT.encode(), "text/plain")
     pipeline = pipelines()["pl"]
-    ready = Ingester(blobs, {"pl": pipeline}).process({"doc": doc, "lang": "pl"})
-    assert ready.get("analysis") == f"doc/{doc}/analysis/{pipeline.versions()['analysis']}.json.br"
-    assert ready.get("bundle") == f"doc/{doc}/bundle/{pipeline.versions()['bundle']}.json.br"
+    ready = made(blobs, doc, {"pl": pipeline})
+    assert ready["analysis"] == f"doc/{doc}/analysis/{pipeline.versions()['analysis']}.json.br"
+    assert ready["bundle"] == f"doc/{doc}/bundle/{pipeline.versions()['bundle']}.json.br"
 
 
 class FailingBlobs(DirBlobs):
@@ -228,36 +235,13 @@ def test_a_storage_failure_puts_the_job_back_instead_of_failing_it(tmp_path: Pat
     doc = doc_id("pl", TEXT)
     blobs.put(text_key(doc), TEXT.encode(), "text/plain")
     queue = MemoryQueue()
-    queue.send({"doc": doc, "lang": "pl"})
+    queue.send(job(doc))
     slept: list[float] = []
     Ingester(blobs, pipelines()).run(queue, stop=lambda: bool(slept), sleep=slept.append)
-    assert queue.released == [{"doc": doc, "lang": "pl"}]
+    assert queue.released == [job(doc)]
     assert queue.acked == []
     assert len(queue.pending) == 1
     assert blobs.get(status_key(doc)) is None
-
-
-def test_re_analysis_serves_the_old_analysis_until_the_new_one_is_ready(
-    tmp_path: Path,
-) -> None:
-    blobs = DirBlobs(tmp_path)
-    doc = doc_id("pl", TEXT)
-    blobs.put(text_key(doc), TEXT.encode(), "text/plain")
-    old = Ingester(blobs, pipelines()).process({"doc": doc, "lang": "pl"})
-    seen: list[dict[str, str]] = []
-
-    def analyse_v2(text: str) -> Blob:
-        seen.append(status(blobs, doc))
-        return {**fake_analysis(text), "analyzer": "test/2"}
-
-    upgraded = Pipeline("pl", analyse_v2, fake_bundle, "test/2", "lex/1")
-    new = Ingester(blobs, {"pl": upgraded}).process({"doc": doc, "lang": "pl"})
-    assert seen[0]["state"] == "analysing"
-    assert seen[0]["analysis"] == old.get("analysis")
-    assert seen[0]["analyzer"] == "test/1"
-    assert new["state"] == "ready"
-    assert new.get("analyzer") == "test/2"
-    assert new.get("analysis") != old.get("analysis")
 
 
 def test_a_job_already_done_is_not_analysed_again(tmp_path: Path) -> None:
@@ -269,8 +253,8 @@ def test_a_job_already_done_is_not_analysed_again(tmp_path: Path) -> None:
         "pl", lambda t: analysed.append(t) or fake_analysis(t), fake_bundle, "test/1", "lex/1"
     )
     ingester = Ingester(blobs, {"pl": pipeline})
-    ingester.process({"doc": doc, "lang": "pl"})
-    assert ingester.process({"doc": doc, "lang": "pl"})["state"] == "ready"
+    ingester.process(job(doc))
+    assert ingester.process(job(doc))["outcome"] == "ready"
     assert len(analysed) == 1
 
 
@@ -289,12 +273,9 @@ def test_a_new_lexicon_rebundles_without_analysing_again(tmp_path: Path) -> None
         bundled.append(blob)
         return fake_bundle(blob)
 
-    Ingester(blobs, {"pl": Pipeline("pl", analyze, bundle, "test/1", "lex/1")}).process(
-        {"doc": doc, "lang": "pl"}
-    )
-    newer = Ingester(blobs, {"pl": Pipeline("pl", analyze, bundle, "test/1", "lex/2")})
-    ready = newer.process({"doc": doc, "lang": "pl"})
-    assert ready["state"] == "ready" and ready.get("lexicon") == "lex/2"
+    Ingester(blobs, {"pl": Pipeline("pl", analyze, bundle, "test/1", "lex/1")}).process(job(doc))
+    ready = made(blobs, doc, {"pl": Pipeline("pl", analyze, bundle, "test/1", "lex/2")})
+    assert ready["lexicon"] == "lex/2"
     assert len(analysed) == 1
     assert len(bundled) == 2 and bundled[1] == fake_analysis(TEXT)
 
@@ -304,9 +285,9 @@ def test_an_analyser_unlike_the_published_one_fails(tmp_path: Path) -> None:
     doc = doc_id("pl", TEXT)
     blobs.put(text_key(doc), TEXT.encode(), "text/plain")
     pipeline = Pipeline("pl", fake_analysis, fake_bundle, "test/2", "lex/1")
-    failed = Ingester(blobs, {"pl": pipeline}).process({"doc": doc, "lang": "pl"})
-    assert failed["state"] == "failed"
-    assert "test/2" in failed.get("error", "")
+    failed = Ingester(blobs, {"pl": pipeline}).process(job(doc))
+    assert failed["outcome"] == "failed"
+    assert "test/2" in (failed["error"] or "")
 
 
 class FlakyQueue(MemoryQueue):
@@ -328,17 +309,26 @@ def test_worker_survives_a_failing_queue(tmp_path: Path) -> None:
     doc = doc_id("pl", TEXT)
     blobs.put(text_key(doc), TEXT.encode(), "text/plain")
     queue = FlakyQueue()
-    queue.send({"doc": doc, "lang": "pl"})
+    queue.send(job(doc))
     slept: list[float] = []
     Ingester(blobs, pipelines()).run(queue, stop=lambda: not queue.pending, sleep=slept.append)
     assert slept == [2.0]
-    assert queue.acked == [{"doc": doc, "lang": "pl"}]
+    assert queue.acked == [job(doc)]
 
 
 def test_parse_job_rejects_bad_messages() -> None:
-    assert parse_job('{"doc": "a", "lang": "pl"}') == {"doc": "a", "lang": "pl"}
+    assert parse_job('{"doc": "a", "lang": "pl", "run": "r", "attempt": 2}') == {
+        "doc": "a",
+        "lang": "pl",
+        "run": "r",
+        "attempt": 2,
+    }
     with pytest.raises(InvalidJob):
-        parse_job('{"doc": 1, "lang": "pl"}')
+        parse_job('{"doc": 1, "lang": "pl", "run": "r", "attempt": 1}')
+    with pytest.raises(InvalidJob):
+        parse_job('{"doc": "a", "lang": "pl"}')
+    with pytest.raises(InvalidJob):
+        parse_job('{"doc": "a", "lang": "pl", "run": "r", "attempt": 0}')
     with pytest.raises(InvalidJob):
         parse_job("[]")
 

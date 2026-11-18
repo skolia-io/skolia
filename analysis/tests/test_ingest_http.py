@@ -12,11 +12,17 @@ import pytest
 
 from skolia_analysis.ingest.events import Event, HttpEvents, StartedEvent
 from skolia_analysis.ingest.http import HttpJobs, JobsState, serve
-from skolia_analysis.ingest.jobs import Received
-from skolia_analysis.ingest.schema import Status
+from skolia_analysis.ingest.jobs import JobResult, Received
+from skolia_analysis.ingest.schema import IngestJob, Made
 
-JOB = {"doc": "a" * 64, "lang": "pl"}
-READY: Status = {"state": "ready", "updated": "2026-11-17T10:04:05+00:00"}
+JOB: IngestJob = {"doc": "a" * 64, "lang": "pl", "run": "run-a", "attempt": 1}
+MADE: Made = {
+    "analyzer": "pl/1",
+    "lexicon": "lex/1",
+    "analysis": f"doc/{'a' * 64}/analysis/s2-a1.json.br",
+    "bundle": f"doc/{'a' * 64}/bundle/b1-v1-a1-l1.json.br",
+}
+READY: JobResult = {"outcome": "ready", "made": MADE, "error": None}
 ISO = re.compile(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z")
 IMAGE = "skolia-ingest:test"
 
@@ -66,7 +72,9 @@ def test_a_released_job_comes_back() -> None:
 
 def test_state_lists_running_then_waiting_documents_in_order() -> None:
     jobs = HttpJobs()
-    first, second, third = ({"doc": c * 64, "lang": "pl"} for c in "abc")
+    first, second, third = (
+        {"doc": c * 64, "lang": "pl", "run": f"run-{c}", "attempt": 1} for c in "abc"
+    )
     for job in (first, second, third):
         jobs.add(json.dumps(job))
     state = jobs.state()
@@ -108,6 +116,8 @@ def test_stages_are_recorded_in_order_and_sent_when_finished() -> None:
             "id": running["id"],
             "doc": JOB["doc"],
             "lang": "pl",
+            "run": "run-a",
+            "attempt": 1,
             "image": IMAGE,
             "acceptedAt": running["acceptedAt"],
             "startedAt": running["startedAt"],
@@ -137,12 +147,15 @@ def test_stages_are_recorded_in_order_and_sent_when_finished() -> None:
         "id": running["id"],
         "doc": JOB["doc"],
         "lang": "pl",
+        "run": "run-a",
+        "attempt": 1,
         "image": IMAGE,
         "acceptedAt": running["acceptedAt"],
         "startedAt": running["startedAt"],
         "finishedAt": finished["finishedAt"],
         "outcome": "ready",
         "error": None,
+        "made": MADE,
         "chars": 1200,
         "words": 200,
         "stages": running["stages"],
@@ -153,7 +166,7 @@ def test_stages_are_recorded_in_order_and_sent_when_finished() -> None:
 def test_a_failed_job_is_sent_with_its_error() -> None:
     jobs, recorder = recorded()
     jobs.add(json.dumps(JOB))
-    jobs.ack(started(jobs), {"state": "failed", "updated": "", "error": "no text at x"})
+    jobs.ack(started(jobs), {"outcome": "failed", "made": None, "error": "no text at x"})
     started_event, finished = recorder.events
     assert started_event["kind"] == "started" and finished["kind"] == "finished"
     assert finished["id"] == started_event["id"]
@@ -273,6 +286,8 @@ def event(event_id: str) -> StartedEvent:
         "id": event_id,
         "doc": JOB["doc"],
         "lang": "pl",
+        "run": "run-a",
+        "attempt": 1,
         "image": IMAGE,
         "acceptedAt": "2026-11-17T10:04:05.123Z",
         "startedAt": "2026-11-17T10:04:06.456Z",

@@ -476,7 +476,16 @@ export const Bundle: z.ZodType<types.Bundle> = /* @__PURE__ */ (() => z.object({
 export const IngestJob: z.ZodType<types.IngestJob> = /* @__PURE__ */ (() => z.object({
   doc: z.string(),
   lang: z.string(),
+  run: z.string(),
+  attempt: z.number().int(),
 }).meta({ id: "IngestJob" }))();
+
+export const Made: z.ZodType<types.Made> = /* @__PURE__ */ (() => z.object({
+  analyzer: z.string(),
+  lexicon: z.string(),
+  analysis: z.string(),
+  bundle: z.string(),
+}).meta({ id: "Made" }))();
 
 export const State: z.ZodType<types.State> = /* @__PURE__ */ (() => z.enum(["queued", "analysing", "ready", "failed"]).meta({ id: "State" }))();
 

@@ -1,13 +1,13 @@
-"""The job queue ingest takes from: HttpJobs (http.py), fed by the queue consumer Worker,
-and MemoryQueue for tests."""
+"""The job queue ingest takes from: HttpJobs (http.py), fed by the ingest Worker's
+IngestWorkflow runs, and MemoryQueue for tests."""
 
 from __future__ import annotations
 
 import json
 from collections import deque
-from typing import Literal, Protocol, cast
+from typing import Literal, Protocol, TypedDict, cast
 
-from .schema import IngestJob, Status
+from .schema import IngestJob, Made
 
 Stage = Literal[
     "reading",
@@ -19,6 +19,15 @@ Stage = Literal[
     "compressing-bundle",
     "uploading-bundle",
 ]
+
+
+class JobResult(TypedDict):
+    """How a job ended: what it made, or why it failed. The run that asked for it writes
+    the document's status from it."""
+
+    outcome: Literal["ready", "failed"]
+    made: Made | None
+    error: str | None
 
 
 class InvalidJob(ValueError):
@@ -63,8 +72,8 @@ class JobQueue(Protocol):
         """The next job, waiting up to timeout seconds. None if there's none."""
         ...
 
-    def ack(self, received: Received, status: Status) -> None:
-        """Done with the job, ready or failed as status says: don't deliver it again."""
+    def ack(self, received: Received, result: JobResult) -> None:
+        """Done with the job, ready or failed as result says: don't deliver it again."""
         ...
 
     def release(self, received: Received, error: str) -> None:
@@ -77,10 +86,12 @@ def parse_job(raw: str) -> IngestJob:
     if not isinstance(value, dict):
         raise InvalidJob(f"not an object: {raw!r}")
     fields = cast(dict[str, object], value)
-    doc, lang = fields.get("doc"), fields.get("lang")
-    if not isinstance(doc, str) or not isinstance(lang, str):
-        raise InvalidJob(f"needs string doc and lang: {raw!r}")
-    return {"doc": doc, "lang": lang}
+    doc, lang, run, attempt = (fields.get(k) for k in ("doc", "lang", "run", "attempt"))
+    if not isinstance(doc, str) or not isinstance(lang, str) or not isinstance(run, str):
+        raise InvalidJob(f"needs string doc, lang and run: {raw!r}")
+    if not isinstance(attempt, int) or isinstance(attempt, bool) or attempt < 1:
+        raise InvalidJob(f"needs a positive integer attempt: {raw!r}")
+    return {"doc": doc, "lang": lang, "run": run, "attempt": attempt}
 
 
 class MemoryQueue:
@@ -100,7 +111,7 @@ class MemoryQueue:
         raw = self.pending.popleft()
         return Received(parse_job(raw), raw)
 
-    def ack(self, received: Received, status: Status) -> None:
+    def ack(self, received: Received, result: JobResult) -> None:
         self.acked.append(received.job)
 
     def release(self, received: Received, error: str) -> None:

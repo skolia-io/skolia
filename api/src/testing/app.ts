@@ -6,18 +6,10 @@ import type { DocumentId, DocumentKey, DocumentSummary, Lang, NewClozeInput, Pag
 import { partKey, statusKey, versionsKey } from "@skolia/shared/keys";
 import { allPages, encodeCursor, type Cursor } from "@skolia/shared/page";
 import { createApp, type AppType } from "../app.ts";
-import type { Auth, IngestJobs } from "../ports.ts";
+import type { Auth, IngestJobs, JobQueue } from "../ports.ts";
+import type { IngestParams } from "@skolia/ingest/rpc";
 import { sql } from "@skolia/util/sql";
-import {
-  CloudflareQueue,
-  D1Documents,
-  D1Lexicon,
-  DurableObjectUsers,
-  R2Blobs,
-  lexiconsOf,
-  prepare,
-  type JobsOf,
-} from "../worker/adapters.ts";
+import { IngestRuns, D1Documents, D1Lexicon, DurableObjectUsers, R2Blobs, lexiconsOf, prepare, type JobsOf } from "../worker/adapters.ts";
 import { D1IngestHistory } from "@skolia/ingest/history";
 import { ORIGIN, startLocal, type Local } from "./harness.ts";
 import { body, expectStatus } from "./responses.ts";
@@ -51,7 +43,7 @@ export function setup({ auth = local.auth, at = NOW, jobsOf = async () => null }
     lexicon: new D1Lexicon(lexiconsOf(env)),
     documents: new D1Documents(env.DB.withSession("first-primary")),
     blobs: new R2Blobs(env.BLOBS),
-    queue: new CloudflareQueue(env.INGEST, jobsOf),
+    queue: recordingStarts(new IngestRuns(env.INGEST_WORKFLOW, jobsOf), local.started),
     ingestHistory: new D1IngestHistory(env.INGEST_DB),
     version: "v1.2.3",
     now: () => new Date(at),
@@ -60,6 +52,17 @@ export function setup({ auth = local.auth, at = NOW, jobsOf = async () => null }
 }
 
 export type App = ReturnType<typeof setup>;
+
+/** Notes each run of ingest the API asks for, then starts it */
+function recordingStarts(runs: JobQueue, started: IngestParams[]): JobQueue {
+  return {
+    async start(doc, lang, versions, underWay) {
+      await runs.start(doc, lang, versions, underWay);
+      started.push({ doc, lang });
+    },
+    jobs: (lang) => runs.jobs(lang),
+  };
+}
 
 /** What a language's ingest container answers, idle unless given */
 export function ingestJobs(fields: Partial<IngestJobs> = {}): IngestJobs {

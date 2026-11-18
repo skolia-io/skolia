@@ -1,13 +1,12 @@
 // skolia-api on Cloudflare Workers (api/wrangler.jsonc). Static assets (the reader) are
 // served before the Worker runs, except for /api/*.
 import type { IngestEvent } from "@skolia/shared/api";
-import type { IngestJob } from "@skolia/shared/schema";
 import { createApp } from "../app.ts";
 import { NO_AUTH, createAuth } from "../auth.ts";
-import type { IngesterRpc } from "@skolia/ingest/rpc";
+import type { IngesterRpc, IngestParams } from "@skolia/ingest/rpc";
 import { log } from "@skolia/util/log";
 import type { Auth } from "../ports.ts";
-import { CloudflareQueue, D1Documents, D1Lexicon, DurableObjectUsers, R2Blobs, lexiconsOf, type LexiconBindings } from "./adapters.ts";
+import { IngestRuns, D1Documents, D1Lexicon, DurableObjectUsers, R2Blobs, lexiconsOf, type LexiconBindings } from "./adapters.ts";
 import type { User } from "./user.ts";
 
 export { User } from "./user.ts";
@@ -18,7 +17,8 @@ interface Env extends LexiconBindings {
   DB: D1Database;
   USER: DurableObjectNamespace<User>;
   BLOBS: R2Bucket;
-  INGEST: Queue<IngestJob>;
+  /** The ingest Worker's runs of ingest, one per document and version */
+  INGEST_WORKFLOW: Workflow<IngestParams>;
   /** The ingest Worker's queue state and history */
   INGESTER: DurableObjectNamespace<IngesterRpc>;
   /** wrangler vars (api/wrangler.jsonc); a preview's from infra/preview.py */
@@ -66,7 +66,7 @@ export default {
       version: env.VERSION ?? "dev",
       documents: new D1Documents(env.DB.withSession("first-primary")),
       blobs: new R2Blobs(env.BLOBS),
-      queue: new CloudflareQueue(env.INGEST, (lang) => env.INGESTER.getByName(lang).jobs(lang)),
+      queue: new IngestRuns(env.INGEST_WORKFLOW, (lang) => env.INGESTER.getByName(lang).jobs(lang)),
       ingestHistory: { recent: (limit) => env.INGESTER.getByName("history").recent(limit) },
       now: () => new Date(),
     });

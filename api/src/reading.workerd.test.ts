@@ -2,7 +2,20 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { brotliDecompressSync } from "node:zlib";
 import { docId, statusKey, versionsKey } from "@skolia/shared/keys";
-import { TEXT, client, importText, importer, local, publish, putJson, readyAt, setup, summaryOf, useLocal } from "./testing/app.ts";
+import {
+  TEXT,
+  client,
+  importText,
+  importer,
+  ingestJobs,
+  local,
+  publish,
+  putJson,
+  readyAt,
+  setup,
+  summaryOf,
+  useLocal,
+} from "./testing/app.ts";
 import { body } from "./testing/responses.ts";
 
 useLocal();
@@ -125,6 +138,16 @@ test("a document queued or analysing for too long is queued again", async () => 
   await putJson(statusKey(id), { state: "analysing", updated: "2026-11-03T23:00:00Z" });
   assert.equal((await summaryOf(app, id)).state, "queued");
   assert.equal((await local.takeQueued()).length, 1);
+});
+
+test("a document analysing for long isn't queued again while its container has the job", async () => {
+  const id = await docId("pl", TEXT);
+  const app = setup({ jobsOf: async () => ingestJobs({ running: ["0".repeat(64)], waiting: [id] }) });
+  await importText(app);
+  await local.takeQueued();
+  await putJson(statusKey(id), { state: "analysing", updated: "2026-11-03T23:00:00Z" });
+  assert.equal((await summaryOf(app, id)).state, "analysing");
+  assert.deepEqual(await local.takeQueued(), []);
 });
 
 test("listing a stuck document doesn't queue it again; opening it does", async () => {

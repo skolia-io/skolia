@@ -1,6 +1,7 @@
 """Events about jobs, sent as they happen: one when an attempt at a job starts, one when
 it finishes. The ingest Worker gets them (its container's outbound HTTP to
-SKOLIA_EVENTS_URL goes to it, ingest/src/main.ts) and stores them."""
+SKOLIA_EVENTS_URL goes to it, ingest/src/main.ts), stores them, and tells the job's run
+(ingest/src/workflow.ts), which waits for them."""
 
 from __future__ import annotations
 
@@ -14,6 +15,7 @@ from collections import deque
 from typing import Literal, Protocol, TypedDict
 
 from .jobs import Stage
+from .schema import Made
 
 log = logging.getLogger(__name__)
 
@@ -36,6 +38,8 @@ class StartedEvent(TypedDict):
     id: str
     doc: str
     lang: str
+    run: str
+    attempt: int
     image: str
     acceptedAt: str
     startedAt: str
@@ -46,12 +50,16 @@ class FinishedEvent(TypedDict):
     id: str
     doc: str
     lang: str
+    run: str
+    attempt: int
     image: str
     acceptedAt: str
     startedAt: str
     finishedAt: str
     outcome: Outcome
     error: str | None
+    made: Made | None
+    """What a ready job made; None unless it's ready."""
     chars: int | None
     words: int | None
     stages: list[StageTime]

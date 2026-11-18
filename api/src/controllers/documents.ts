@@ -105,11 +105,12 @@ export async function importText(
   }
   const record = await ownEntry(deps, id, user);
   if (!record) throw new Error(`document ${id} vanished after insert`);
+  const versions = versionsOf(deps.blobs);
   if (known) {
-    const summary = await current(deps, record, versionsOf(deps.blobs), user);
+    const summary = await current(deps, record, versions, user);
     if (summary.state !== "failed") return ok(summary);
   }
-  const queued = await requeue(deps, record, await readStatus(deps.blobs, id), deps.now(), known ? "reimported" : "imported");
+  const queued = await requeue(deps, record, versions, await readStatus(deps.blobs, id), deps.now(), known ? "reimported" : "imported");
   return { status: 202, body: summarize(record, queued, user) };
 }
 
@@ -226,23 +227,35 @@ async function ownEntry(deps: Deps, id: DocumentId, user: User): Promise<StoredD
 }
 
 /** The summary, after queueing the document again if ingest now produces other
- * versions, or if its job seems lost. */
+ * versions, or if its run seems lost: it's been queued or analysing too long, and its
+ * container doesn't have the job. */
 async function current(deps: Deps, record: StoredDocument, versions: VersionsOf, viewer: User | null): Promise<DocumentSummary> {
   const status = await readStatus(deps.blobs, record.id);
   const now = deps.now();
-  if (status !== null) {
-    const reason = isStuck(status, now) ? "stuck" : isOutdated(status, await versions(record.lang)) ? "outdated" : null;
-    if (reason !== null) return summarize(record, await requeue(deps, record, status, now, reason), viewer);
+  if (status === null) return summarize(record, status, viewer);
+  if (isStuck(status, now)) {
+    if (holds(await deps.queue.jobs(record.lang), record.id)) return summarize(record, status, viewer);
+    return summarize(record, await requeue(deps, record, versions, status, now, "stuck"), viewer);
+  }
+  if (isOutdated(status, await versions(record.lang))) {
+    return summarize(record, await requeue(deps, record, versions, status, now, "outdated"), viewer);
   }
   return summarize(record, status, viewer);
 }
 
+/** Whether a language's container has the document's job, waiting or running */
+function holds(jobs: IngestJobs | null, id: DocumentId): boolean {
+  return jobs !== null && [...jobs.running, ...jobs.waiting].includes(id);
+}
+
 type RequeueReason = "imported" | "reimported" | "stuck" | "outdated";
 
-/** Queue the document, keeping the last analysis readable until the new one is ready. */
+/** Queue the document and start a run of ingest for it, keeping the last analysis readable
+ * until the new one is ready. The status is written first: from then on the run writes it. */
 async function requeue(
   deps: Deps,
   record: Pick<StoredDocument, "id" | "lang">,
+  versions: VersionsOf,
   status: Status | null,
   at: Date,
   reason: RequeueReason,
@@ -260,7 +273,8 @@ async function requeue(
     if (value !== undefined) queued[key] = value;
   }
   await deps.blobs.put(statusKey(record.id), JSON.stringify(queued), JSON_TYPE);
-  await deps.queue.send({ doc: record.id, lang: record.lang });
+  // A stuck document's run, if the engine says it's under way, has lost track of its job
+  await deps.queue.start(record.id, record.lang, await versions(record.lang), reason === "stuck" ? "restart" : "leave");
   return queued;
 }
 
@@ -271,9 +285,13 @@ export function isOutdated(status: Status, latest: Versions | null): boolean {
   return nameOf(status.analysis) !== latest.analysis || nameOf(status.bundle) !== latest.bundle;
 }
 
-/** Longer than any job takes (a text at the limit takes about a minute on a laptop),
- * so a document queued or analysing for this long has lost its job. Queueing it again is
- * safe: ingest reuses blobs that already exist. */
+/** Longer than any job takes (a text at the limit takes about a minute on a laptop), and than
+ * a run of ingest goes without its container having the job (it hands it over again after at
+ * most one HEAR_WITHIN, ingest/src/workflow.ts). So a document queued or analysing for this
+ * long, whose container doesn't have it, has lost its run: never started, ended without
+ * writing the status, or stopped (a local wrangler dev restart drops its runs, though it still
+ * lists them as running). Running it again is safe: ingest reuses blobs that already exist,
+ * and any event for the run is for this document and version. */
 export const STUCK_AFTER_MS = 30 * 60 * 1000;
 
 export function isStuck(status: Status, at: Date): boolean {

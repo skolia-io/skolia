@@ -1,8 +1,7 @@
-"""Jobs over HTTP, for the Cloudflare container: a Worker takes each message off the
-queue and POSTs it here, then acks it once it's accepted. Jobs live in memory, so a
-container stopped mid-job loses them; the API queues a document again once it has
-been queued or analysing for too long. Each attempt at a job sends a started and a
-finished event (events.py).
+"""Jobs over HTTP, for the Cloudflare container: a run of the ingest Worker's
+IngestWorkflow POSTs each here, then waits for its events. Jobs live in memory, so a
+container stopped mid-job loses them; the run, hearing nothing, sends it again. Each
+attempt at a job sends a started and a finished event (events.py).
 
   POST /jobs   an IngestJob as JSON -> 202
   GET  /busy   {"busy": bool}: whether a job is waiting or running, so the container
@@ -24,8 +23,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import TypedDict, override
 
 from .events import Events, FinishedEvent, LoggedEvents, Outcome, StageTime, StartedEvent
-from .jobs import InvalidJob, Received, Stage, parse_job
-from .schema import IngestJob, Status
+from .jobs import InvalidJob, JobResult, Received, Stage, parse_job
+from .schema import IngestJob, Made
 
 log = logging.getLogger(__name__)
 
@@ -116,12 +115,16 @@ class _Job:
             "id": self.id,
             "doc": job["doc"],
             "lang": job["lang"],
+            "run": job["run"],
+            "attempt": job["attempt"],
             "image": image,
             "acceptedAt": self.accepted_at,
             "startedAt": self.started_at,
         }
 
-    def finished(self, image: str, outcome: Outcome, error: str | None) -> FinishedEvent:
+    def finished(
+        self, image: str, outcome: Outcome, error: str | None, made: Made | None = None
+    ) -> FinishedEvent:
         job = self.received.job
         assert self.started_at is not None, "finished before it was received"
         return {
@@ -129,12 +132,15 @@ class _Job:
             "id": self.id,
             "doc": job["doc"],
             "lang": job["lang"],
+            "run": job["run"],
+            "attempt": job["attempt"],
             "image": image,
             "acceptedAt": self.accepted_at,
             "startedAt": self.started_at,
             "finishedAt": iso_now(),
             "outcome": outcome,
             "error": None if error is None else error[:MAX_ERROR],
+            "made": made,
             "chars": self._chars,
             "words": self._words,
             "stages": list(self._stages),
@@ -188,11 +194,12 @@ class HttpJobs:
             self._events.send(job.started(self._image))
             return job.received
 
-    def ack(self, received: Received, status: Status) -> None:
+    def ack(self, received: Received, result: JobResult) -> None:
         with self._changed:
             job = self._take(received)
-            outcome: Outcome = "ready" if status["state"] == "ready" else "failed"
-            self._events.send(job.finished(self._image, outcome, status.get("error")))
+            self._events.send(
+                job.finished(self._image, result["outcome"], result["error"], result["made"])
+            )
 
     def release(self, received: Received, error: str) -> None:
         # The next attempt has its own id, since the finished one keeps the old

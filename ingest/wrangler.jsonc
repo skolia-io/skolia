@@ -1,12 +1,13 @@
-// skolia-ingest: the queue consumer and its analysis containers, one per language and image
-// (src/main.ts). Deployed with wrangler, since Terraform's Cloudflare provider
-// has no container resource. The queue and bucket are created by Terraform (infra/).
+// skolia-ingest: each document's runs of ingest (src/workflow.ts) and the analysis containers
+// they hand jobs to, one per language and image (src/main.ts). Deployed with wrangler, since
+// Terraform's Cloudflare provider has no container resource. The queues and bucket are
+// created by Terraform (infra/).
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "skolia-ingest",
   "main": "src/main.ts",
   "compatibility_date": "2026-10-19",
-  // No HTTP handler: it only consumes the queue
+  // No HTTP handler: the API binds its workflow and Ingester
   "workers_dev": false,
   "preview_urls": false,
   "observability": { "enabled": true },
@@ -45,14 +46,12 @@
     // INGEST_EVENTS: the containers' events (the IngestEvents entrypoint), which this Worker
     // consumes into INGEST_DB a batch at a time
     "producers": [{ "binding": "INGEST_EVENTS", "queue": "skolia-ingest-events" }],
-    "consumers": [
-      { "queue": "skolia-ingest", "max_batch_size": 10, "max_retries": 10 },
-      { "queue": "skolia-ingest-events", "max_batch_size": 100, "max_batch_timeout": 5, "max_retries": 10 }
-    ]
+    "consumers": [{ "queue": "skolia-ingest-events", "max_batch_size": 100, "max_batch_timeout": 5, "max_retries": 10 }]
   },
   // The containers' blobs, served to them through an intercept (Blobs in src/main.ts)
   "r2_buckets": [{ "binding": "BLOBS", "bucket_name": "skolia" }],
-  "vars": { "INGEST_EVENTS_QUEUE": "skolia-ingest-events" },
+  // INGEST_WORKFLOW: a run of ingest for a document (src/workflow.ts), started by the API
+  "workflows": [{ "name": "skolia-ingest", "binding": "INGEST_WORKFLOW", "class_name": "IngestWorkflow" }],
   // Deployed as skolia-ingest-staging. Bindings and containers aren't inherited.
   "env": {
     "staging": {
@@ -76,13 +75,10 @@
       "d1_databases": [{ "binding": "INGEST_DB", "database_name": "skolia-ingest-staging", "migrations_dir": "migrations" }],
       "queues": {
         "producers": [{ "binding": "INGEST_EVENTS", "queue": "skolia-ingest-events-staging" }],
-        "consumers": [
-          { "queue": "skolia-ingest-staging", "max_batch_size": 10, "max_retries": 10 },
-          { "queue": "skolia-ingest-events-staging", "max_batch_size": 100, "max_batch_timeout": 5, "max_retries": 10 }
-        ]
+        "consumers": [{ "queue": "skolia-ingest-events-staging", "max_batch_size": 100, "max_batch_timeout": 5, "max_retries": 10 }]
       },
       "r2_buckets": [{ "binding": "BLOBS", "bucket_name": "skolia-staging" }],
-      "vars": { "INGEST_EVENTS_QUEUE": "skolia-ingest-events-staging" }
+      "workflows": [{ "name": "skolia-ingest-staging", "binding": "INGEST_WORKFLOW", "class_name": "IngestWorkflow" }]
     }
   }
 }
