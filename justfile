@@ -11,13 +11,49 @@ _default:
     @just --list
 
 # Typecheck and lint everything
-check:
-    pnpm exec biome ci
-    pnpm check
-    redocly lint api/openapi.json
-    cd analysis && uv run ruff check . && uv run ruff format --check . && uv run pyright
-    terraform -chdir=infra fmt -check -recursive
-    for dir in infra infra/shared infra/tokens; do TF_DATA_DIR=.terraform-validate terraform -chdir=$dir init -backend=false -input=false >/dev/null; TF_DATA_DIR=.terraform-validate terraform -chdir=$dir validate; done
+check: (lint "api") (lint "ingest") (lint "oauth-proxy") (lint "reader") (lint "shared") (lint "util") (lint "analysis") (lint "terraform")
+
+# One project's checks and tests, CI's check job for it: a workspace package's directory, analysis or terraform (infra/plan.py projects)
+check-project project: (lint project) && (unit project)
+    if [ {{ project }} = api ]; then just build; fi
+
+# A project's format check, lints and types
+[private]
+lint project:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    case {{ project }} in
+      analysis)
+        cd analysis
+        uv run ruff check .
+        uv run ruff format --check .
+        uv run pyright
+        ;;
+      terraform)
+        pnpm exec biome ci infra
+        terraform -chdir=infra fmt -check -recursive
+        for dir in infra infra/shared infra/tokens; do
+          TF_DATA_DIR=.terraform-validate terraform -chdir=$dir init -backend=false -input=false >/dev/null
+          TF_DATA_DIR=.terraform-validate terraform -chdir=$dir validate
+        done
+        ;;
+      *)
+        pnpm exec biome ci {{ project }} package.json biome.json
+        pnpm --filter ./{{ project }} run --if-present check
+        if [ {{ project }} = api ]; then redocly lint api/openapi.json; fi
+        ;;
+    esac
+
+# A project's tests; the API's need just build first
+[private]
+unit project:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    case {{ project }} in
+      analysis) cd analysis && uv run pytest -q ;;
+      terraform) ;;
+      *) pnpm --filter ./{{ project }} run --if-present test ;;
+    esac
 
 # Format everything just check checks the format of
 fmt:
@@ -26,9 +62,7 @@ fmt:
     terraform -chdir=infra fmt -recursive
 
 # Unit tests, and the built Worker's Durable Object in workerd
-test: build
-    pnpm test
-    cd analysis && uv run pytest -q
+test: build (unit "api") (unit "ingest") (unit "oauth-proxy") (unit "reader") (unit "shared") (unit "util") (unit "analysis")
 
 # Screenshots of the reader's pages (reader/screenshots) in Playwright's Linux image, so they come
 # out the same on a Mac and in CI. --update-snapshots accepts what changed. --ipc=host, as

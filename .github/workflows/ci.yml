@@ -2,7 +2,7 @@ name: CI
 
 # Every push and pull request, and each merge group in main's merge queue. One plan at the
 # start (infra/plan.py) says what the run needs to do, and every job runs only if it says so:
-# check (just check and just test, which the queue requires), the screenshots and each
+# a check for each project (just check-project, in a matrix), the screenshots and each
 # environment's terraform plan, for what they read that hasn't passed; and the deploys:
 # a pull request's preview, pr-<number> (deploy.yml), deployed and end-to-end tested on each
 # push and torn down when the pull request closes (sweep.yml catches any left); from main,
@@ -92,15 +92,18 @@ jobs:
 
   # The jobs after mirror-providers, which may be skipped, run if it didn't fail
   check:
-    if: ${{ !cancelled() && !failure() && needs.plan.result == 'success' && fromJSON(needs.plan.outputs.plan).check }}
+    if: ${{ !cancelled() && !failure() && needs.plan.result == 'success' && toJSON(fromJSON(needs.plan.outputs.plan).check) != '[]' }}
     needs: [plan, mirror-providers]
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        project: ${{ fromJSON(needs.plan.outputs.plan).check }}
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
-      - run: just check
-      - run: just test
-      - run: python3 -I infra/plan.py passed check
+      - run: just check-project ${{ matrix.project }}
+      - run: python3 -I infra/plan.py passed check-${{ matrix.project }}
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
 
@@ -205,7 +208,7 @@ jobs:
         run: |
           echo "the plan didn't run: ${{ needs.plan.result }}" >&2
           exit 1
-      - if: fromJSON(needs.plan.outputs.plan).check && needs.check.result != 'success'
+      - if: toJSON(fromJSON(needs.plan.outputs.plan).check) != '[]' && needs.check.result != 'success'
         run: |
           echo "check didn't pass: ${{ needs.check.result }}" >&2
           exit 1
