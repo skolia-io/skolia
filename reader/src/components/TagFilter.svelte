@@ -60,6 +60,8 @@
 <style>
   .tag-filter {
     position: relative;
+    /* Keep the menu's anchor at the end of the row when the controls wrap. */
+    margin-inline-start: auto;
   }
 
   summary {
@@ -97,7 +99,7 @@
     z-index: 10;
     display: grid;
     gap: 0.6rem;
-    min-width: 15rem;
+    min-width: min(15rem, calc(100vw - 2 * var(--gutter, 1rem)));
     max-width: calc(100vw - 2 * var(--gutter, 1rem));
     margin-top: 0.3rem;
     padding: 0.6rem;

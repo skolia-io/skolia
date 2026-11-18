@@ -41,6 +41,22 @@ test("explore, tag filter", async ({ page }) => {
   await expect(page).toHaveScreenshot("explore-tag-filter.png");
 });
 
+test("explore, tag menu fits on a narrow phone", async ({ page, isMobile }) => {
+  test.skip(!isMobile, "Uses a narrow touch viewport");
+  const width = 360;
+  await page.setViewportSize({ width, height: 700 });
+  await open(page, "#/");
+  await page.getByLabel("Tags").tap();
+  const menu = page.locator(".tag-filter .menu");
+  await expect(menu).toBeVisible();
+  const bounds = (await menu.boundingBox())!;
+  expect(bounds.x).toBeGreaterThanOrEqual(0);
+  expect(bounds.x + bounds.width).toBeLessThanOrEqual(width);
+  await expect(page).toHaveScreenshot("explore-tag-menu-narrow-phone.png");
+  await menu.getByLabel("level · B1").check();
+  await expect(page.getByText("1 text", { exact: true })).toBeVisible();
+});
+
 test("account menu", async ({ page }) => {
   await open(page, "#/");
   await page.getByRole("button", { name: "Account: Ada Lovelace" }).click();
