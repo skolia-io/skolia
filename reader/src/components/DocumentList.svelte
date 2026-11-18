@@ -16,6 +16,7 @@
     controls,
     empty,
     aside,
+    compactAside = false,
   }: {
     /** The pages loaded so far, undefined while the first loads. */
     documents: readonly DocumentSummary[] | undefined;
@@ -29,7 +30,8 @@
     /** What an empty list says. */
     empty: Snippet;
     /** Beside each text, outside its link. */
-    aside?: Snippet<[DocumentSummary]>;
+    aside?: Snippet<[DocumentSummary]> | undefined;
+    compactAside?: boolean;
   } = $props();
 
   const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" });
@@ -56,7 +58,7 @@
     <ul class="entries">
       {#each documents as doc (`${doc.id}/${doc.importer.id}`)}
         {@const status = badge(doc)}
-        <li class={{ "with-aside": aside !== undefined }}>
+        <li class={{ "with-aside": aside !== undefined, "compact-aside": aside !== undefined && compactAside }}>
           <a class="entry" href={`#/doc/${doc.id}`}>
             <span class="entry-head">
               <span class="entry-title" lang={doc.lang}>{doc.title}</span>
@@ -170,6 +172,15 @@
     min-width: 0;
   }
 
+  .entries li.compact-aside {
+    flex-wrap: nowrap;
+    padding: 0 0.5rem 0 0;
+  }
+
+  .compact-aside .entry {
+    padding: 0.75rem 0.5rem 0.75rem 1rem;
+  }
+
   .entry {
     display: grid;
     grid-template-columns: 1fr auto;
@@ -277,11 +288,11 @@
       justify-self: start;
     }
 
-    .entries li.with-aside {
+    .entries li.with-aside:not(.compact-aside) {
       padding: 0 1rem 0.75rem;
     }
 
-    .with-aside .entry {
+    .with-aside:not(.compact-aside) .entry {
       padding: 0.75rem 0 0.4rem;
     }
   }

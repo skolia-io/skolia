@@ -17,6 +17,7 @@ async function open(
 test("explore, signed out", async ({ page }) => {
   await open(page, "#/", { signedIn: false });
   await expect(page.getByText("Lalka")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Reading list for Lalka" })).toHaveCount(0);
   await expect(page).toHaveScreenshot("explore-signed-out.png", { fullPage: true });
 });
 
@@ -30,6 +31,26 @@ test("my list", async ({ page }) => {
   await open(page, "#/list");
   await expect(page.getByText("Reading now · 1 text")).toBeVisible();
   await expect(page).toHaveScreenshot("my-list.png", { fullPage: true });
+});
+
+test("explore, reading list menu", async ({ page }) => {
+  await open(page, "#/");
+  const trigger = page.getByRole("button", { name: "Reading list for The Tale of Peter Rabbit" });
+  const menu = page.locator("[popover]:popover-open");
+  await trigger.press("Enter");
+  await expect(page.getByRole("button", { name: "To read", exact: true })).toBeVisible();
+  await expect(page).toHaveScreenshot("explore-reading-list-menu.png");
+  await page.keyboard.press("Escape");
+  await expect(trigger).toBeFocused();
+  await trigger.click();
+  await page.getByRole("button", { name: "To read", exact: true }).click();
+  await expect(menu).toBeHidden();
+  await trigger.click();
+  await expect(page.getByRole("button", { name: "To read", exact: true, pressed: true })).toBeVisible();
+  await page.getByRole("button", { name: "Remove from list" }).click();
+  await expect(menu).toBeHidden();
+  await trigger.click();
+  await expect(menu.getByText("Add to reading list")).toBeVisible();
 });
 
 test("explore, tag filter", async ({ page }) => {
