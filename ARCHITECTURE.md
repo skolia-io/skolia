@@ -57,13 +57,13 @@ flowchart LR
   API -->|"RPC: recent jobs"| IDO
   IDO -->|"recent jobs"| IDB
   WF -->|"analyse a job, wait for the result"| IDO
-  WF -->|"status: ready, failed"| R2
+  WF -->|"publish ready or failed: DocumentStatus RPC"| API
   WF -->|"the job's attempts, prune"| IDB
   IDO -->|"POST /jobs, GET /busy, GET /jobs"| CTR
   CTR -->|"GET, PUT http://blobs.internal/{key}, served from the Worker's R2 binding (interceptOutboundHttp)"| R2
 ```
 
-The container answers each job with its result and its attempts: one, or more if storage failed and the job went back in line. The run writes the status first, then adds the attempts to `skolia-ingest` for the analysis page; a failure there is logged, and the document is ready all the same.
+The container answers each job with its result and its attempts: one, or more if storage failed and the job went back in line. The run publishes status through the API's internal `DocumentStatus` service entrypoint (which writes R2 and D1's `document_status` projection), then adds the attempts to `skolia-ingest` for the analysis page; a failure there is logged, and the document is ready all the same.
 
 ```mermaid
 sequenceDiagram
@@ -84,6 +84,7 @@ sequenceDiagram
   DO->>IDB: read recent jobs
 ```
 
+- **List documents:** one indexed D1 query returns entries and their `document_status` projections, including state, readable versions and error. Background migration 1 backfills existing R2 status blobs in resumable batches; only documents not yet projected fall back to R2 during rollout. Missing or malformed blobs get a JSON-null projection, so those don't keep reading R2 after the backfill either. New imports and ingest publications write the projection immediately; ingest has a service binding to the API, never access to its D1 database.
 - **Open a document:** D1 has its metadata and R2's `status.json` the names of its current analysis and bundle, which the reader then fetches from R2 through the API, as stored. Browsers cache them by HTTP (`no-cache` with the blob's key as its ETag), asking before each use, so the API checks the viewer may still see the text and answers 304 without reading R2; there's no IndexedDB yet.
 - **Tap a word:** local, from the bundle already loaded (`shared/lexicon`, `shared/paradigm`). Setting a word's status goes to the User DO.
 - **Review:** the User DO gives the due cards and the API adds their entries from its language's lexicon D1. The DO never reads the lexicon, and the reader's word sheet never reads the lexicon D1s, so the two can show different lexicon versions until a document is re-bundled.
@@ -92,7 +93,7 @@ sequenceDiagram
 - **Analysis page:** each container reports its running and waiting jobs' stages (`GET /jobs`), and each run stores its job's attempts in `skolia-ingest`, its own D1 so the main one stays small. The API shows both, without the texts the viewer can't see.
 - Lexicon lookups only see the rows of each language's version in `loaded`.
 
-Locally, `wrangler dev` runs both Workers and the ingest containers, with local D1, R2 and Workflows. The API reaches them through small interfaces (`api/src/ports.ts`, faked in the tests); ingest reaches the local bucket through the same `blobs.internal` intercept. The API writes `doc/{doc}/status.json` as queued before it starts a run, the run writes it from then on (ready or failed), and the API reads it to tell the reader. The container writes no status: its answer gives the analysis it made. The importer sees analysing while the container runs the job, from its `GET /jobs`.
+Locally, `wrangler dev` runs both Workers and the ingest containers, with local D1, R2 and Workflows. The API reaches them through small interfaces (`api/src/ports.ts`, faked in the tests); ingest reaches the local bucket through the same `blobs.internal` intercept. The API writes `doc/{doc}/status.json` and its D1 projection as queued before it starts a run; the run publishes ready or failed through the API's internal RPC entrypoint from then on. Opening a document reads the blob; listing reads the projection. The container writes no status: its answer gives the analysis it made. The importer sees analysing while the container runs the job, from its `GET /jobs`.
 
 On Cloudflare: Terraform (`infra/`) manages what wrangler doesn't: R2, D1, the queues (unused, until they're deleted) and billing alerts. Both Workers are deployed with wrangler: `skolia` with the reader as static assets on workers.dev and skolia.io (`api/wrangler.jsonc`), and `skolia-ingest` with its containers, one per language (`ingest/wrangler.jsonc`). Wrangler also applies their Durable Object migrations, which the Terraform provider can't do on an update (it resends the first migration and Cloudflare refuses it). A run hands each job to its language's container over HTTP and waits for the answer. The container keeps jobs in memory, sleeps when idle (the Durable Object asks ingest whether it's busy before stopping it), and has the models and lexicon in its image. It has no internet access or R2 credentials: the Durable Object intercepts its requests to `blobs.internal` and serves them from the ingest Worker's R2 binding (`Blobs` in `ingest/src/main.ts`). A job lost with its container is handed over again by its run's retry.
 

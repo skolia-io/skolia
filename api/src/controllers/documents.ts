@@ -32,7 +32,7 @@ const logger = log("documents");
 const NAME = /^[a-z0-9-]{1,64}$/;
 
 /** A page of the entries the viewer can see that the filter keeps. Listing only reads
- * each entry's status; opening one (get) queues it again if it needs it. */
+ * the stored status projection; opening one (get) queues it again if it needs it. */
 export async function list(
   deps: Deps,
   viewer: User | null,
@@ -44,9 +44,11 @@ export async function list(
   return ok({ items: await Promise.all(items.map((r) => listed(deps, r, viewer))), next });
 }
 
-/** An entry as a list shows it, with only its status read. */
+/** Backfill compatibility: only rows not yet projected read a blob. Once migration 1
+ * completes, even missing or malformed statuses have a projection and never read R2. */
 export async function listed(deps: Deps, record: StoredDocument, viewer: User | null): Promise<DocumentSummary> {
-  return summarize(record, await readStatus(deps.blobs, record.id), viewer);
+  const status = record.status === undefined ? await readStatus(deps.blobs, record.id) : record.status;
+  return summarize(record, status, viewer);
 }
 
 /** A page of the documents the user imported, public or private. */
@@ -271,7 +273,7 @@ async function requeue(
     const value = status?.[key];
     if (value !== undefined) queued[key] = value;
   }
-  await deps.blobs.put(statusKey(record.id), JSON.stringify(queued), "application/json");
+  await publishStatus(deps, record.id, queued);
   await deps.queue.start(record.id, record.lang, await versions(record.lang));
   return queued;
 }
@@ -333,7 +335,11 @@ export function parseVersions(raw: string): Versions | null {
   return parseJson(schemas.Versions, raw);
 }
 
-function summarize({ user, importerName, ...record }: StoredDocument, status: Status | null, viewer: User | null): DocumentSummary {
+function summarize(
+  { user, importerName, status: _status, ...record }: StoredDocument,
+  status: Status | null,
+  viewer: User | null,
+): DocumentSummary {
   const summary: DocumentSummary = {
     ...record,
     importer: { id: user, name: importerName },
@@ -346,6 +352,12 @@ function summarize({ user, importerName, ...record }: StoredDocument, status: St
   if (status === null) summary.error = "no status";
   else if (status.error !== undefined) summary.error = status.error;
   return summary;
+}
+
+/** Publish the detail blob and its list projection together. Callers retry on failure. */
+export async function publishStatus(deps: Pick<Deps, "blobs" | "documents">, id: DocumentId, status: Status): Promise<void> {
+  await deps.blobs.put(statusKey(id), JSON.stringify(status), "application/json");
+  await deps.documents.setStatus(id, status);
 }
 
 export async function readStatus(blobs: BlobStore, id: DocumentId): Promise<Status | null> {

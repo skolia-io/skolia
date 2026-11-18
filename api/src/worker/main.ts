@@ -1,6 +1,14 @@
 // skolia-api on Cloudflare Workers (api/wrangler.jsonc). Static assets (the reader) are
 // served before the Worker runs, except for /api/*.
+import { WorkerEntrypoint } from "cloudflare:workers";
+import * as schemas from "@skolia/shared/schemas";
+import type { DocumentId } from "@skolia/shared/api";
+import type { Status } from "@skolia/shared/schema";
+import type { StatusPublisher } from "@skolia/shared/status";
 import { createApp } from "../app.ts";
+import { publishStatus } from "../controllers/documents.ts";
+import { BACKGROUND_MIGRATIONS } from "./background-migrations/index.ts";
+import { runBackgroundMigrations } from "./background-migrations/runner.ts";
 import { NO_AUTH, createAuth } from "../auth.ts";
 import type { IngesterRpc, IngestParams } from "@skolia/ingest/rpc";
 import { log } from "@skolia/util/log";
@@ -11,6 +19,23 @@ import type { User } from "./user.ts";
 export { User } from "./user.ts";
 
 const logger = log("api");
+
+/** Ingest can publish status, but cannot query the user database. Retried by the
+ * workflow if either store fails; the blob remains the detail endpoint's source. */
+export class DocumentStatus extends WorkerEntrypoint<Env> implements StatusPublisher {
+  async publish(id: DocumentId, status: Status): Promise<void> {
+    const doc = schemas.DocumentId.parse(id);
+    const value = schemas.Status.parse(status);
+    await publishStatus(
+      {
+        blobs: new R2Blobs(this.env.BLOBS),
+        documents: new D1Documents(this.env.DB.withSession("first-primary")),
+      },
+      doc,
+      value,
+    );
+  }
+}
 
 interface Env extends LexiconBindings {
   DB: D1Database;
@@ -57,6 +82,9 @@ function authFor(env: Env): Auth {
 }
 
 export default {
+  async scheduled(_event, env) {
+    await runBackgroundMigrations({ db: env.DB.withSession("first-primary"), blobs: new R2Blobs(env.BLOBS) }, BACKGROUND_MIGRATIONS);
+  },
   fetch(request, env, ctx) {
     const app = createApp({
       auth: authFor(env),

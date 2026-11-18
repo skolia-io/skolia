@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { after, before, beforeEach } from "node:test";
 import { brotliCompressSync } from "node:zlib";
 import { hc, type ClientResponse } from "hono/client";
+import * as schemas from "@skolia/shared/schemas";
 import type { DocumentId, DocumentKey, DocumentSummary, Lang, NewClozeInput, Paginated } from "@skolia/shared/api";
 import { partKey, statusKey, versionsKey } from "@skolia/shared/keys";
 import { allPages, encodeCursor, type Cursor } from "@skolia/shared/page";
@@ -69,8 +70,13 @@ export function ingestJobs(fields: Partial<IngestJobs> = {}): IngestJobs {
   return { loading: false, running: [], waiting: [], jobs: [], ...fields };
 }
 
-export function putJson(key: string, value: unknown): Promise<void> {
-  return new R2Blobs(local.env.BLOBS).put(key, JSON.stringify(value), "application/json");
+export async function putJson(key: string, value: unknown): Promise<void> {
+  const id = key.match(/^doc\/([a-f0-9]{64})\/status\.json$/u)?.[1];
+  if (id !== undefined) {
+    await local.env.DOCUMENT_STATUS.publish(schemas.DocumentId.parse(id), schemas.Status.parse(value));
+  } else {
+    await new R2Blobs(local.env.BLOBS).put(key, JSON.stringify(value), "application/json");
+  }
 }
 
 /** The API's typed client (hono/client), sending to the test app, signed in with headers. */

@@ -9,6 +9,7 @@
 import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep, type WorkflowStepConfig } from "cloudflare:workers";
 import { timestamp, type DocumentId } from "@skolia/shared/api";
 import { statusKey } from "@skolia/shared/keys";
+import type { StatusPublisher } from "@skolia/shared/status";
 import type { JobAnswer, JobResult, Status } from "@skolia/shared/schema";
 import * as schemas from "@skolia/shared/schemas";
 import { log } from "@skolia/util/log";
@@ -22,6 +23,7 @@ type Env = {
   INGESTER: DurableObjectNamespace<Ingester>;
   BLOBS: R2Bucket;
   INGEST_DB: D1Database;
+  DOCUMENT_STATUS: StatusPublisher;
 };
 
 // The answer comes once the job has had its turn in the container's line and run: a minute
@@ -49,7 +51,7 @@ export class IngestWorkflow extends WorkflowEntrypoint<Env, IngestParams> {
       answer = { result: { outcome: "failed", analysis: null, error: `ingest didn't answer: ${String(error)}` }, attempts: [] };
     }
     const { result, attempts } = answer;
-    await step.do("publish", STORE, () => setStatus(this.env.BLOBS, doc, result));
+    await step.do("publish", STORE, () => setStatus(this.env.BLOBS, this.env.DOCUMENT_STATUS, doc, result));
     try {
       await step.do("record", STORE, async () => {
         const before = timestamp(new Date(Date.now() - HISTORY_DAYS * DAY_MS));
@@ -65,7 +67,7 @@ export class IngestWorkflow extends WorkflowEntrypoint<Env, IngestParams> {
 
 /** Writes the document's status, ready or failed. A failed one keeps the last analysis's keys,
  * so the reader can still show it. */
-async function setStatus(blobs: R2Bucket, doc: DocumentId, result: JobResult): Promise<void> {
+async function setStatus(blobs: R2Bucket, publisher: StatusPublisher, doc: DocumentId, result: JobResult): Promise<void> {
   const updated = timestamp(new Date());
   const status = await (async (): Promise<Status> => {
     if (result.outcome === "ready" && result.analysis !== null) return { state: "ready", updated, ...result.analysis };
@@ -75,5 +77,5 @@ async function setStatus(blobs: R2Bucket, doc: DocumentId, result: JobResult): P
     const kept = Object.fromEntries(Object.entries({ analyzer, lexicon, analysis, bundle }).filter(([, value]) => value !== undefined));
     return { ...kept, state: "failed", updated, error: result.error ?? "ingest failed without saying why" };
   })();
-  await blobs.put(statusKey(doc), JSON.stringify(status), { httpMetadata: { contentType: "application/json" } });
+  await publisher.publish(doc, status);
 }

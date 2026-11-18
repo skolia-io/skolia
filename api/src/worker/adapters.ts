@@ -279,6 +279,9 @@ const COLUMNS = {
   lang: "document.lang",
   words: "document.words",
   importerName: "user.name",
+  status: select({ status: "status.status" })
+    .from("document_status", "status")
+    .where(eq("status.document_id", col("entry.document_id"))),
   tags: select({ tags: fn.jsonGroupObject("tag.kind", "tag.value") })
     .from("user_document_tag", "tag")
     .where(eq("tag.user_id", col("entry.user_id")), eq("tag.document_id", col("entry.document_id"))),
@@ -533,6 +536,8 @@ export const DOCUMENT_QUERIES = {
   known: compile(knownQuery([{ kind: "level", value: "A1" }])).text,
   visible: compile(visibleQuery(SOME_ENTRY.id, SOMEONE)).text,
   has: compile(hasQuery(SOME_ENTRY.id)).text,
+  setStatus: statusProjectionQuery(SOME_ENTRY.id, null).text,
+  backfillStatus: statusProjectionQuery(SOME_ENTRY.id, null, false).text,
   addContent: compile(addContentQuery({ id: SOME_ENTRY.id, lang: "pl", words: 1 })).text,
   addAttribution: compile(addAttributionQuery(SOME_ENTRY)).text,
   addEntry: compile(addEntryQuery(SOME_ENTRY)).text,
@@ -551,6 +556,14 @@ export const DOCUMENT_QUERIES = {
   annotationsById: compile(annotationsByIdQuery(SOME_ENTRY.id, SOMEONE, [SOME_ANNOTATION.id, SOME_ANNOTATION.id])).text,
   unannotate: unannotateQuery(SOME_ENTRY.id, SOMEONE, SOME_ANNOTATION.id).text,
 } as const;
+
+/** Live publication replaces the projection; a backfill must never replace one. */
+export function statusProjectionQuery(id: DocumentId, status: z.output<typeof schemas.Status> | null, replace = true): Sql {
+  const conflict = replace ? sql`DO UPDATE SET updated_at = excluded.updated_at, status = excluded.status` : sql`DO NOTHING`;
+  return sql`INSERT INTO document_status (document_id, updated_at, status)
+    VALUES (${id}, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), ${JSON.stringify(status)})
+    ON CONFLICT (document_id) ${conflict}`;
+}
 
 export class D1Documents implements DocumentStore {
   private readonly db: D1DatabaseSession;
@@ -604,6 +617,10 @@ export class D1Documents implements DocumentStore {
         return [[document.id, document] as const];
       }),
     );
+  }
+
+  async setStatus(id: DocumentId, status: z.output<typeof schemas.Status>): Promise<void> {
+    await prepare(this.db, statusProjectionQuery(id, status)).run();
   }
 
   async has(id: DocumentId): Promise<boolean> {

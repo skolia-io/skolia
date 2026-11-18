@@ -409,6 +409,14 @@ export const Versions = z.object({
 }) satisfies z.ZodType<VersionsType>;
 
 export const DocumentRow = z.object({
+  // SQL NULL: not projected yet. JSON null: projected, but the blob had no status.
+  status: z.union([
+    z
+      .string()
+      .transform((json) => JSON.parse(json) as unknown)
+      .pipe(Status.nullable()),
+    z.null().transform(() => undefined),
+  ]),
   id: DocumentId,
   title: z.string(),
   lang: Lang,

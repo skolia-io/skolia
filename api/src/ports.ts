@@ -1,6 +1,7 @@
 // What the API needs from its surroundings: D1, R2, the ingest Worker's workflow and a
 // Durable Object per user (src/worker/adapters.ts), Better Auth (src/auth.ts), and fakes in the
 // tests.
+import type { Status } from "@skolia/shared/schema";
 import type {
   Annotation,
   AnnotationFilter,
@@ -78,6 +79,8 @@ export interface StoredDocument extends DocumentEntry {
   readonly lang: Lang;
   readonly words: number;
   readonly importerName: string;
+  /** Undefined only until the background backfill has projected this document. */
+  readonly status: Status | null | undefined;
 }
 
 export interface DocumentStore {
@@ -93,6 +96,8 @@ export interface DocumentStore {
   visible(id: DocumentId, viewer: UserId | null): Promise<StoredDocument | null>;
   /** visible's entry for each of the texts that has one. */
   visibleAll(ids: readonly DocumentId[], viewer: UserId | null): Promise<ReadonlyMap<DocumentId, StoredDocument>>;
+  /** Update the list projection when the status blob is published. */
+  setStatus(id: DocumentId, status: Status): Promise<void>;
   /** Whether the text is stored, whoever imported it. */
   has(id: DocumentId): Promise<boolean>;
   /** Insert the entry, and the content unless it's already there. An existing entry is kept. */

@@ -5,6 +5,7 @@
   "main": "ingest-recorder.ts",
   "compatibility_date": "2026-10-19",
   "d1_databases": [{ "binding": "INGEST_DB", "database_name": "skolia-ingest", "migrations_dir": "../../../ingest/migrations" }],
+  "services": [{ "binding": "DOCUMENT_STATUS", "service": "skolia", "entrypoint": "DocumentStatus" }],
   "workflows": [{ "name": "skolia-ingest", "binding": "INGEST_WORKFLOW", "class_name": "IngestWorkflow" }],
   "durable_objects": {
     "bindings": [{ "name": "INGESTER", "class_name": "Ingester" }]

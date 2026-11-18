@@ -110,6 +110,7 @@ const ANALYSIS = partKey(LALKA, "analysis", "s2-ac973bfbdb066");
 const BUNDLE = partKey(LALKA, "bundle", "b1-v2-ac973bfbdb066-l5da30b8a5747");
 
 const lalka: StoredDocument = {
+  status: null,
   id: LALKA,
   title: "Lalka",
   lang: "pl",
@@ -297,7 +298,10 @@ function listed(
 /** The API's ports, in memory, for one test. Writes the pages make are accepted and
  * forgotten, except settings. */
 function deps(signedIn: boolean, annotations: readonly Annotation[]): Deps {
-  const visible = (viewer: UserIdType | null) => documents.filter((d) => d.visibility === "public" || d.user === viewer);
+  const visible = (viewer: UserIdType | null) =>
+    documents
+      .filter((d) => d.visibility === "public" || d.user === viewer)
+      .map((d) => ({ ...d, status: statuses.find(([id]) => id === d.id)?.[1] ?? null }));
   let settings: Settings = { newLemmasPerDay: 10, newFormsPerDay: 5, formsWithWords: true };
   let kept = listedCards;
   return {
@@ -383,6 +387,7 @@ function deps(signedIn: boolean, annotations: readonly Annotation[]): Deps {
             .map((d) => [d.id, d] as const),
         ),
       has: async (id) => documents.some((d) => d.id === id),
+      setStatus: async () => {},
       add: async () => {},
       update: async () => {},
       remove: async () => {},

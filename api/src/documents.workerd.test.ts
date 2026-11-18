@@ -36,6 +36,9 @@ import {
   type App,
 } from "./testing/app.ts";
 import { body, expectStatus } from "./testing/responses.ts";
+import { BACKGROUND_MIGRATIONS } from "./worker/background-migrations/index.ts";
+import { runBackgroundMigrations } from "./worker/background-migrations/runner.ts";
+import { R2Blobs } from "./worker/adapters.ts";
 
 useLocal();
 
@@ -64,6 +67,47 @@ test("the typed client imports, lists and gets a document, and sees a 404 as not
   const missing = await api.documents[":id"].$get({ param: { id: "0".repeat(64) } });
   assert.equal(missing.status, 404);
   assert.equal(missing.ok, false);
+});
+
+test("listings keep the published status, versions and error without status blobs", async () => {
+  const app = setup();
+  const api = client(app, importer);
+  const { id } = await body("import", api.documents.$post({ json: { text: TEXT, lang: "pl", visibility: "public", licence: "cc0" } }), 202);
+  await readyAt(id, "1");
+  const ready = await body("ready", api.documents[":id"].$get({ param: { id } }));
+  await putJson(statusKey(id), {
+    state: "failed",
+    updated: NOW,
+    error: "ingest failed",
+    analysis: `doc/${id}/analysis/s2-a1.json.br`,
+    bundle: `doc/${id}/bundle/b1-a1-l1.json.br`,
+  });
+  await body("save", api.me["reading-list"][":id"].$put({ param: { id }, json: { status: "to-read" } }));
+  await local.env.BLOBS.delete(statusKey(id));
+  const expected = { ...ready, state: "failed", error: "ingest failed" };
+  assert.deepEqual((await body("mine", api.documents.$get({ query: { mine: "true" } }))).items, [expected]);
+  assert.deepEqual((await body("public", client(app).documents.$get({ query: {} }))).items, [{ ...expected, mine: false }]);
+  const reading = await body("reading list", api.me["reading-list"].$get({ query: { status: "to-read" } }));
+  assert.deepEqual(
+    reading.items.map((entry) => entry.document),
+    [expected],
+  );
+});
+
+test("legacy lists stay readable during backfill and stop needing blobs after it", async () => {
+  const app = setup();
+  const api = client(app, importer);
+  const { id } = await body("import", api.documents.$post({ json: { text: TEXT, lang: "pl" } }), 202);
+  await readyAt(id, "1");
+  await local.env.DB.prepare("DELETE FROM document_status WHERE document_id = ?").bind(id).run();
+  const before = await body("legacy list", api.documents.$get({ query: {} }));
+  assert.equal(before.items[0]?.state, "ready");
+  await runBackgroundMigrations(
+    { db: local.env.DB.withSession("first-primary"), blobs: new R2Blobs(local.env.BLOBS) },
+    BACKGROUND_MIGRATIONS,
+  );
+  await local.env.BLOBS.delete(statusKey(id));
+  assert.deepEqual(await body("backfilled list", api.documents.$get({ query: {} })), before);
 });
 
 test("import stores the text, queues a job and reports queued", async () => {

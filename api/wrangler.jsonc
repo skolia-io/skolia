@@ -13,6 +13,8 @@
   "preview_urls": false,
   // Workers Logs, inherited by env.staging and previews; log events are src/log.ts's
   "observability": { "enabled": true },
+  // Bounded, resumable data migrations, independent of traffic and deploys.
+  "triggers": { "crons": ["* * * * *"] },
   // Runs /api/* near D1 and R2 when that's faster than near the user; assets are still
   // served from the nearest location. Inherited by env.staging and previews.
   "placement": { "mode": "smart" },
@@ -63,6 +65,7 @@
   // Terraform must make it first (just deploy-infra). Deployed as skolia-staging.
   "env": {
     "staging": {
+      "triggers": { "crons": ["* * * * *"] },
       "routes": [{ "pattern": "staging.skolia.io", "custom_domain": true }],
       "d1_databases": [
         {
