@@ -222,7 +222,21 @@ CHECK_RECIPE = (
     "justfile",
     "flake.nix",
     "flake.lock",
+    "biome.json",
 )
+# What a project's tests read outside it, besides its workspace dependencies: the reader's
+# build, which the API's bundle serves (api/wrangler.jsonc assets), the curated texts
+# (api/src/curated.test.ts) and the TypeScript the analysis generates (tests/test_ts_types.py)
+CHECK_READS: dict[str, tuple[str, ...]] = {
+    "api": ("reader", "curated"),
+    "analysis": ("shared/schema.gen.ts", "shared/schema.zod.gen.ts"),
+    "terraform": ("infra", "infra/shared", "infra/tokens", "infra/skolia-ci"),
+}
+
+
+def projects() -> tuple[str, ...]:
+    """What just check-project checks: each workspace package, the analysis and the Terraform."""
+    return (*packages().values(), "analysis", "terraform")
 
 
 @cache
@@ -235,8 +249,17 @@ def targets() -> dict[str, Target]:
             for image, lang in zip(IMAGES, LANGS)
         },
         "worker": Target("build", (".#skolia-worker",)),
-        # just check and just test read everything
-        "check": Target("check", test=(".",)),
+        **{
+            f"check-{project}": Target(
+                "check",
+                test=(
+                    *(() if project == "terraform" else (project,)),
+                    *CHECK_READS.get(project, ()),
+                    *CHECK_RECIPE,
+                ),
+            )
+            for project in projects()
+        },
         "screenshots": Target("check", test=("reader/screenshots", *CHECK_RECIPE)),
         **{
             f"plan-infra-{env}": Target("check", test=(root, *CHECK_RECIPE))
@@ -570,6 +593,7 @@ def plan(planner: Planner, envs: list[str]) -> dict[str, object]:
             ]
             deploys[env]["worker"] = todo["web"] and unbuilt["worker"]
     plan_infra = [env for env in PLAN_INFRA if check[f"plan-infra-{env}"]]
+    projects_needed = [p for p in projects() if check[f"check-{p}"]]
     deploying = any(
         value is True for todo in deploys.values() for value in todo.values()
     )
@@ -581,10 +605,10 @@ def plan(planner: Planner, envs: list[str]) -> dict[str, object]:
         count,
     )
     return {
-        "check": check["check"],
+        "check": projects_needed,
         "screenshots": check["screenshots"],
         "plan_infra": plan_infra,
-        "terraform": check["check"] or bool(plan_infra) or deploying,
+        "terraform": check["check-terraform"] or bool(plan_infra) or deploying,
         "deploys": deploys,
     }
 
