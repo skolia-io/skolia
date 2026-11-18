@@ -32,6 +32,8 @@ import {
   type Timestamp,
   type UserId,
   type ReadingEntry,
+  type ReadingListId,
+  type ReadingList,
   type ReadingFilter,
   type ReadingKey,
   type ReadingStatus,
@@ -151,6 +153,33 @@ export class DurableObjectUsers implements UserData {
     await this.users.getByName(userId).setPosition(documentId, position);
   }
 
+  async readingLists(userId: UserId): Promise<readonly ReadingList[]> {
+    return this.users.getByName(userId).readingLists();
+  }
+  async createReadingList(userId: UserId, id: ReadingListId, name: string, now: Timestamp): Promise<boolean> {
+    return this.users.getByName(userId).createReadingList(id, name, now);
+  }
+  async renameReadingList(userId: UserId, id: ReadingListId, name: string): Promise<boolean> {
+    return this.users.getByName(userId).renameReadingList(id, name);
+  }
+  async deleteReadingList(userId: UserId, id: ReadingListId): Promise<boolean> {
+    return this.users.getByName(userId).deleteReadingList(id);
+  }
+  async readingListMemberships(userId: UserId, documentId: DocumentId): Promise<readonly ReadingListId[]> {
+    return this.users.getByName(userId).readingListMemberships(documentId);
+  }
+  async setReadingListText(
+    userId: UserId,
+    id: ReadingListId,
+    documentId: DocumentId,
+    save: { readonly lang: Lang; readonly addedAt: Timestamp } | null,
+  ): Promise<boolean> {
+    return this.users.getByName(userId).setReadingListText(id, documentId, save);
+  }
+  async readingListTexts(userId: UserId, id: ReadingListId, lang: Lang | undefined, page: PageRequest<ReadingKey>) {
+    return this.users.getByName(userId).readingListTexts(id, lang, page);
+  }
+
   async reading(userId: UserId, documentId: DocumentId): Promise<ReadingEntry | null> {
     return this.users.getByName(userId).reading(documentId);
   }
@@ -163,8 +192,12 @@ export class DurableObjectUsers implements UserData {
     await this.users.getByName(userId).removeReading(documentId);
   }
 
-  async readingList(userId: UserId, filter: ReadingFilter, page: PageRequest<ReadingKey>): Promise<Paginated<StoredReading, ReadingKey>> {
-    return this.users.getByName(userId).readingList(filter, page);
+  async readingProgress(
+    userId: UserId,
+    filter: ReadingFilter,
+    page: PageRequest<ReadingKey>,
+  ): Promise<Paginated<StoredReading, ReadingKey>> {
+    return this.users.getByName(userId).readingProgress(filter, page);
   }
 }
 

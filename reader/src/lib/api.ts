@@ -35,6 +35,9 @@ import {
   type Rating,
   type ListedReading,
   type ReadingEntry,
+  type ReadingListId,
+  type ReadingList,
+  type ReadingListText,
   type ReadingKey,
   type ReadingPosition,
   type ReadingNames,
@@ -331,6 +334,44 @@ export async function listReading(
   after?: Cursor<ReadingKey>,
 ): Promise<Paginated<ListedReading, ReadingKey>> {
   const response = await api.me["reading-list"].$get({ query: { status, after, ...(lang ? { lang } : {}) } });
+  if (!response.ok) throw await failure(response);
+  return response.json();
+}
+
+export async function readingLists(): Promise<readonly ReadingList[]> {
+  const response = await api.me["reading-lists"].$get();
+  if (!response.ok) throw await failure(response);
+  return (await response.json()).lists;
+}
+export async function createReadingList(name: string): Promise<ReadingListId> {
+  const response = await api.me["reading-lists"].$post({ json: { name } });
+  if (!response.ok) throw await failure(response);
+  return (await response.json()).id;
+}
+export async function renameReadingList(listId: ReadingListId, name: string): Promise<void> {
+  const response = await api.me["reading-lists"][":listId"].$patch({ param: { listId }, json: { name } });
+  if (!response.ok) throw await failure(response);
+}
+export async function deleteReadingList(listId: ReadingListId): Promise<void> {
+  const response = await api.me["reading-lists"][":listId"].$delete({ param: { listId } });
+  if (!response.ok) throw await failure(response);
+}
+export async function readingListMemberships(id: DocumentId): Promise<readonly ReadingListId[]> {
+  const response = await api.me["reading-list-memberships"][":id"].$get({ param: { id } });
+  if (!response.ok) throw await failure(response);
+  return (await response.json()).lists;
+}
+export async function setReadingListText(listId: ReadingListId, id: DocumentId, saved: boolean): Promise<void> {
+  const route = api.me["reading-lists"][":listId"].texts[":id"];
+  const response = await (saved ? route.$put({ param: { listId, id } }) : route.$delete({ param: { listId, id } }));
+  if (!response.ok) throw await failure(response);
+}
+export async function readingListTexts(
+  listId: ReadingListId,
+  lang: Lang | undefined,
+  after?: Cursor<ReadingKey>,
+): Promise<Paginated<ReadingListText, ReadingKey>> {
+  const response = await api.me["reading-lists"][":listId"].texts.$get({ param: { listId }, query: { after, ...(lang ? { lang } : {}) } });
   if (!response.ok) throw await failure(response);
   return response.json();
 }

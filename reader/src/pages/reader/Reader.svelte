@@ -23,7 +23,7 @@
   } from "../../lib/position.ts";
   import type { ReaderMode } from "../../lib/mode.ts";
   import { createClozes } from "../../lib/clozes.ts";
-  import { createReadingEntry } from "../../lib/reading-list.ts";
+  import { createReadingEntry } from "../../lib/reading-progress.ts";
   import ReadingStatusMenu from "../../components/ReadingStatusMenu.svelte";
   import { createQuery } from "@tanstack/svelte-query";
   import { audioQuery, userQuery } from "../../lib/queries.ts";

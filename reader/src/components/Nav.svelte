@@ -81,7 +81,7 @@
   <nav id="nav-drawer" popover bind:this={drawer}>
     {@render link("#/", "Explore", page === "explore", ICONS.explore, false)}
     {#if user}
-      {@render link("#/list", "Reading list", page === "list", ICONS.list, false)}
+      {@render link("#/list", "Reading lists", page === "list", ICONS.list, false)}
       {@render link("#/upload", "Upload", page === "upload", ICONS.upload, false)}
       {@render link("#/review", "Review", page === "review", ICONS.review, false)}
     {/if}

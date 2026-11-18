@@ -29,6 +29,8 @@ import type {
   NewCard,
   NewLeft,
   ReadingEntry,
+  ReadingListId,
+  ReadingList,
   ReadingFilter,
   ReadingKey,
   ReadingPosition,
@@ -189,6 +191,24 @@ export interface UserData {
   position(userId: UserId, documentId: DocumentId): Promise<StoredPosition | null>;
   /** Keeps the stored position if it's as new as this one or newer. */
   setPosition(userId: UserId, documentId: DocumentId, position: StoredPosition): Promise<void>;
+  readingLists(userId: UserId): Promise<readonly ReadingList[]>;
+  createReadingList(userId: UserId, id: ReadingListId, name: string, now: Timestamp): Promise<boolean>;
+  renameReadingList(userId: UserId, id: ReadingListId, name: string): Promise<boolean>;
+  deleteReadingList(userId: UserId, id: ReadingListId): Promise<boolean>;
+  readingListMemberships(userId: UserId, documentId: DocumentId): Promise<readonly ReadingListId[]>;
+  setReadingListText(
+    userId: UserId,
+    id: ReadingListId,
+    documentId: DocumentId,
+    save: { readonly lang: Lang; readonly addedAt: Timestamp } | null,
+  ): Promise<boolean>;
+  readingListTexts(
+    userId: UserId,
+    id: ReadingListId,
+    lang: Lang | undefined,
+    page: PageRequest<ReadingKey>,
+  ): Promise<Paginated<{ readonly documentId: DocumentId; readonly addedAt: Timestamp }, ReadingKey> | null>;
+
   /** The text's entry on the reading list, null if it isn't on it. */
   reading(userId: UserId, documentId: DocumentId): Promise<ReadingEntry | null>;
   /** Puts the text on the list with the status, or gives it the status. updatedAt changes
@@ -196,7 +216,7 @@ export interface UserData {
   setReading(userId: UserId, documentId: DocumentId, lang: Lang, status: ReadingStatus, now: Timestamp): Promise<ReadingEntry>;
   removeReading(userId: UserId, documentId: DocumentId): Promise<void>;
   /** A page of the texts on the list that the filter keeps. */
-  readingList(userId: UserId, filter: ReadingFilter, page: PageRequest<ReadingKey>): Promise<Paginated<StoredReading, ReadingKey>>;
+  readingProgress(userId: UserId, filter: ReadingFilter, page: PageRequest<ReadingKey>): Promise<Paginated<StoredReading, ReadingKey>>;
 }
 
 export type StoredPosition = z.output<typeof schemas.StoredPosition>;

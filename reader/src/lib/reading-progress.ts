@@ -21,12 +21,12 @@ function entryQuery(id: DocumentId) {
 
 /** A status's list, a page at a time, in the language or (undefined) all of them. A new
  * language's list shows the last one's until it comes. */
-export function createReadingList(status: ReadingStatus, lang: () => Lang | undefined) {
+export function createReadingProgressPage(status: () => ReadingStatus, lang: () => Lang | undefined) {
   const user = createQuery(() => userQuery);
   return createInfiniteQuery(() => ({
     enabled: user.data != null,
-    queryKey: [...LISTS_KEY, status, lang()] as const,
-    queryFn: ({ pageParam }) => listReading(status, lang(), pageParam),
+    queryKey: [...LISTS_KEY, status(), lang()] as const,
+    queryFn: ({ pageParam }) => listReading(status(), lang(), pageParam),
     initialPageParam: undefined as Cursor<ReadingKey> | undefined,
     getNextPageParam: (page) => page.next ?? undefined,
     placeholderData: keepPreviousData,

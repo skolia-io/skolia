@@ -416,6 +416,9 @@ export type ReadingStatus = (typeof READING_STATUSES)[number];
 /** A text on the user's reading list: its status, when it went on the list, and when its
  * status last changed. */
 export type ReadingEntry = z.output<typeof schemas.ReadingEntry>;
+export type ReadingListId = z.output<typeof schemas.ReadingListId>;
+export type ReadingList = z.output<typeof schemas.ReadingList>;
+export type ReadingListText = z.output<typeof schemas.ReadingListText>;
 
 /** Which texts a page of the reading list keeps: those with the status, and those in the
  * language if one is given. */

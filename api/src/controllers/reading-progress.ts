@@ -44,7 +44,7 @@ export async function list(
   filter: ReadingFilter,
   page: PageRequest<ReadingKey>,
 ): Promise<Ok<Paginated<ListedReading, ReadingKey>>> {
-  const { items, next } = await deps.users.readingList(user.id, filter, page);
+  const { items, next } = await deps.users.readingProgress(user.id, filter, page);
   const documents = await deps.documents.visibleAll(
     items.map((item) => item.documentId),
     user.id,

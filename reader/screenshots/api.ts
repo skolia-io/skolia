@@ -20,6 +20,8 @@ import {
   type LemmaId as LemmaIdType,
   type LexiconEntry,
   type ScheduledCard,
+  type ReadingList,
+  type ReadingListId as ReadingListIdType,
   type Settings,
   type User,
   type UserId as UserIdType,
@@ -27,12 +29,12 @@ import {
 import { LANGUAGES } from "@skolia/shared/lang";
 import { partKey, statusKey, textKey } from "@skolia/shared/keys";
 import type { Blob, Bundle, Status } from "@skolia/shared/schema";
-import { AnnotationId, CardId, DocumentId, LemmaId, Timestamp, UserId } from "@skolia/shared/schemas";
+import { AnnotationId, CardId, DocumentId, LemmaId, ReadingListId, Timestamp, UserId } from "@skolia/shared/schemas";
 
 type Deps = Parameters<typeof createApp>[0];
 type StoredDocument = Awaited<ReturnType<Deps["documents"]["list"]>>["items"][number];
 type StoredBlob = NonNullable<Awaited<ReturnType<Deps["blobs"]["get"]>>>;
-type StoredReading = Awaited<ReturnType<Deps["users"]["readingList"]>>["items"][number];
+type StoredReading = Awaited<ReturnType<Deps["users"]["readingProgress"]>>["items"][number];
 
 const DIST = join(import.meta.dirname, "..", "dist");
 const FIXTURES = join(import.meta.dirname, "fixtures");
@@ -199,7 +201,7 @@ const statuses: readonly (readonly [DocumentIdType, Status])[] = [
 ];
 
 /** The user's reading list: Lalka being read, Le Petit Prince to read. */
-const readingList: readonly StoredReading[] = [
+const readingProgress: readonly StoredReading[] = [
   {
     documentId: LALKA,
     status: "reading",
@@ -323,6 +325,33 @@ function deps(signedIn: boolean, annotations: readonly Annotation[]): Deps {
       .map((d) => ({ ...d, status: statuses.find(([id]) => id === d.id)?.[1] ?? null }));
   let settings: Settings = { newLemmasPerDay: 10, newFormsPerDay: 5, formsWithWords: true };
   let kept = listedCards;
+  let readingLists: readonly ReadingList[] = [
+    "To read",
+    "Book club",
+    "French short stories",
+    "Polish classics",
+    "Weekend reading",
+    "Stories with audio",
+    "Travel",
+    "Poetry",
+    "For a rainy day",
+  ].map((name, index) => ({
+    id: ReadingListId.parse(index === 0 ? "to-read" : `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`),
+    name,
+    textsCount: 0,
+    addedAt: Timestamp.parse(NOW.toISOString()),
+  }));
+  let memberships: readonly {
+    readonly listId: ReadingListIdType;
+    readonly documentId: DocumentIdType;
+    readonly addedAt: ReturnType<typeof Timestamp.parse>;
+  }[] = [
+    { listId: ReadingListId.parse("to-read"), documentId: PETIT_PRINCE.id, addedAt: Timestamp.parse(NOW.toISOString()) },
+    { listId: readingLists[1]!.id, documentId: PETIT_PRINCE.id, addedAt: Timestamp.parse(NOW.toISOString()) },
+    { listId: readingLists[1]!.id, documentId: LALKA, addedAt: Timestamp.parse(NOW.toISOString()) },
+  ];
+  const withCounts = () =>
+    readingLists.map((list) => ({ ...list, textsCount: memberships.filter((item) => item.listId === list.id).length }));
   return {
     auth: {
       handle: async () => new Response(null, { status: 404 }),
@@ -361,10 +390,36 @@ function deps(signedIn: boolean, annotations: readonly Annotation[]): Deps {
       setSettings: async (_userId, next) => {
         settings = next;
       },
+      readingLists: async () => withCounts(),
+      createReadingList: async (_userId, id, name, addedAt) => {
+        readingLists = [...readingLists, { id, name, addedAt, textsCount: 0 }];
+        return true;
+      },
+      renameReadingList: async (_userId, id, name) => {
+        readingLists = readingLists.map((list) => (list.id === id ? { ...list, name } : list));
+        return true;
+      },
+      deleteReadingList: async (_userId, id) => {
+        readingLists = readingLists.filter((list) => list.id !== id);
+        memberships = memberships.filter((item) => item.listId !== id);
+        return true;
+      },
+      readingListMemberships: async (_userId, id) => memberships.filter((item) => item.documentId === id).map((item) => item.listId),
+      setReadingListText: async (_userId, listId, documentId, save) => {
+        memberships = memberships.filter((item) => item.listId !== listId || item.documentId !== documentId);
+        if (save) memberships = [...memberships, { listId, documentId, addedAt: save.addedAt }];
+        return true;
+      },
+      readingListTexts: async (_userId, listId, lang) => ({
+        items: memberships.filter(
+          (item) => item.listId === listId && (lang === undefined || documents.find((doc) => doc.id === item.documentId)?.lang === lang),
+        ),
+        next: null,
+      }),
       position: async () => null,
       setPosition: async () => {},
       reading: async (_userId, id) => {
-        const found = readingList.find((r) => r.documentId === id);
+        const found = readingProgress.find((r) => r.documentId === id);
         return found ? { status: found.status, addedAt: found.addedAt, updatedAt: found.updatedAt } : null;
       },
       setReading: async (_userId, _id, _lang, status) => ({
@@ -374,8 +429,8 @@ function deps(signedIn: boolean, annotations: readonly Annotation[]): Deps {
       }),
       removeReading: async () => {},
       // One page: there are only a few
-      readingList: async (_userId, { status, lang }) => ({
-        items: readingList.filter(
+      readingProgress: async (_userId, { status, lang }) => ({
+        items: readingProgress.filter(
           (r) => r.status === status && (lang === undefined || documents.find((d) => d.id === r.documentId)?.lang === lang),
         ),
         next: null,

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { READING_STATUSES, type DocumentId, type ReadingStatus } from "@skolia/shared/api";
-  import { READING_STATUS_LABELS, createReadingChange } from "../lib/reading-list.ts";
+  import { READING_STATUS_LABELS, createReadingChange } from "../lib/reading-progress.ts";
+  import SaveToLists from "./SaveToLists.svelte";
 
   /** A text's status on the reading list, null when it isn't on it, and a menu to change it. */
   let { id, status }: { id: DocumentId; status: ReadingStatus | null } = $props();
@@ -16,10 +17,11 @@
 </script>
 
 <span class="reading-status">
-  <select class={{ on: shown !== null }} value={shown ?? ""} aria-label="Reading list" disabled={change.isPending} {onchange}>
-    <option value="">{shown === null ? "Add to list" : "Remove from list"}</option>
+  <SaveToLists {id} />
+  <select class={{ on: shown !== null }} value={shown ?? ""} aria-label="Reading progress" disabled={change.isPending} {onchange}>
+    <option value="">{shown === null ? "Reading progress" : "Clear progress"}</option>
     {#each READING_STATUSES as s (s)}
-      <option value={s}>{READING_STATUS_LABELS[s]}</option>
+      <option value={s}>{s === "to-read" ? "Not started" : READING_STATUS_LABELS[s]}</option>
     {/each}
   </select>
   {#if change.error}
@@ -31,6 +33,7 @@
   .reading-status {
     display: inline-flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 0.4rem;
   }
 
