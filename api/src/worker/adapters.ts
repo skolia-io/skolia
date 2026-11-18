@@ -546,11 +546,29 @@ export const DOCUMENT_QUERIES = {
   unannotate: unannotateQuery(SOME_ENTRY.id, SOMEONE, SOME_ANNOTATION.id).text,
 } as const;
 
+const replicaLogger = log("explore-replica");
+
+async function timedRead(db: D1Database | D1DatabaseSession, query: Query | Sql) {
+  const started = performance.now();
+  const { results, meta } = await prepare(db, query).all();
+  return {
+    results,
+    timing: {
+      elapsedMs: performance.now() - started,
+      sqlMs: meta.timings?.sql_duration_ms,
+      region: meta.served_by_region,
+      primary: meta.served_by_primary,
+    },
+  };
+}
+
 export class D1Documents implements DocumentStore {
   private readonly db: D1Database;
+  private readonly replicaProbeContext: Pick<ExecutionContext, "waitUntil"> | undefined;
 
-  constructor(db: D1Database) {
+  constructor(db: D1Database, replicaProbeContext?: Pick<ExecutionContext, "waitUntil">) {
     this.db = db;
+    this.replicaProbeContext = replicaProbeContext;
   }
 
   async list(
@@ -558,11 +576,26 @@ export class D1Documents implements DocumentStore {
     filter: DocumentFilter,
     page: PageRequest<DocumentKey>,
   ): Promise<Paginated<StoredDocument, DocumentKey>> {
-    const rows = (await this.all(listQuery(viewer, filter, page))).map((row) => schemas.DocumentRow.parse(row));
+    const query = listQuery(viewer, filter, page);
+    const results =
+      viewer === null && this.replicaProbeContext ? await this.probeList(query, this.replicaProbeContext) : await this.all(query);
+    const rows = results.map((row) => schemas.DocumentRow.parse(row));
     return paginate(
       rows.map((item) => ({ item, key: [item.user, item.id] as const })),
       page.limit,
     );
+  }
+
+  private async probeList(query: Query | Sql, ctx: Pick<ExecutionContext, "waitUntil">) {
+    const primary = timedRead(this.db, query);
+    // A replica can lag behind a visibility change. Only the primary supplies response rows.
+    ctx.waitUntil(
+      (async () => {
+        const [baseline, candidate] = await Promise.all([primary, timedRead(this.db.withSession("first-unconstrained"), query)]);
+        replicaLogger.info("Explore D1 read comparison", { baseline: baseline.timing, candidate: candidate.timing });
+      })().catch((error: unknown) => replicaLogger.warn("Explore D1 read comparison failed", { error })),
+    );
+    return (await primary).results;
   }
 
   async tags(page: PageRequest<TagKey>): Promise<Paginated<AvailableTag, TagKey>> {

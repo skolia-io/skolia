@@ -88,7 +88,7 @@
         }
       ],
       "r2_buckets": [{ "binding": "BLOBS", "bucket_name": "skolia-staging" }],
-      "vars": { "BASE_URL": "https://staging.skolia.io" },
+      "vars": { "BASE_URL": "https://staging.skolia.io", "EXPLORE_D1_REPLICA_PROBE": "true" },
       "queues": {
         "producers": [{ "binding": "INGEST", "queue": "skolia-ingest-staging" }]
       },

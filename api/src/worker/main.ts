@@ -32,6 +32,7 @@ interface Env extends LexiconBindings {
   /** infra/plan.py version, a var (just deploy-web) rather than in the bundle, so the bundle's
    * Nix out path doesn't change with it; unset under wrangler dev */
   VERSION?: string;
+  EXPLORE_D1_REPLICA_PROBE?: string;
 }
 
 /** A Better Auth instance per request: it sets itself up on first use and keeps that
@@ -59,12 +60,17 @@ function authFor(env: Env): Auth {
 
 export default {
   fetch(request, env, ctx) {
+    const probeReplica =
+      env.EXPLORE_D1_REPLICA_PROBE === "true" &&
+      request.method === "GET" &&
+      new URL(request.url).pathname === "/api/documents" &&
+      request.headers.get("X-Skolia-D1-Replica-Probe") === "1";
     const app = createApp({
       auth: authFor(env),
       users: new DurableObjectUsers(env.USER),
       lexicon: new D1Lexicon(lexiconsOf(env)),
       version: env.VERSION ?? "dev",
-      documents: new D1Documents(env.DB),
+      documents: new D1Documents(env.DB, probeReplica ? ctx : undefined),
       blobs: new R2Blobs(env.BLOBS),
       queue: new CloudflareQueue(env.INGEST, (lang) => env.INGESTER.getByName(lang).jobs(lang)),
       ingestHistory: { recent: (limit) => env.INGESTER.getByName("history").recent(limit) },
