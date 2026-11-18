@@ -17,6 +17,7 @@ wrangler() { "$root/infra/wrangler.sh" account "$@"; }
 
 web=skolia-$env
 ingest=skolia-ingest-$env
+internal=skolia-internal-$env
 queue=skolia-ingest-$env
 events=skolia-ingest-events-$env
 bucket=skolia-documents-$env
@@ -49,6 +50,10 @@ done <<<"$containers"
 if grep -qx "$web" <<<"$workers"; then
   wrangler delete "$web" </dev/null
 fi
+# Ingest's service binding must be gone before its internal API target.
+if grep -qx "$internal" <<<"$workers"; then
+  wrangler delete "$internal" </dev/null
+fi
 
 if grep -qx "$bucket" <<<"$buckets"; then
   keys=$(r2_keys "$bucket")
@@ -61,5 +66,5 @@ fi
 
 TF_IN_AUTOMATION=1 "$root/infra/tf.sh" "$env" destroy -auto-approve -input=false
 cf DELETE "r2/buckets/skolia-tfstate/objects/skolia-$env.tfstate" >/dev/null
-rm -rf "$root/infra/.terraform-$env" "$root/api/wrangler.$env.json" "$root/ingest/wrangler.$env.json"
+rm -rf "$root/infra/.terraform-$env" "$root/api/wrangler.$env.json" "$root/api/wrangler.internal.$env.json" "$root/ingest/wrangler.$env.json"
 echo "$env is gone"

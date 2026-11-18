@@ -56,6 +56,7 @@ export async function startLocal(): Promise<Local> {
     workers: [
       { configPath: "./wrangler.jsonc", env: "", prebuiltWorkerDir: DIST, vars: { MUTABLE_FINAL_USER_MIGRATION: "true" } },
       { configPath: "./src/testing/ingest-recorder.jsonc" },
+      { configPath: "./wrangler.internal.jsonc", env: "" },
     ],
   });
   await server.listen();

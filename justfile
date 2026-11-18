@@ -83,7 +83,7 @@ build:
 openapi:
     node api/src/spec.ts
 
-# wrangler dev (both Workers, the ingest container, local D1/R2/queue) and the reader's Vite server,
+# wrangler dev (all three Workers, the ingest container, local D1/R2/queue) and the reader's Vite server,
 # with the curated texts in curated/ synced once the API is up
 [parallel]
 dev: dev-api dev-reader dev-sync-curated
@@ -111,7 +111,7 @@ dev-api: install images env-local
     for lang in {{ langs }}; do pnpm exec wrangler d1 migrations apply "LEXICON_$(tr a-z A-Z <<<"$lang")" --local --env='' </dev/null; done
     pnpm exec wrangler d1 migrations apply INGEST_DB -c ../ingest/wrangler.jsonc --local --persist-to .wrangler/state --env='' </dev/null
     just load-lexicon local
-    pnpm exec wrangler dev -c wrangler.jsonc -c ../ingest/wrangler.jsonc --port 8787
+    pnpm exec wrangler dev -c wrangler.jsonc -c wrangler.internal.jsonc -c ../ingest/wrangler.jsonc --port 8787
 
 # The Node packages, as pnpm-lock.yaml has them
 install:
@@ -195,12 +195,27 @@ migrate-ci:
 apply env:
     infra/tf.sh {{ env }} apply -input=false
 
-# Terraform and D1 migrations, the ingest Worker, then the skolia Worker: the queue's consumer before its producer
-deploy env: (deploy-infra env) (deploy-ingest env) (deploy-web env)
+# Storage, private API capabilities, ingest, then the public API: dependencies before callers
+deploy env: (deploy-infra env) (deploy-internal env) (deploy-ingest env) (deploy-web env)
 
 # Terraform, then D1 migrations; for a preview, its wrangler configs in between
 deploy-infra env: (deploying env "infra") (apply env) && (migrate env) (deployed env "infra")
     case {{ env }} in pr-*) infra/preview.py config {{ env }} ;; esac
+
+# Private API capabilities have no ingest binding, so fresh previews have no deploy cycle.
+deploy-internal env:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    config="$PWD/api/wrangler.internal.jsonc"
+    case {{ env }} in
+      pr-*)
+        config="$PWD/api/wrangler.internal.{{ env }}.json"
+        [ -f "$config" ] || infra/preview.py config {{ env }}
+        ;;
+    esac
+    infra/plan.py deploying {{ env }} internal
+    infra/wrangler.sh {{ env }} deploy -c "$config"
+    infra/plan.py deployed {{ env }} internal
 
 # The skolia Worker (reader and API) with wrangler, with Terraform's BETTER_AUTH_SECRET and, if set,
 # GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and OAUTH_PROXY_SECRET from the environment (GitHub's, in CI) as its secrets.

@@ -10,6 +10,7 @@ node_modules/
 /api/.env.local
 /.direnv/
 /api/wrangler.pr-*.json
+/api/wrangler.internal.pr-*.json
 /ingest/wrangler.deploy.jsonc
 /ingest/wrangler.pr-*.json
 /reader/test-results/

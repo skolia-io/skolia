@@ -101,7 +101,11 @@ def config(env: str) -> None:
     }
     ingest = promote("../ingest/wrangler.jsonc", env)
     ingest["vars"] = {**as_object(ingest.get("vars", {}), "vars"), "SLEEP_AFTER": PREVIEW_SLEEP_AFTER}
-    configs = {f"api/wrangler.{env}.json": web, f"ingest/wrangler.{env}.json": ingest}
+    configs = {
+        f"api/wrangler.{env}.json": web,
+        f"api/wrangler.internal.{env}.json": promote("wrangler.internal.jsonc", env),
+        f"ingest/wrangler.{env}.json": ingest,
+    }
     for file, content in configs.items():
         text = json.dumps(content, indent=2)
         if "staging" in text:

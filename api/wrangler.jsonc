@@ -13,7 +13,7 @@
   "preview_urls": false,
   // Workers Logs, inherited by env.staging and previews; log events are src/log.ts's
   "observability": { "enabled": true },
-  // Bounded, resumable data migrations, independent of traffic and deploys.
+  // Deploys after all status publishers: backfills never race an old publisher.
   "triggers": { "crons": ["* * * * *"] },
   // Runs /api/* near D1 and R2 when that's faster than near the user; assets are still
   // served from the nearest location. Inherited by env.staging and previews.
