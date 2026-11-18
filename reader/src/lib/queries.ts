@@ -3,7 +3,7 @@
 import { QueryClient, queryOptions, skipToken, type QueryKey } from "@tanstack/svelte-query";
 import type { CardGroup, DocumentId, Lang } from "@skolia/shared/api";
 import { audioAnnotations } from "./annotations.ts";
-import { cardCounts, currentUser, dueCards, getIngest, getSettings, listAnnotations, listTags } from "./api.ts";
+import { cardCounts, currentUser, dueCards, getIngest, getSettings, getVersion, listAnnotations, listTags } from "./api.ts";
 import { shuffled } from "./review.ts";
 
 /** No retries and no refetch on focus: a failure shows at once, as the page's own error. */
@@ -15,6 +15,8 @@ export function newQueryClient(): QueryClient {
 export const userQuery = queryOptions({ queryKey: ["user"], queryFn: currentUser, staleTime: Infinity });
 
 export const tagsQuery = queryOptions({ queryKey: ["tags"], queryFn: listTags, staleTime: Infinity });
+
+export const versionQuery = queryOptions({ queryKey: ["version"], queryFn: getVersion, staleTime: Infinity });
 
 export const settingsQuery = queryOptions({ queryKey: ["me", "settings"], queryFn: getSettings });
 

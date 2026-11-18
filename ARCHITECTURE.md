@@ -125,14 +125,16 @@ flowchart TB
     IMG["ingest-{lang} image"]
   end
   subgraph CI["GitHub Actions (ci.yml, deploy.yml)"]
-    CHK["check"]
-    BII["build-ingest-image (per language)"]
+    PL["plan: what the run needs (infra/plan.py), at its start"]
+    BII["build-ingest-image (per missing image)"]
     DI["deploy-infra: terraform, D1 migrations"]
     LL["load-lexicon"]
     DGI["deploy-ingest"]
+    BW["build-web: skolia-worker"]
     DW["deploy-web, e2e"]
   end
   CX[("Cachix")]
+  CIDB[("D1 skolia-ci: build, deployment")]
   REG[("Cloudflare registry")]
   subgraph CF["Cloudflare"]
     TFR["Terraform: R2, D1 skolia, a lexicon D1 per language, queue, alerts"]
@@ -152,11 +154,18 @@ flowchart TB
   MOD --> IMG
   VENV --> IMG
   LEXN --> IMG
-  CHK --> BII
+  PL --> BII
+  PL --> LL
+  PL --> DGI
+  PL --> BW
+  CIDB -.-> PL
+  BW -->|"bundle, assets"| CX
+  BW --> DW
   BII --> IMG
   BII -->|"lexicon, venv"| CX
   IMG -->|"tag = Nix hash"| REG
-  BII --> DI
+  BII --> LL
+  BII --> DGI
   TFS --> TFR
   DI --> TFR
   DI --> LL
@@ -164,6 +173,7 @@ flowchart TB
   DGI --> DW
   LL --> DW
   CX -.-> LL
+  CX -.-> DW
   LL -->|"wrangler d1 execute"| LXDB
   REG -->|"pinned by digest"| DGI
   DGI --> INGD
@@ -174,6 +184,7 @@ flowchart TB
 - The ingest image has `lexicon-{lang}` but not the cards lexicon. The cards lexicon is built from the lexicon, with Morfeusz's paradigms for Polish.
 - `load-lexicon` only substitutes from Cachix and never fetches the inputs, so it needs the lexicon there; `build-ingest-image` pushes it only when an image is rebuilt.
 - `deploy-web` waits for `load-lexicon` and `deploy-ingest`: the end-to-end tests read the lexicon.
+- Deploys don't wait for `check`. `infra/plan.py` has a dependency graph of projects (each pnpm package by its `package.json`, `analysis/`, `infra/`, `curated/`) and the targets CI builds, checks and deploys, each node keyed by a hash of its Nix content and its build and test dependencies' keys. CI skips each one whose key `skolia-ci` has a row for: in `build` for an image, the skolia Worker's bundle or a check, done once for every environment, and as the environment's last row in `deployment` for Terraform, the ingest Worker, the lexicon, the skolia Worker, the end-to-end tests and the curated sync. Both tables only grow.
 - `schema.gen.ts` is generated from analysis; the blob keys in `shared/keys.ts` are kept in step by hand.
 - A preview loads each language's entries for wordfreq's 3,000 most common words only, and accepts 20 imports a day.
 

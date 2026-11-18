@@ -1,9 +1,12 @@
 <script lang="ts">
+  import { createQuery } from "@tanstack/svelte-query";
   import Page from "../components/Page.svelte";
+  import { versionQuery } from "../lib/queries.ts";
   import { versionUrl } from "../lib/version.ts";
 
-  const version = import.meta.env.VITE_VERSION ?? "dev";
-  const versionLink = versionUrl(version);
+  const query = createQuery(() => versionQuery);
+  const version = $derived(query.data ?? "");
+  const versionLink = $derived(version ? versionUrl(version) : null);
 </script>
 
 <Page title="About">

@@ -118,6 +118,7 @@ migrate env:
 # Load each language's lexicon into its database (staging, production, pr-N or local), from its Nix build for cards.
 # A preview gets each language's entries for wordfreq's 3,000 most common words (infra/load-lexicon.py --sample).
 # A language whose build evaluates to the Nix output D1 last loaded is skipped without building it.
+# With CACHIX_AUTH_TOKEN set (CI), a build is pushed to Cachix, so the next environment substitutes it.
 # flags go to infra/load-lexicon.py (api/scripts/e2e.sh: --sample, --persist-to).
 load-lexicon env *flags:
     #!/usr/bin/env bash
@@ -129,8 +130,18 @@ load-lexicon env *flags:
       state=$(infra/load-lexicon.py {{ env }} --lang "$lang" --built-from "$out" $sample {{ flags }})
       if [ "$state" = current ]; then echo "{{ env }}: $lang already serves $out"; continue; fi
       out=$(nix build --no-link --print-out-paths "$build")
+      if [ -n "${CACHIX_AUTH_TOKEN:-}" ]; then cachix push andyyu2004 "$out"; fi
       infra/load-lexicon.py {{ env }} "$out/$lang.cards.sqlite" --built-from "$out" $sample {{ flags }}
     done
+    if [ {{ env }} != local ]; then infra/plan.py deployed {{ env }} lexicon; fi
+
+# Record in skolia-ci that env now serves this checkout's package (infra/plan.py)
+[private]
+deployed env package:
+    infra/plan.py deployed {{ env }} {{ package }}
+
+# The account's resources that aren't any environment's (infra/shared/), then skolia-ci's tables
+deploy-shared: (apply "shared") migrate-ci && (deployed "shared" "infra-shared")
 
 # skolia-ci's tables (infra/skolia-ci/migrations), after just apply shared made it
 migrate-ci:
@@ -144,23 +155,32 @@ apply env:
 deploy env: (deploy-infra env) (deploy-ingest env) (deploy-web env)
 
 # Terraform, then D1 migrations; for a preview, its wrangler configs in between
-deploy-infra env: (apply env) && (migrate env)
+deploy-infra env: (apply env) && (migrate env) (deployed env "infra")
     case {{ env }} in pr-*) infra/preview.py config {{ env }} ;; esac
 
 # The skolia Worker (reader and API) with wrangler, with Terraform's BETTER_AUTH_SECRET and, if set,
-# GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and OAUTH_PROXY_SECRET from the environment (GitHub's, in CI) as its secrets
+# GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and OAUTH_PROXY_SECRET from the environment (GitHub's, in CI) as its secrets.
+# It uploads the Worker Nix builds (flake.nix skolia-worker), from Cachix if CI's build-web put it there.
+# It records what it deployed (infra/plan.py), which CI skips a deploy for; a changed secret needs a deploy by hand.
 deploy-web env:
     #!/usr/bin/env bash
     set -euo pipefail
-    # The version /api/version and the reader's About page show
-    export VITE_VERSION=$(git describe --tags --always --dirty)
-    pnpm --filter @skolia/reader build
+    # What /api/version and the reader's About page show
+    version=$(infra/plan.py version)
+    out=$(nix build --no-link --print-out-paths .#skolia-worker)
     dir=$(mktemp -d)
     trap 'rm -rf "$dir"' EXIT
     # JSON: wrangler expands $ in a dotenv file
     infra/tf.sh {{ env }} output -raw better_auth_secret | jq -Rn '{BETTER_AUTH_SECRET: input}
       + ({GOOGLE_CLIENT_ID: env.GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET: env.GOOGLE_CLIENT_SECRET, OAUTH_PROXY_SECRET: env.OAUTH_PROXY_SECRET} | with_entries(select((.value // "") != "")))' > "$dir/secrets.json"
-    infra/wrangler.sh {{ env }} deploy --define "VERSION:\"$VITE_VERSION\"" --secrets-file "$dir/secrets.json"
+    # wrangler looks for its config beside a script it's given
+    case {{ env }} in
+      pr-*) config=wrangler.{{ env }}.json; [ -f "api/$config" ] || infra/preview.py config {{ env }} ;;
+      *) config=wrangler.jsonc ;;
+    esac
+    infra/wrangler.sh {{ env }} deploy "$out/worker/main.js" -c "$config" --no-bundle --assets "$out/assets" --var "VERSION:$version" \
+      --secrets-file "$dir/secrets.json"
+    infra/plan.py deployed {{ env }} web
 
 # The previews' Google sign-in (oauth-proxy/), with GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
 # and OAUTH_PROXY_SECRET from the environment (the oauth-proxy GitHub environment's, in CI) as its secrets
@@ -171,7 +191,8 @@ deploy-oauth-proxy:
     trap 'rm -rf "$dir"' EXIT
     jq -n '{GOOGLE_CLIENT_ID: env.GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET: env.GOOGLE_CLIENT_SECRET, OAUTH_PROXY_SECRET: env.OAUTH_PROXY_SECRET}
       | if any(.[]; (. // "") == "") then error("GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and OAUTH_PROXY_SECRET must be set") end' > "$dir/secrets.json"
-    cd oauth-proxy && pnpm exec wrangler deploy --secrets-file "$dir/secrets.json"
+    (cd oauth-proxy && pnpm exec wrangler deploy --secrets-file "$dir/secrets.json")
+    infra/plan.py deployed shared oauth-proxy
 
 # Build, push and deploy the ingest container
 deploy-ingest env:
@@ -193,7 +214,8 @@ e2e env="local":
     E2E_API_KEY=$(openssl rand -hex 32) E2E_USER_KEY=$(openssl rand -hex 32)
     export E2E_API_KEY E2E_USER_KEY
     just d1-sql {{ env }} api/src/e2e-keys.ts
-    node api/src/e2e.ts "$url" "$(git describe --tags --always --dirty)"
+    node api/src/e2e.ts "$url" "$(infra/plan.py version)"
+    infra/plan.py deployed {{ env }} e2e
 
 # Make the curated user's documents match curated/ (api/src/sync-curated.ts); with --check, only list what that takes.
 # A preview gets 5 of the texts (--sample), spread over languages, kinds and annotations.
@@ -207,6 +229,7 @@ sync-curated env *flags:
     just d1-sql {{ env }} api/src/sync-curated-key.ts
     case {{ env }} in pr-*) sample="--sample 5" ;; *) sample= ;; esac
     node api/src/sync-curated.ts "$url" curated $sample {{ flags }}
+    case "{{ env }} {{ flags }}" in local* | *--check*) ;; *) infra/plan.py deployed {{ env }} curated ;; esac
 
 # The environment's URL
 [private]

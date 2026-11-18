@@ -15,9 +15,6 @@ export { User } from "./user.ts";
 
 const logger = log("api");
 
-/** Replaced at build time (wrangler.jsonc define, justfile deploy-web) */
-declare const VERSION: string;
-
 interface Env extends LexiconBindings {
   DB: D1Database;
   USER: DurableObjectNamespace<User>;
@@ -35,6 +32,9 @@ interface Env extends LexiconBindings {
   /** A preview's (infra/preview.py): the OAuth proxy's URL (oauth-proxy/), where its Google sign-in goes */
   OAUTH_PROXY_URL?: string;
   OAUTH_PROXY_SECRET?: string;
+  /** infra/plan.py version, a var (just deploy-web) rather than in the bundle, so the bundle's
+   * Nix out path doesn't change with it; unset under wrangler dev */
+  VERSION?: string;
 }
 
 /** A Better Auth instance per request: it sets itself up on first use and keeps that
@@ -66,7 +66,7 @@ export default {
       auth: authFor(env),
       users: new DurableObjectUsers(env.USER),
       lexicon: new D1Lexicon(lexiconsOf(env)),
-      version: VERSION,
+      version: env.VERSION ?? "dev",
       documents: new D1Documents(env.DB),
       blobs: new R2Blobs(env.BLOBS),
       queue: new CloudflareQueue(env.INGEST, (lang) => env.INGESTER.getByName(lang).jobs(lang)),

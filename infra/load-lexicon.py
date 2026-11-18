@@ -172,11 +172,24 @@ def clean(target: Target, version: str) -> None:
     delete = f"DELETE FROM entry WHERE (lemma_id, version) IN ({batch})"
     # wrangler's local output doesn't count a delete's changes, so ask what's left
     count = f"SELECT count(*) AS n {old}"
+    replaced = ", ".join(old_versions(target, version)) or "older versions"
     while (left := remaining(target, count)) > 0:
-        print(f"{target.env}: deleting {left} old {target.lang} rows")
+        print(f"{target.env}: deleting {target.lang} {replaced}, {left} rows left")
         wrangler(target, "--command", delete)
     # A few thousand rows per version
     wrangler(target, "--command", f"DELETE FROM featureset WHERE version != {quote(version)}")
+
+
+def old_versions(target: Target, version: str) -> list[str]:
+    """The versions besides version that still have rows, by their featuresets, which go last."""
+    out = wrangler(
+        target,
+        "--json",
+        "--command",
+        f"SELECT DISTINCT version FROM featureset WHERE version != {quote(version)}",
+    )
+    results = cast(list[dict[str, list[dict[str, str]]]], json.loads(out))
+    return [row["version"] for row in results[0]["results"]]
 
 
 def remaining(target: Target, count: str) -> int:

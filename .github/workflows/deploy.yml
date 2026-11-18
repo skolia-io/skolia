@@ -1,12 +1,15 @@
 name: Deploy
 
-# One environment: Terraform and migrations; then the ingest Worker with the images
-# ci.yml's build-ingest-image pushed; then the skolia Worker (reader and API); then, side
-# by side, the end-to-end tests (e2e) and the curated texts in curated/ (sync-curated,
-# sync-curated.yml). The ingest Worker consumes the queue the skolia Worker feeds, so it goes
-# first. Called by ci.yml, after the images are built. wrangler leaves an unchanged image
-# as it is. The lexicon loads beside them, after the migrations; it's skipped when D1
-# already has its version. Previews (pr-<N>) share one GitHub environment, preview.
+# One environment, as ci.yml's plan (infra/plan.py) says: the images and the skolia
+# Worker's build it says are missing, beside Terraform and migrations; then the ingest Worker
+# and the lexicon; then the skolia Worker (reader and API); then, side by side, the end-to-end
+# tests (e2e) and the curated texts in curated/ (sync-curated, sync-curated.yml). The ingest
+# Worker consumes the queue the skolia Worker feeds, so it goes first. Each job runs only if
+# the plan says its key isn't what the environment has, and records its key once it's done.
+# One deploy of an environment runs at a time (ci.yml's concurrency), so no older deploy
+# lands between the plan and what it skipped. A newer push cancels the run, but a step that
+# changes what's deployed finishes first (.github/uninterruptible.sh). Previews (pr-<N>)
+# share one GitHub environment, preview.
 
 on:
   workflow_call:
@@ -14,13 +17,17 @@ on:
       env:
         type: string
         required: true
+      plan:
+        description: The environment's plan, from ci.yml's (infra/plan.py plan)
+        type: string
+        required: true
     outputs:
-      url:
-        description: The environment's URL, set once the skolia Worker's deployed, even if a later step fails
-        value: ${{ jobs.deploy-web.outputs.url }}
+      serving:
+        description: true once the skolia Worker's deployed or current, even if a later step fails
+        value: ${{ (jobs.deploy-web.outputs.deployed || !fromJSON(inputs.plan).web) && 'true' || '' }}
       e2e:
-        description: The end-to-end tests' result (success, failure or cancelled), empty if they didn't run
-        value: ${{ jobs.e2e.outputs.result }}
+        description: The end-to-end tests' result (success, failure or cancelled), current if they passed against what's deployed before, empty if they didn't run
+        value: ${{ jobs.e2e.outputs.result || (!fromJSON(inputs.plan).e2e && 'current') || '' }}
 
 permissions:
   contents: read
@@ -31,12 +38,45 @@ env:
   CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
 
 jobs:
+  # The images are named by their inputs, not the environment, so one built for a preview
+  # serves staging and production too
+  build-ingest-image:
+    if: toJSON(fromJSON(inputs.plan).images) != '[]'
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        lang: ${{ fromJSON(inputs.plan).images }}
+    steps:
+      - uses: actions/checkout@v7
+      # The model downloads read HF_TOKEN (impureEnvVars) from the daemon, not this job
+      - uses: ./.github/actions/setup
+        with:
+          nix-conf: |
+            extra-experimental-features = configurable-impure-env
+            impure-env = HF_TOKEN=${{ secrets.HF_TOKEN }}
+      - run: infra/deploy-ingest.sh build ${{ matrix.lang }}
+        env:
+          CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+
+  # The skolia Worker (flake.nix skolia-worker), into Cachix for deploy-web, while what it
+  # waits for runs; built once for every environment
+  build-web:
+    if: fromJSON(inputs.plan).worker
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
+      - run: |
+          nix build --no-link --print-out-paths .#skolia-worker | cachix push andyyu2004
+          infra/plan.py built worker
+        env:
+          CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+
   deploy-infra:
+    if: fromJSON(inputs.plan).infra
     runs-on: ubuntu-24.04
     environment: ${{ startsWith(inputs.env, 'pr-') && 'preview' || inputs.env }}
-    concurrency:
-      group: deploy-${{ inputs.env }}
-      cancel-in-progress: false
     env:
       TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
       TF_IN_AUTOMATION: "1"
@@ -44,51 +84,45 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
-      - run: just deploy-infra ${{ inputs.env }}
+      - run: .github/uninterruptible.sh just deploy-infra ${{ inputs.env }}
 
-  # The lexicon for cards, built with Nix from the lexicon and venv ci.yml's
-  # build-ingest-image put in Cachix (just load-lexicon)
+  # The lexicon for cards, built with Nix from the lexicon and venv build-ingest-image put
+  # in Cachix (just load-lexicon), so after it when it runs
   load-lexicon:
-    needs: deploy-infra
+    needs: [deploy-infra, build-ingest-image]
+    if: ${{ !cancelled() && !failure() && fromJSON(inputs.plan).lexicon }}
     runs-on: ubuntu-24.04
     environment: ${{ startsWith(inputs.env, 'pr-') && 'preview' || inputs.env }}
-    concurrency:
-      group: load-lexicon-${{ inputs.env }}
-      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
-      - uses: cachix/cachix-action@v17
-        with:
-          name: andyyu2004
-          skipPush: true
       - run: just load-lexicon ${{ inputs.env }}
+        env:
+          CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
 
-  # Reads the R2 credentials from Terraform, so after deploy-infra
+  # After deploy-infra: the queue and bucket must exist
   deploy-ingest:
-    needs: deploy-infra
+    needs: [deploy-infra, build-ingest-image]
+    if: ${{ !cancelled() && !failure() && fromJSON(inputs.plan).ingest }}
     runs-on: ubuntu-24.04
     environment: ${{ startsWith(inputs.env, 'pr-') && 'preview' || inputs.env }}
-    concurrency:
-      group: deploy-ingest-${{ inputs.env }}
-      cancel-in-progress: false
     env:
       TF_IN_AUTOMATION: "1"
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
-      - run: infra/deploy-ingest.sh ${{ inputs.env }} deploy
+      - run: .github/uninterruptible.sh infra/deploy-ingest.sh ${{ inputs.env }} deploy
 
   # After the lexicon is loaded: the end-to-end tests' card and lexicon journeys read it
   deploy-web:
-    needs: [deploy-ingest, load-lexicon]
+    needs: [build-web, deploy-infra, deploy-ingest, load-lexicon]
+    if: ${{ !cancelled() && !failure() && fromJSON(inputs.plan).web }}
     runs-on: ubuntu-24.04
     environment: ${{ startsWith(inputs.env, 'pr-') && 'preview' || inputs.env }}
+    # Shared with sync-curated.yml, so a sync without a deploy waits for one
     concurrency:
       group: deploy-web-${{ inputs.env }}
       cancel-in-progress: false
-    outputs:
-      url: ${{ steps.url.outputs.url }}
     # A preview's wrangler config is made in each job that needs it (infra/wrangler.sh)
     env:
       TF_IN_AUTOMATION: "1"
@@ -97,27 +131,31 @@ jobs:
       GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
       # The preview environment's only: its sign-in goes through the OAuth proxy (oauth-proxy/)
       OAUTH_PROXY_SECRET: ${{ secrets.OAUTH_PROXY_SECRET }}
+    outputs:
+      deployed: ${{ steps.deploy.outputs.deployed }}
     steps:
-      # The tags, for git describe (justfile deploy-web)
+      # The tags and history, for the version
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: ./.github/actions/setup
-      - run: just deploy-web ${{ inputs.env }}
-      - id: url
-        run: echo "url=$(just url ${{ inputs.env }})" >> "$GITHUB_OUTPUT"
+      - id: deploy
+        run: |
+          .github/uninterruptible.sh just deploy-web ${{ inputs.env }}
+          echo "deployed=true" >> "$GITHUB_OUTPUT"
 
+  # A skipped job anywhere before makes success() false, so each job after one that may be
+  # skipped says what it needs: deploy-web deployed or current. Each runs only if the plan
+  # says what it ran against, or its input, changed since it last passed.
   e2e:
     needs: deploy-web
+    if: ${{ !cancelled() && !failure() && fromJSON(inputs.plan).e2e }}
     runs-on: ubuntu-24.04
     environment: ${{ startsWith(inputs.env, 'pr-') && 'preview' || inputs.env }}
-    concurrency:
-      group: e2e-${{ inputs.env }}
-      cancel-in-progress: false
     outputs:
       result: ${{ steps.result.outputs.result }}
     steps:
-      # The tags, for git describe (justfile e2e)
+      # The tags and history, for the version
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
@@ -129,6 +167,7 @@ jobs:
 
   sync-curated:
     needs: deploy-web
+    if: ${{ !cancelled() && !failure() && fromJSON(inputs.plan).curated }}
     uses: ./.github/workflows/sync-curated.yml
     with:
       env: ${{ inputs.env }}

@@ -120,6 +120,13 @@ export async function listDocuments(
   return response.json();
 }
 
+/** The deployed version, which the build doesn't know (api/src/worker/main.ts VERSION). */
+export async function getVersion(): Promise<string> {
+  const response = await api.version.$get();
+  if (!response.ok) throw await failure(response);
+  return (await response.json()).version;
+}
+
 /** The tags that can be given. */
 export function listTags(): Promise<readonly AvailableTag[]> {
   return allPages(async (after?: Cursor<TagKey>) => {

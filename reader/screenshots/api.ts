@@ -400,7 +400,7 @@ function deps(signedIn: boolean, annotations: readonly Annotation[]): Deps {
       jobs: async (lang) => INGEST[lang],
     },
     ingestHistory: { recent: async () => INGEST_HISTORY },
-    version: "screenshots",
+    version: "dev",
     now: () => NOW,
   };
 }

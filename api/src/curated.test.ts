@@ -1,7 +1,6 @@
-// The curated files in curated/, on their own so CI's check-curated job runs them without a
-// build. Only parsed and checked against their kind: fetching a text from its source is
-// left to the sync, so a test doesn't need the network. Inline texts, which aren't fetched,
-// are resolved too.
+// The curated files in curated/. Only parsed and checked against their kind: fetching a
+// text from its source is left to the sync, so a test doesn't need the network. Inline
+// texts, which aren't fetched, are resolved too.
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";

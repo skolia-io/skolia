@@ -1,5 +1,5 @@
 name: Setup
-description: Nix with flake.nix's packages.ci (terraform, just, Node, pnpm and uv), and the JS dependencies
+description: Nix with flake.nix's packages.ci (terraform, just, Node, pnpm and uv), substituting from the andyyu2004 Cachix cache, and the JS dependencies
 inputs:
   nix-conf:
     description: Extra nix.conf lines for the Nix install
@@ -10,6 +10,12 @@ runs:
     - uses: DeterminateSystems/determinate-nix-action@v3
       with:
         extra-conf: ${{ inputs.nix-conf }}
+    # Read only: what's pushed is chosen (deploy-ingest.sh pushes all but the models), and
+    # cachix push reads CACHIX_AUTH_TOKEN where a job sets it
+    - uses: cachix/cachix-action@v17
+      with:
+        name: andyyu2004
+        skipPush: true
     # Fetched in the background while the caches are restored; the build below waits for it
     - run: nohup nix build --no-link .#ci >"$RUNNER_TEMP/nix-ci.log" 2>&1 &
       shell: bash
