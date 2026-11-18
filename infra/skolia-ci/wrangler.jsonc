@@ -1,0 +1,6 @@
+// Only for skolia-ci' migrations (just migrate-ci); no Worker binds it.
+{
+  "name": "skolia-ci",
+  "compatibility_date": "2026-10-19",
+  "d1_databases": [{ "binding": "DB", "database_name": "skolia-ci", "migrations_dir": "migrations" }]
+}

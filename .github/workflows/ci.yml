@@ -312,6 +312,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
       - run: just apply shared
+      - run: just migrate-ci
 
   deploy-staging:
     if: needs.changes.outputs.deploy == 'true' && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))

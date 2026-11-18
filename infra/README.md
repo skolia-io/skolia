@@ -1,6 +1,6 @@
 # infra
 
-Terraform for what wrangler doesn't deploy: per environment, an R2 bucket, D1 databases (the app's, and a lexicon per language), and a queue; and once for the account (`infra/shared/`), billing usage alerts, the provider mirror and the lexicon's sources (`skolia-lexicon-sources`). Both Workers are deployed with wrangler: `skolia` (reader + API, on workers.dev and skolia.io) from `api/wrangler.jsonc`, and `skolia-ingest` with its containers from `ingest/wrangler.jsonc`. Wrangler applies their Durable Object migrations; the provider resends the first migration on every update, which Cloudflare refuses ([cloudflare/terraform-provider-cloudflare#5701](https://github.com/cloudflare/terraform-provider-cloudflare/issues/5701)).
+Terraform for what wrangler doesn't deploy: per environment, an R2 bucket, D1 databases (the app's, and a lexicon per language), and a queue; and once for the account (`infra/shared/`), billing usage alerts, the provider mirror, the lexicon's sources (`skolia-lexicon-sources`) and `skolia-ci`, a D1 of what CI has built and deployed (`build` and `deployment`, which only grow; `infra/skolia-ci/migrations`, applied by `just migrate-ci` after the shared apply). Both Workers are deployed with wrangler: `skolia` (reader + API, on workers.dev and skolia.io) from `api/wrangler.jsonc`, and `skolia-ingest` with its containers from `ingest/wrangler.jsonc`. Wrangler applies their Durable Object migrations; the provider resends the first migration on every update, which Cloudflare refuses ([cloudflare/terraform-provider-cloudflare#5701](https://github.com/cloudflare/terraform-provider-cloudflare/issues/5701)).
 
 Account `22d39fac63e580576e28d9ed133ab62d` (skolia-io, owned by admin@skolia.io). Tokens in `pass` under `cloudflare/skolia-io/22d39fac63e580576e28d9ed133ab62d/`. Terraform comes from `flake.nix` (`nix develop`).
 
@@ -33,7 +33,7 @@ Account `22d39fac63e580576e28d9ed133ab62d` (skolia-io, owned by admin@skolia.io)
 | Terraform state | `skolia.tfstate` | `skolia-staging.tfstate` | `skolia-pr-N.tfstate` |
 | Wrangler | top level of `api/wrangler.jsonc`, `ingest/wrangler.jsonc` | `env.staging` | `api/wrangler.pr-N.json`, `ingest/wrangler.pr-N.json` (generated) |
 
-All are on the same account. What there's one of per account (billing alerts, the provider mirror, the lexicon's sources) is in `infra/shared/`, its own environment `shared` with its own state, `skolia-shared.tfstate`; CI's `deploy-shared` applies it from main when something a plan reads changed. `infra/tf.sh <env>` and `infra/wrangler.sh <env>` run terraform and wrangler for one environment. `api/wrangler.jsonc` names each D1 database and wrangler looks up its id. If the name isn't there, `wrangler deploy` creates it outside Terraform, so Terraform goes first (`deploy-infra`); `d1 migrations apply` fails instead.
+All are on the same account. What there's one of per account (billing alerts, the provider mirror, the lexicon's sources, `skolia-ci`) is in `infra/shared/`, its own environment `shared` with its own state, `skolia-shared.tfstate`; CI's `deploy-shared` applies it from main when something a plan reads changed. `infra/tf.sh <env>` and `infra/wrangler.sh <env>` run terraform and wrangler for one environment. `api/wrangler.jsonc` names each D1 database and wrangler looks up its id. If the name isn't there, `wrangler deploy` creates it outside Terraform, so Terraform goes first (`deploy-infra`); `d1 migrations apply` fails instead.
 
 A new environment: add it to the checks in `tf.sh`, `wrangler.sh` and `deploy-ingest.sh` and to `var.env`, add its `env` blocks, then `infra/tf.sh <env> apply`, and deploy.
 
@@ -92,7 +92,8 @@ By hand, with the credentials above, the same tasks CI runs:
 
 ```fish
 just plan staging
-just apply shared               # billing alerts, provider mirror, lexicon sources
+just apply shared               # billing alerts, provider mirror, lexicon sources, skolia-ci
+just migrate-ci                 # skolia-ci's tables
 just deploy staging              # deploy-infra, deploy-ingest and deploy-web, in order; not load-lexicon
 just deploy-infra staging        # terraform apply, D1 migrations
 just deploy-ingest staging       # build, push and deploy the containers
