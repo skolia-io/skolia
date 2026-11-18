@@ -6,6 +6,7 @@
   const menuId = $props.id();
   const anchorName = `--${menuId}`;
   let opened = $state(false);
+  let expanded = $state(false);
   let menu: HTMLDivElement;
   const entry = createReadingEntry(
     () => id,
@@ -18,6 +19,22 @@
     change.mutate({ id, status: next }, { onSuccess: () => menu.hidePopover() });
   }
 </script>
+
+{#snippet destinations()}
+  {#each READING_STATUSES as option (option)}
+    <button
+      type="button"
+      aria-pressed={status === null ? undefined : status === option}
+      disabled={change.isPending}
+      onclick={() => save(option)}
+    >
+      {READING_STATUS_LABELS[option]}
+      {#if status === option}
+        <span aria-hidden="true">✓</span>
+      {/if}
+    </button>
+  {/each}
+{/snippet}
 
 <button type="button" class="trigger" style:anchor-name={anchorName} popovertarget={menuId} aria-label="Reading list for {title}">
   <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -35,24 +52,24 @@
   bind:this={menu}
   ontoggle={(event) => {
     if (event.newState === "open") opened = true;
+    else expanded = false;
   }}
 >
-  <p class="heading">{status === null ? "Add to reading list" : "Reading list"}</p>
   {#if entry.error}
     <p class="error" role="alert">{entry.error.message}</p>
     <button type="button" onclick={() => void entry.refetch()} disabled={entry.isFetching}>Try again</button>
   {:else if entry.data === undefined}
     <p class="message" role="status">Loading…</p>
   {:else}
-    {#each READING_STATUSES as option (option)}
-      <button type="button" aria-pressed={status === option} disabled={change.isPending} onclick={() => save(option)}>
-        {READING_STATUS_LABELS[option]}
-        {#if status === option}
-          <span aria-hidden="true">✓</span>
-        {/if}
+    {#if status === null}
+      <button type="button" aria-expanded={expanded} aria-controls="{menuId}-destinations" onclick={() => (expanded = !expanded)}>
+        Add to reading list
+        <span class="chevron" aria-hidden="true"></span>
       </button>
-    {/each}
-    {#if status !== null}
+      <div id="{menuId}-destinations" class="destinations" hidden={!expanded}> {@render destinations()} </div>
+    {:else}
+      <p class="heading">Reading list</p>
+      {@render destinations()}
       <button type="button" class="remove" disabled={change.isPending} onclick={() => save(null)}>Remove from list</button>
     {/if}
     {#if change.isPending}
@@ -134,6 +151,29 @@
 
   .dropdown button:hover {
     background: var(--bg);
+  }
+
+  .dropdown button[aria-expanded] {
+    align-items: center;
+  }
+
+  .chevron {
+    width: 0.45rem;
+    height: 0.45rem;
+    margin-right: 0.15rem;
+    border-right: 1.5px solid var(--muted);
+    border-bottom: 1.5px solid var(--muted);
+    rotate: -45deg;
+  }
+
+  [aria-expanded="true"] .chevron {
+    rotate: 45deg;
+  }
+
+  .destinations {
+    margin: 0.15rem 0.35rem 0.2rem 0.65rem;
+    padding-left: 0.35rem;
+    border-left: 1px solid var(--line);
   }
 
   .dropdown button[aria-pressed="true"] {

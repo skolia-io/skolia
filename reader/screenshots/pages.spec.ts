@@ -37,20 +37,29 @@ test("explore, reading list menu", async ({ page }) => {
   await open(page, "#/");
   const trigger = page.getByRole("button", { name: "Reading list for The Tale of Peter Rabbit" });
   const menu = page.locator("[popover]:popover-open");
+  const add = menu.getByRole("button", { name: "Add to reading list" });
+  const toRead = menu.getByRole("button", { name: "To read", exact: true });
   await trigger.press("Enter");
-  await expect(page.getByRole("button", { name: "To read", exact: true })).toBeVisible();
+  await expect(add).toBeVisible();
+  await expect(toRead).toBeHidden();
   await expect(page).toHaveScreenshot("explore-reading-list-menu.png");
+  await add.press("Enter");
+  await expect(toRead).toBeVisible();
+  await expect(page).toHaveScreenshot("explore-reading-list-expanded.png");
   await page.keyboard.press("Escape");
   await expect(trigger).toBeFocused();
   await trigger.click();
-  await page.getByRole("button", { name: "To read", exact: true }).click();
+  await expect(toRead).toBeHidden();
+  await add.click();
+  await toRead.click();
   await expect(menu).toBeHidden();
   await trigger.click();
   await expect(page.getByRole("button", { name: "To read", exact: true, pressed: true })).toBeVisible();
   await page.getByRole("button", { name: "Remove from list" }).click();
   await expect(menu).toBeHidden();
   await trigger.click();
-  await expect(menu.getByText("Add to reading list")).toBeVisible();
+  await expect(add).toBeVisible();
+  await expect(toRead).toBeHidden();
 });
 
 test("explore, tag filter", async ({ page }) => {
