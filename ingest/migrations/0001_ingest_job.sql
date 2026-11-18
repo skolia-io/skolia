@@ -1,5 +1,5 @@
 -- A job an ingest container ran, from the events it sent as it started and as it ended
--- (POST /api/ingest/events, stored by api/src/worker/ingest.ts). A row comes with either:
+-- (POST /api/ingest/events, stored by ingest/src/main.ts). A row comes with either:
 -- the result's columns are null until the job has finished, and stay null for one whose
 -- container stopped first. The events can arrive in either order. retried: storage failed
 -- and the job went back in line, to run again as another job. chars and words are null for

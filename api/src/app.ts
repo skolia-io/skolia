@@ -17,7 +17,7 @@ import * as ingest from "./controllers/ingest.ts";
 import * as positions from "./controllers/positions.ts";
 import * as readingList from "./controllers/reading-list.ts";
 import { fail, ok, type BlobResult, type Failed, type NotModified, type Result } from "./controllers/result.ts";
-import { log } from "./log.ts";
+import { log } from "@skolia/util/log";
 import {
   NOT_SIGNED_IN,
   NO_BODY,

@@ -1,5 +1,6 @@
 packages:
   - api
+  - ingest
   - oauth-proxy
   - reader
   - shared

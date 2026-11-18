@@ -23,7 +23,7 @@ import type { PageRequest } from "@skolia/shared/page";
 import { PART_ENCODING, docId, partKey, statusKey, textKey, versionsKey } from "@skolia/shared/keys";
 import type { Status, Versions } from "@skolia/shared/schema";
 import * as schemas from "@skolia/shared/schemas";
-import { log } from "../log.ts";
+import { log } from "@skolia/util/log";
 import type { BlobStore, Deps, EntryFields, IngestJobs, StoredDocument } from "../ports.ts";
 import { NO_CONTENT, fail, ok, type BlobResult, type Failed, type Json, type NoContent, type NotModified, type Ok } from "./result.ts";
 

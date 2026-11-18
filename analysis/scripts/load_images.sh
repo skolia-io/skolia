@@ -9,7 +9,7 @@ root=$(cd "$(dirname "$0")/../.." && pwd)
 cd "$root"
 
 langs=("$@")
-# The languages in api/wrangler.ingest.jsonc
+# The languages in ingest/wrangler.jsonc
 [ ${#langs[@]} -gt 0 ] || langs=(pl en fr)
 for lang in "${langs[@]}"; do
   name=skolia-ingest-$lang

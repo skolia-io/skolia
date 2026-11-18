@@ -1,6 +1,6 @@
 """Events about jobs, sent as they happen: one when an attempt at a job starts, one when
 it finishes. The ingest Worker gets them (its container's outbound HTTP to
-SKOLIA_EVENTS_URL goes to it, api/src/worker/ingest.ts) and stores them."""
+SKOLIA_EVENTS_URL goes to it, ingest/src/main.ts) and stores them."""
 
 from __future__ import annotations
 

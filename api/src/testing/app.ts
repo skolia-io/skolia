@@ -18,7 +18,7 @@ import {
   prepare,
   type JobsOf,
 } from "../worker/adapters.ts";
-import { D1IngestHistory } from "../worker/ingest-history.ts";
+import { D1IngestHistory } from "@skolia/ingest/history";
 import { ORIGIN, startLocal, type Local } from "./harness.ts";
 import { body, expectStatus } from "./responses.ts";
 

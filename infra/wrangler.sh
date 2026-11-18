@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # wrangler for one environment: wrangler.sh <staging|production|pr-N|account> <wrangler args...>
-# Production is the top level of api/wrangler*.jsonc; staging is their "env" blocks. A
-# preview, pr-N, has configs of its own made from staging's by infra/preview.py
-# (wrangler.pr-N.json, wrangler.ingest.pr-N.json), made here if missing; a -c in the
-# arguments replaces it. "account" runs wrangler with no config, for account-wide
+# Production is the top level of api/wrangler.jsonc and ingest/wrangler.jsonc; staging is
+# their "env" blocks. A preview, pr-N, has configs of its own made from staging's by
+# infra/preview.py (api/wrangler.pr-N.json, ingest/wrangler.pr-N.json), made here if
+# missing; a -c in the arguments replaces it. "account" runs wrangler with no config, for account-wide
 # commands (the container registry, teardown.sh). Runs in api/, so -c paths are relative
 # to it.
 set -euo pipefail

@@ -32,6 +32,9 @@ importers:
       '@logtape/logtape':
         specifier: 2.4.2
         version: 2.4.2
+      '@skolia/ingest':
+        specifier: workspace:*
+        version: link:../ingest
       '@skolia/shared':
         specifier: workspace:*
         version: link:../shared
@@ -78,6 +81,25 @@ importers:
       yaml:
         specifier: 2.9.1
         version: 2.9.1
+
+  ingest:
+    dependencies:
+      '@skolia/shared':
+        specifier: workspace:*
+        version: link:../shared
+      '@skolia/util':
+        specifier: workspace:*
+        version: link:../util
+    devDependencies:
+      '@cloudflare/workers-types':
+        specifier: 5.20261104.1
+        version: 5.20261104.1
+      typescript:
+        specifier: 7.0.2
+        version: 7.0.2
+      wrangler:
+        specifier: 4.158.0
+        version: 4.158.0(@cloudflare/workers-types@5.20261104.1)(@types/node@26.6.5)
 
   oauth-proxy:
     dependencies:
@@ -138,7 +160,11 @@ importers:
         specifier: 4.6.7
         version: 4.6.7
 
-  util: {}
+  util:
+    dependencies:
+      '@logtape/logtape':
+        specifier: 2.4.2
+        version: 2.4.2
 
 packages:
 

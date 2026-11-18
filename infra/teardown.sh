@@ -25,7 +25,7 @@ bucket=skolia-$env
 workers=$(cf GET workers/scripts | jq -r '.result[].id')
 consumers=$(cf_pages queues | jq -r --arg q "$queue" 'select(.queue_name == $q) | .consumers[].script')
 event_consumers=$(cf_pages queues | jq -r --arg q "$events" 'select(.queue_name == $q) | .consumers[].script')
-# wrangler delete leaves them. Named skolia-ingest-pr-N (api/wrangler.ingest.jsonc), or
+# wrangler delete leaves them. Named skolia-ingest-pr-N (ingest/wrangler.jsonc), or
 # skolia-ingest-{lang}-pr-N before the durable_object scheduling policy.
 containers=$(wrangler containers list --json |
   jq -r --arg re "^skolia-ingest(-[a-z]+)?-$env\$" '.[] | select(.name | test($re)) | "\(.id) \(.name)"')
@@ -60,5 +60,5 @@ fi
 
 TF_IN_AUTOMATION=1 "$root/infra/tf.sh" "$env" destroy -auto-approve -input=false
 cf DELETE "r2/buckets/skolia-tfstate/objects/skolia-$env.tfstate" >/dev/null
-rm -rf "$root/infra/.terraform-$env" "$root/api/wrangler.$env.json" "$root/api/wrangler.ingest.$env.json"
+rm -rf "$root/infra/.terraform-$env" "$root/api/wrangler.$env.json" "$root/ingest/wrangler.$env.json"
 echo "$env is gone"

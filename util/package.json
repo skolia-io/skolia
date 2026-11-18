@@ -7,9 +7,15 @@
     "./sql": "./sql.ts",
     "./query": "./query.ts",
     "./graph": "./graph.ts",
-    "./semaphore": "./semaphore.ts"
+    "./semaphore": "./semaphore.ts",
+    "./d1": "./d1.ts",
+    "./errors": "./errors.ts",
+    "./log": "./log.ts"
   },
   "scripts": {
     "test": "node --test \"*.test.ts\""
+  },
+  "dependencies": {
+    "@logtape/logtape": "2.4.2"
   }
 }

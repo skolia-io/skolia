@@ -1,0 +1,21 @@
+{
+  "name": "@skolia/ingest",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./history": "./src/history.ts",
+    "./rpc": "./src/rpc.ts"
+  },
+  "scripts": {
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@skolia/shared": "workspace:*",
+    "@skolia/util": "workspace:*"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20261104.1",
+    "typescript": "7.0.2",
+    "wrangler": "4.158.0"
+  }
+}

@@ -1,4 +1,4 @@
-// skolia-ingest on Cloudflare (api/wrangler.ingest.jsonc): consumes the ingest queue
+// skolia-ingest on Cloudflare (ingest/wrangler.jsonc): consumes the ingest queue
 // and hands each job to its language's analysis container (analysis/flake.nix, one
 // image per language, served by analysis/src/skolia_analysis/ingest/http.py), which
 // reads and writes status and blobs in R2 through this Worker's binding (Blobs).
@@ -13,12 +13,12 @@
 // deploy changes an image, new jobs start a container with the new one while the old
 // container finishes its jobs and stops.
 import { DurableObject, WorkerEntrypoint } from "cloudflare:workers";
-import { isLang, timestamp, type IngestEvent, type Lang } from "@skolia/shared/api";
+import { isLang, timestamp, type ContainerJobs, type IngestEvent, type Lang } from "@skolia/shared/api";
 import type { IngestJob } from "@skolia/shared/schema";
 import * as schemas from "@skolia/shared/schemas";
-import { log } from "../log.ts";
-import type { IngestJobs } from "../ports.ts";
-import { D1IngestHistory, receiveEvent } from "./ingest-history.ts";
+import { log } from "@skolia/util/log";
+import { D1IngestHistory, receiveEvent } from "./history.ts";
+import type { IngesterRpc } from "./rpc.ts";
 
 const logger = log("ingest");
 
@@ -81,7 +81,7 @@ function milliseconds(duration: string): number {
  * busy container from an idle one. An alarm asks it instead, SLEEP_AFTER after its last
  * job and then every SLEEP_AFTER while it's busy, and stops it once it's idle.
  */
-export class Ingester extends DurableObject<Env> {
+export class Ingester extends DurableObject<Env> implements IngesterRpc {
   private readonly sleepAfterMs = milliseconds(this.env.SLEEP_AFTER ?? "1m");
   private starting: Promise<void> | null = null;
 
@@ -100,11 +100,11 @@ export class Ingester extends DurableObject<Env> {
 
   /** The language's container's jobs (GET /jobs), on the Ingester named after the
    * language. Null when no container is running; it isn't started to find out. */
-  async jobs(lang: Lang): Promise<IngestJobs | null> {
+  async jobs(lang: Lang): Promise<ContainerJobs | null> {
     return await this.env.INGESTER.getByName(this.image(lang)).state();
   }
 
-  async state(): Promise<IngestJobs | null> {
+  async state(): Promise<ContainerJobs | null> {
     const container = this.ctx.container;
     if (!container?.running) return null;
     let body: unknown;
@@ -172,8 +172,8 @@ export class Ingester extends DurableObject<Env> {
 
   private async start(container: Container, image: string): Promise<void> {
     // Before start: an intercept lasts until the container stops
-    await container.interceptOutboundHttp(BLOBS_HOST, (this.ctx.exports as { Blobs: Fetcher }).Blobs);
-    await container.interceptOutboundHttp(EVENTS_HOST, (this.ctx.exports as { IngestEvents: Fetcher }).IngestEvents);
+    await container.interceptOutboundHttp(BLOBS_HOST, this.ctx.exports.Blobs);
+    await container.interceptOutboundHttp(EVENTS_HOST, this.ctx.exports.IngestEvents);
     container.start({
       image,
       instance: INSTANCE,

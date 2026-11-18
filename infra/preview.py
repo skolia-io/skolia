@@ -4,7 +4,7 @@
 # dependencies = ["json5==0.17.3"]
 # ///
 """Wrangler configs and URL for a preview environment, pr-<N> (one per pull request):
-  preview.py config pr-12   writes api/wrangler.pr-12.json and api/wrangler.ingest.pr-12.json
+  preview.py config pr-12   writes api/wrangler.pr-12.json and ingest/wrangler.pr-12.json
   preview.py url pr-12      prints its workers.dev URL
 Each config is the committed config's env.staging block at the top level, with -pr-12
 for -staging in the names, and no routes: a preview is on
@@ -99,15 +99,15 @@ def config(env: str) -> None:
         "MUTABLE_FINAL_USER_MIGRATION": "true",
         "OAUTH_PROXY_URL": proxy,
     }
-    ingest = promote("wrangler.ingest.jsonc", env)
+    ingest = promote("../ingest/wrangler.jsonc", env)
     ingest["vars"] = {**as_object(ingest.get("vars", {}), "vars"), "SLEEP_AFTER": PREVIEW_SLEEP_AFTER}
-    configs = {f"wrangler.{env}.json": web, f"wrangler.ingest.{env}.json": ingest}
+    configs = {f"api/wrangler.{env}.json": web, f"ingest/wrangler.{env}.json": ingest}
     for file, content in configs.items():
         text = json.dumps(content, indent=2)
         if "staging" in text:
             raise SystemExit(f"{file}: still names staging")
-        (API / file).write_text(f"{text}\n")
-        print(f"api/{file}")
+        (API.parent / file).write_text(f"{text}\n")
+        print(file)
 
 
 def main() -> None:

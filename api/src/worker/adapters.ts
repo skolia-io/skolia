@@ -85,8 +85,8 @@ import type {
   StoredReading,
   UserData,
 } from "../ports.ts";
-import { log } from "../log.ts";
-import { prepare } from "./d1.ts";
+import { prepare } from "@skolia/util/d1";
+import { log } from "@skolia/util/log";
 import type { User } from "./user.ts";
 
 const logger = log("adapters");
@@ -696,7 +696,7 @@ export class R2Blobs implements BlobStore {
 }
 
 /** Asks a language's ingest container for its jobs: the ingest Worker's Ingester
- * (worker/ingest.ts), or a fake in the tests. */
+ * (ingest/src/main.ts), or a fake in the tests. */
 export type JobsOf = (lang: Lang) => Promise<IngestJobs | null>;
 
 export class CloudflareQueue implements JobQueue {

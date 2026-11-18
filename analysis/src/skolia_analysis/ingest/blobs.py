@@ -34,7 +34,7 @@ class Blobs(Protocol):
 
 class HttpBlobs:
     """GET and PUT {base}/{key}. In the container, base is a host the ingest Worker
-    intercepts and serves from its R2 binding (Blobs in api/src/worker/ingest.ts), so the
+    intercepts and serves from its R2 binding (Blobs in ingest/src/main.ts), so the
     container holds no credentials. Not retried here: the worker loop backs off on
     BlobError and puts the job back."""
 

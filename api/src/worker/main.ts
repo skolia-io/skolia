@@ -4,11 +4,11 @@ import type { IngestEvent } from "@skolia/shared/api";
 import type { IngestJob } from "@skolia/shared/schema";
 import { createApp } from "../app.ts";
 import { NO_AUTH, createAuth } from "../auth.ts";
-import { log } from "../log.ts";
+import { D1IngestHistory } from "@skolia/ingest/history";
+import type { IngesterRpc } from "@skolia/ingest/rpc";
+import { log } from "@skolia/util/log";
 import type { Auth } from "../ports.ts";
 import { CloudflareQueue, D1Documents, D1Lexicon, DurableObjectUsers, R2Blobs, lexiconsOf, type LexiconBindings } from "./adapters.ts";
-import type { Ingester } from "./ingest.ts";
-import { D1IngestHistory } from "./ingest-history.ts";
 import type { User } from "./user.ts";
 
 export { User } from "./user.ts";
@@ -23,8 +23,8 @@ interface Env extends LexiconBindings {
   USER: DurableObjectNamespace<User>;
   BLOBS: R2Bucket;
   INGEST: Queue<IngestJob>;
-  /** The ingest Worker's (worker/ingest.ts), for where a document is in its queue */
-  INGESTER: DurableObjectNamespace<Ingester>;
+  /** The ingest Worker's (ingest/src/main.ts), for where a document is in its queue */
+  INGESTER: DurableObjectNamespace<IngesterRpc>;
   /** skolia-ingest's D1 database: the jobs the ingest containers ran */
   INGEST_DB: D1Database;
   /** wrangler vars (api/wrangler.jsonc); a preview's from infra/preview.py */

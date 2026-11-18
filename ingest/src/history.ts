@@ -1,10 +1,9 @@
-// The jobs the ingest containers ran, in skolia-ingest's D1 database (api/ingest-migrations):
+// The jobs the ingest containers ran, in skolia-ingest's D1 database (ingest/migrations):
 // the ingest Worker stores the containers' events, the API reads them.
 import type { IngestEvent, IngestJobRecord, Timestamp } from "@skolia/shared/api";
 import * as schemas from "@skolia/shared/schemas";
+import { prepare } from "@skolia/util/d1";
 import { sql, type Sql } from "@skolia/util/sql";
-import type { IngestHistory } from "../ports.ts";
-import { prepare } from "./d1.ts";
 
 const COLUMNS = sql`id, document_id AS doc, lang, image, accepted_at AS acceptedAt, started_at AS startedAt,
   finished_at AS finishedAt, outcome, error, chars, words, stages`;
@@ -35,7 +34,7 @@ function pruneQuery(before: Timestamp): Sql {
   return sql`DELETE FROM ingest_job WHERE started_at < ${before}`;
 }
 
-export class D1IngestHistory implements IngestHistory {
+export class D1IngestHistory {
   private readonly db: D1Database;
 
   constructor(db: D1Database) {
@@ -53,7 +52,7 @@ export class D1IngestHistory implements IngestHistory {
   }
 }
 
-/** An event a container POSTed (ingest.ts IngestEvents), sent on to be stored. One that
+/** An event a container POSTed (main.ts IngestEvents), sent on to be stored. One that
  * isn't an event is refused: sent again, it won't be. */
 export async function receiveEvent(send: (event: IngestEvent) => Promise<void>, request: Request): Promise<Response> {
   if (request.method !== "POST") return Response.json({ error: "not found" }, { status: 404 });

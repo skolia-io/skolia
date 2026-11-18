@@ -77,7 +77,7 @@ dev-api: install images env-local
     for lang in {{ langs }}; do pnpm exec wrangler d1 migrations apply "LEXICON_$(tr a-z A-Z <<<"$lang")" --local --env='' </dev/null; done
     pnpm exec wrangler d1 migrations apply INGEST_DB --local --env='' </dev/null
     just load-lexicon local
-    pnpm exec wrangler dev -c wrangler.jsonc -c wrangler.ingest.jsonc --port 8787
+    pnpm exec wrangler dev -c wrangler.jsonc -c ../ingest/wrangler.jsonc --port 8787
 
 # The Node packages, as pnpm-lock.yaml has them
 install:

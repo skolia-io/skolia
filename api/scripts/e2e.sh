@@ -26,7 +26,7 @@ for lang in "$@"; do d1 migrations apply "LEXICON_$(tr a-z A-Z <<<"$lang")"; don
 d1 migrations apply INGEST_DB
 just load-lexicon local --sample 3000 --persist-to "$api/$state"
 
-pnpm exec wrangler dev -c wrangler.jsonc -c wrangler.ingest.jsonc --persist-to "$state" --port "$port" --show-interactive-dev-session=false >"$log" 2>&1 &
+pnpm exec wrangler dev -c wrangler.jsonc -c ../ingest/wrangler.jsonc --persist-to "$state" --port "$port" --show-interactive-dev-session=false >"$log" 2>&1 &
 dev=$!
 trap 'kill "$dev" 2>/dev/null; wait "$dev" 2>/dev/null || true' EXIT
 
