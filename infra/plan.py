@@ -242,7 +242,14 @@ def targets() -> dict[str, Target]:
             f"plan-infra-{env}": Target("check", test=(root, *CHECK_RECIPE))
             for env, root in PLAN_INFRA.items()
         },
-        "infra": Target("deploy", ("infra", *migrations("api/wrangler.jsonc"))),
+        "infra": Target(
+            "deploy",
+            (
+                "infra",
+                *migrations("api/wrangler.jsonc"),
+                *migrations("ingest/wrangler.jsonc"),
+            ),
+        ),
         "ingest": Target(
             "deploy", ("ingest", *(f"./analysis#ingest-{lang}" for lang in LANGS))
         ),

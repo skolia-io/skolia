@@ -30,9 +30,8 @@
   "durable_objects": {
     "bindings": [{ "name": "INGESTER", "class_name": "Ingester" }]
   },
-  // The jobs the containers finished; its migrations (migrations/) are applied with
-  // api/wrangler.jsonc's
-  "d1_databases": [{ "binding": "INGEST_DB", "database_name": "skolia-ingest" }],
+  // The jobs the containers ran
+  "d1_databases": [{ "binding": "INGEST_DB", "database_name": "skolia-ingest", "migrations_dir": "migrations" }],
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["Ingest"] },
     // Ingest was Polish's before there were other languages; its container application
@@ -74,7 +73,7 @@
       "durable_objects": {
         "bindings": [{ "name": "INGESTER", "class_name": "Ingester" }]
       },
-      "d1_databases": [{ "binding": "INGEST_DB", "database_name": "skolia-ingest-staging" }],
+      "d1_databases": [{ "binding": "INGEST_DB", "database_name": "skolia-ingest-staging", "migrations_dir": "migrations" }],
       "queues": {
         "producers": [{ "binding": "INGEST_EVENTS", "queue": "skolia-ingest-events-staging" }],
         "consumers": [

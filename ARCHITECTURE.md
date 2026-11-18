@@ -58,7 +58,8 @@ flowchart LR
   API -->|"RPC: words, cards, clozes, reviews, settings"| UDO
   API -->|"entries for due cards"| LX
   API -->|"RPC: a document's place in the queue, each container's jobs"| IDO
-  API -->|"recent jobs"| IDB
+  API -->|"RPC: recent jobs"| IDO
+  IDO -->|"recent jobs"| IDB
   Q --> CON
   CON --> IDO
   EVE -->|"event"| QE
@@ -91,8 +92,8 @@ sequenceDiagram
   EV->>QE: send
   QE->>ECON: batch, up to 5 s later
   ECON->>IDB: insert or update, prune
-  API->>IDB: GET /api/ingest reads recent jobs
-  API->>DO: and each container's live jobs (GET /jobs)
+  API->>DO: GET /api/ingest reads recent jobs and each container's live jobs
+  DO->>IDB: read recent jobs
 ```
 
 - **Open a document:** D1 has its metadata and R2's `status.json` the names of its current analysis and bundle, which the reader then fetches from R2 through the API, as stored. Browsers cache them by HTTP (`no-cache` with the blob's key as its ETag), asking before each use, so the API checks the viewer may still see the text and answers 304 without reading R2; there's no IndexedDB yet.
