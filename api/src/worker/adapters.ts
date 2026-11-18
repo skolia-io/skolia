@@ -197,10 +197,10 @@ export function lexiconsOf(env: LexiconBindings): Record<Lang, D1Database> {
  * as the ingest images, serving its loaded version. Its JSON is ours, so it's trusted to
  * match. */
 export class D1Lexicon implements Lexicon {
-  private readonly dbs: Record<Lang, D1Database>;
+  private readonly dbs: Record<Lang, D1DatabaseSession>;
 
   constructor(dbs: Record<Lang, D1Database>) {
-    this.dbs = dbs;
+    this.dbs = Object.fromEntries(LANGS.map((lang) => [lang, dbs[lang].withSession()])) as Record<Lang, D1DatabaseSession>;
   }
 
   async entries(ids: readonly LemmaId[]): Promise<Lookup> {
@@ -218,7 +218,7 @@ export class D1Lexicon implements Lexicon {
   /** The entries, then the feature sets their paradigms use, from the version each
    * entry came from: a load that switches versions in between leaves the old version's
    * rows until it cleans up. */
-  async #entries(db: D1Database, ids: LemmaId[]): Promise<{ entries: LexiconEntry[]; featureSets: FeatureSets | null }> {
+  async #entries(db: D1DatabaseSession, ids: LemmaId[]): Promise<{ entries: LexiconEntry[]; featureSets: FeatureSets | null }> {
     const { results } = await prepare(
       db,
       sql`SELECT entry.lemma_id AS lemmaId, entry.version, entry.lemma, entry.upos, entry.senses,
@@ -547,10 +547,12 @@ export const DOCUMENT_QUERIES = {
 } as const;
 
 export class D1Documents implements DocumentStore {
-  private readonly db: D1Database;
+  private readonly primary: D1Database;
+  private readonly session: D1DatabaseSession;
 
-  constructor(db: D1Database) {
-    this.db = db;
+  constructor(primary: D1Database, session: D1DatabaseSession) {
+    this.primary = primary;
+    this.session = session;
   }
 
   async list(
@@ -558,9 +560,8 @@ export class D1Documents implements DocumentStore {
     filter: DocumentFilter,
     page: PageRequest<DocumentKey>,
   ): Promise<Paginated<StoredDocument, DocumentKey>> {
-    // Start from the latest visibility state when listing public documents.
-    const db = viewer === null ? this.db.withSession("first-primary") : this.db;
-    const { results } = await prepare(db, listQuery(viewer, filter, page)).all();
+    // A replica can still list an entry after its visibility changes on the primary.
+    const { results } = await prepare(this.primary, listQuery(viewer, filter, page)).all();
     const rows = results.map((row) => schemas.DocumentRow.parse(row));
     return paginate(
       rows.map((item) => ({ item, key: [item.user, item.id] as const })),
@@ -569,7 +570,8 @@ export class D1Documents implements DocumentStore {
   }
 
   async tags(page: PageRequest<TagKey>): Promise<Paginated<AvailableTag, TagKey>> {
-    const rows = (await this.all(tagsQuery(page))).map((row) => TagRow.parse(row));
+    const { results } = await prepare(this.session, tagsQuery(page)).all();
+    const rows = results.map((row) => TagRow.parse(row));
     return paginate(
       rows.map(({ position, ...item }) => ({ item, key: [item.kind, position] as const })),
       page.limit,
@@ -578,22 +580,19 @@ export class D1Documents implements DocumentStore {
 
   async known(tags: readonly Tag[]): Promise<readonly Tag[]> {
     if (tags.length === 0) return [];
-    return (await this.all(knownQuery(tags))).map((row) => KnownTag.parse(row));
-  }
-
-  private async all(query: Query | Sql): Promise<readonly Record<string, unknown>[]> {
-    const { results } = await prepare(this.db, query).all();
-    return results;
+    const { results } = await prepare(this.primary, knownQuery(tags)).all();
+    return results.map((row) => KnownTag.parse(row));
   }
 
   async visible(id: DocumentId, viewer: UserId | null): Promise<StoredDocument | null> {
-    const row = await prepare(this.db, visibleQuery(id, viewer)).first();
+    // A session can use a replica after its first query. Check current visibility on the primary.
+    const row = await prepare(this.primary, visibleQuery(id, viewer)).first();
     return row ? schemas.DocumentRow.parse(row) : null;
   }
 
   async visibleAll(ids: readonly DocumentId[], viewer: UserId | null): Promise<ReadonlyMap<DocumentId, StoredDocument>> {
     if (ids.length === 0) return new Map();
-    const found = await this.db.batch(ids.map((id) => prepare(this.db, visibleQuery(id, viewer))));
+    const found = await this.primary.batch(ids.map((id) => prepare(this.primary, visibleQuery(id, viewer))));
     return new Map(
       found.flatMap(({ results: [row] }) => {
         if (row === undefined) return [];
@@ -604,35 +603,35 @@ export class D1Documents implements DocumentStore {
   }
 
   async has(id: DocumentId): Promise<boolean> {
-    return (await prepare(this.db, hasQuery(id)).first()) !== null;
+    return (await prepare(this.primary, hasQuery(id)).first()) !== null;
   }
 
   async add(content: DocumentContent, entry: DocumentEntry): Promise<void> {
-    await this.db.batch([
-      prepare(this.db, addContentQuery(content)),
-      prepare(this.db, addAttributionQuery(entry)),
-      prepare(this.db, addEntryQuery(entry)),
+    await this.session.batch([
+      prepare(this.session, addContentQuery(content)),
+      prepare(this.session, addAttributionQuery(entry)),
+      prepare(this.session, addEntryQuery(entry)),
       ...this.addTags(entry.user, entry.id, entry.tags),
     ]);
   }
 
   async update(id: DocumentId, user: UserId, fields: EntryFields): Promise<void> {
-    await this.db.batch([
-      prepare(this.db, addAttributionQuery(fields)),
-      prepare(this.db, updateQuery(id, user, fields)),
-      prepare(this.db, removeTagsQuery(user, id)),
+    await this.session.batch([
+      prepare(this.session, addAttributionQuery(fields)),
+      prepare(this.session, updateQuery(id, user, fields)),
+      prepare(this.session, removeTagsQuery(user, id)),
       ...this.addTags(user, id, fields.tags),
     ]);
   }
 
   private addTags(user: UserId, id: DocumentId, tags: Tags): D1PreparedStatement[] {
     return Object.entries(tags).flatMap(([kind, value]) =>
-      value === undefined ? [] : [prepare(this.db, addTagQuery(user, id, kind, value))],
+      value === undefined ? [] : [prepare(this.session, addTagQuery(user, id, kind, value))],
     );
   }
 
   async remove(id: DocumentId, user: UserId): Promise<void> {
-    await prepare(this.db, removeQuery(id, user)).run();
+    await prepare(this.session, removeQuery(id, user)).run();
   }
 
   async annotations(
@@ -641,7 +640,8 @@ export class D1Documents implements DocumentStore {
     filter: AnnotationFilter,
     page: PageRequest<AnnotationKey>,
   ): Promise<Paginated<Annotation, AnnotationKey>> {
-    const rows = (await this.all(annotationsQuery(id, user, filter, page))).map((row) => schemas.AnnotationRow.parse(row));
+    const { results } = await prepare(this.primary, annotationsQuery(id, user, filter, page)).all();
+    const rows = results.map((row) => schemas.AnnotationRow.parse(row));
     return paginate(
       rows.map((item) => ({ item, key: [item.start, item.id] as const })),
       page.limit,
@@ -654,10 +654,10 @@ export class D1Documents implements DocumentStore {
     const chunks = Array.from({ length: Math.ceil(ids.length / IDS_PER_QUERY) }, (_, i) =>
       ids.slice(i * IDS_PER_QUERY, (i + 1) * IDS_PER_QUERY),
     );
-    const results = await this.db.batch([
-      ...attributions.map((a) => prepare(this.db, addAttributionQuery(a))),
-      ...annotations.map((a) => prepare(this.db, annotateQuery(id, user, a))),
-      ...chunks.map((chunk) => prepare(this.db, annotationsByIdQuery(id, user, chunk))),
+    const results = await this.session.batch([
+      ...attributions.map((a) => prepare(this.session, addAttributionQuery(a))),
+      ...annotations.map((a) => prepare(this.session, annotateQuery(id, user, a))),
+      ...chunks.map((chunk) => prepare(this.session, annotationsByIdQuery(id, user, chunk))),
     ]);
     const inserted = results.slice(attributions.length, attributions.length + annotations.length);
     const stored = new Map(
@@ -673,7 +673,7 @@ export class D1Documents implements DocumentStore {
   }
 
   async unannotate(id: DocumentId, user: UserId, annotationId: AnnotationId): Promise<boolean> {
-    return (await prepare(this.db, unannotateQuery(id, user, annotationId)).run()).meta.changes > 0;
+    return (await prepare(this.session, unannotateQuery(id, user, annotationId)).run()).meta.changes > 0;
   }
 }
 

@@ -64,7 +64,7 @@ export default {
       users: new DurableObjectUsers(env.USER),
       lexicon: new D1Lexicon(lexiconsOf(env)),
       version: env.VERSION ?? "dev",
-      documents: new D1Documents(env.DB),
+      documents: new D1Documents(env.DB, env.DB.withSession()),
       blobs: new R2Blobs(env.BLOBS),
       queue: new CloudflareQueue(env.INGEST, (lang) => env.INGESTER.getByName(lang).jobs(lang)),
       ingestHistory: { recent: (limit) => env.INGESTER.getByName("history").recent(limit) },

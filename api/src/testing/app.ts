@@ -49,7 +49,7 @@ export function setup({ auth = local.auth, at = NOW, jobsOf = async () => null }
     auth,
     users: new DurableObjectUsers(env.USER),
     lexicon: new D1Lexicon(lexiconsOf(env)),
-    documents: new D1Documents(env.DB),
+    documents: new D1Documents(env.DB, env.DB.withSession()),
     blobs: new R2Blobs(env.BLOBS),
     queue: new CloudflareQueue(env.INGEST, jobsOf),
     ingestHistory: new D1IngestHistory(env.INGEST_DB),
