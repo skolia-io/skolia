@@ -13,7 +13,9 @@ key skolia-ci (infra/shared/ci.tf) has no record of.
   plan.py built <build>                 record a build's key once it's in the registry or Cachix
   plan.py deployed <env> <deploy>       record a deploy's key once it's deployed
   plan.py torn-down <env>               record that a preview serves nothing (infra/teardown.sh)
-  plan.py graph                         print each node's key and edges
+  plan.py graph [--dot] [<node> ...]    print each node's key and edges, or Graphviz
+                                        (| dot -Tsvg >plan.svg), of the nodes and what
+                                        they depend on (every node by default)
   plan.py version                       the skolia Worker's version
 The graph's nodes are projects (directories and files, named by path) and the targets CI
 builds, checks and deploys. Each has content and edges: build edges (what it's made from)
@@ -243,7 +245,39 @@ def graph() -> dict[str, Node]:
         "e2e": Node("deploy", test=("infra", "ingest", "lexicon", "web")),
         "curated": Node("deploy", test=("curated/", "web")),
     }
-    return projects | targets
+    nodes = projects | targets
+    for name, node in nodes.items():
+        if missing := [dep for dep in (*node.build, *node.test) if dep not in nodes]:
+            raise SystemExit(
+                f"{name} depends on what isn't in the graph: {', '.join(missing)}"
+            )
+    return nodes
+
+
+def closure(names: list[str]) -> list[str]:
+    """names and everything they depend on, in graph order."""
+    seen: set[str] = set()
+    todo = list(names)
+    while todo:
+        if (name := todo.pop()) not in seen:
+            seen.add(name)
+            todo.extend((*graph()[name].build, *graph()[name].test))
+    return [name for name in graph() if name in seen]
+
+
+SHAPES = {"project": "folder", "build": "box", "check": "diamond", "deploy": "ellipse"}
+
+
+def dot(names: list[str]) -> str:
+    """Graphviz: build edges solid, test edges dashed, each node with its key."""
+    lines = ["digraph plan {", "  rankdir=LR;", "  node [fontname=Helvetica];"]
+    for name in names:
+        node = graph()[name]
+        label = f"{name}\\n{key(name)[:8]}"
+        lines.append(f'  "{name}" [shape={SHAPES[node.scope]}, label="{label}"];')
+        lines += [f'  "{name}" -> "{dep}";' for dep in node.build]
+        lines += [f'  "{name}" -> "{dep}" [style=dashed];' for dep in node.test]
+    return "\n".join([*lines, "}"])
 
 
 def scope(of: str) -> list[str]:
@@ -407,8 +441,11 @@ def main(args: list[str]) -> None:
     match args:
         case ["version"]:
             print(version())
-        case ["graph"]:
-            for name, node in graph().items():
+        case ["graph", "--dot", *names] if all(name in graph() for name in names):
+            print(dot(closure(names) if names else list(graph())))
+        case ["graph", *names] if all(name in graph() for name in names):
+            for name in closure(names) if names else graph():
+                node = graph()[name]
                 edges = [f"build:{dep}" for dep in node.build] + [
                     f"test:{dep}" for dep in node.test
                 ]
