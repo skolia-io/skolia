@@ -28,7 +28,7 @@ import {
   TAG_KIND,
   TAG_VALUE,
   UPOS,
-  USER_TYPES,
+  ROLE_NAMES,
   VISIBILITIES,
   WORD_CARD_KINDS,
   isShareable,
@@ -61,7 +61,7 @@ export const CardId = z.uuid().brand<"CardId">().meta({ id: "CardId" });
 export const ReviewId = z.uuid().brand<"ReviewId">();
 
 export const Visibility = z.enum(VISIBILITIES).meta({ id: "Visibility" });
-export const UserType = z.enum(USER_TYPES);
+export const RoleName = z.enum(ROLE_NAMES);
 
 export const LemmaId = z
   .templateLiteral([Lang, ":", z.string().min(1).max(MAX_LEMMA_LENGTH), ":", z.enum(UPOS)])
@@ -392,32 +392,10 @@ export const AnnotationRow = z
 export const State = gen.State;
 
 export const Status = z.discriminatedUnion("state", [
-  z.object({ state: z.enum(["queued", "analysing"]), updated: z.string(), artifacts: gen.ReadyAnalysis.exactOptional() }),
+  z.object({ state: z.literal("queued"), updated: z.string(), artifacts: gen.ReadyAnalysis.exactOptional() }),
   z.object({ state: z.literal("ready"), updated: z.string(), artifacts: gen.ReadyAnalysis }),
   z.object({ state: z.literal("failed"), updated: z.string(), error: z.string(), artifacts: gen.ReadyAnalysis.exactOptional() }),
 ]) satisfies z.ZodType<StatusType>;
-
-const LegacyStatus = z.object({
-  state: State,
-  updated: z.string(),
-  analyzer: z.string().exactOptional(),
-  lexicon: z.string().exactOptional(),
-  analysis: z.string().exactOptional(),
-  bundle: z.string().exactOptional(),
-  error: z.string().exactOptional(),
-});
-
-/** Normalize the flat storage format at the boundary, not throughout the application.
- * Also accept the domain shape, but never reinterpret malformed nested artifacts. */
-export const StoredStatus = z.preprocess((value) => {
-  if (typeof value !== "object" || value === null || "artifacts" in value) return value;
-  const legacy = LegacyStatus.safeParse(value);
-  if (!legacy.success) return null;
-  const { state, updated, error, ...fields } = legacy.data;
-  const artifacts = gen.ReadyAnalysis.safeParse(fields);
-  if (!artifacts.success && Object.values(fields).some((field) => field !== undefined)) return null;
-  return { state, updated, ...(artifacts.success ? { artifacts: artifacts.data } : {}), ...(state === "failed" ? { error } : {}) };
-}, Status);
 
 export const Versions = z.object({
   analyzer: z.string(),
@@ -426,32 +404,36 @@ export const Versions = z.object({
   bundle: z.string(),
 }) satisfies z.ZodType<VersionsType>;
 
-export const DocumentRow = z.object({
-  // SQL NULL: not projected yet. JSON null: projected, but the blob had no status.
-  status: z.union([
-    z
+export const DocumentRow = z
+  .object({
+    statusState: z.enum(["queued", "ready", "failed"]).nullable(),
+    statusUpdatedAt: Timestamp.nullable(),
+    statusData: z
       .string()
       .transform((json) => JSON.parse(json) as unknown)
-      .pipe(StoredStatus.nullable()),
-    z.null().transform(() => undefined),
-  ]),
-  id: DocumentId,
-  title: z.string(),
-  lang: Lang,
-  importedAt: Timestamp,
-  words: z.number().int(),
-  user: UserId,
-  visibility: Visibility,
-  licence: Licence,
-  author: z.string().nullable(),
-  source: z.string().nullable(),
-  importerName: z.string(),
-  /** The entry's user_document_tag rows, as a JSON object of kind to value. */
-  tags: z
-    .string()
-    .transform((json) => JSON.parse(json) as unknown)
-    .pipe(Tags),
-});
+      .pipe(z.record(z.string(), z.unknown()))
+      .nullable(),
+    id: DocumentId,
+    title: z.string(),
+    lang: Lang,
+    importedAt: Timestamp,
+    words: z.number().int(),
+    user: UserId,
+    visibility: Visibility,
+    licence: Licence,
+    author: z.string().nullable(),
+    source: z.string().nullable(),
+    importerName: z.string(),
+    /** The entry's user_document_tag rows, as a JSON object of kind to value. */
+    tags: z
+      .string()
+      .transform((json) => JSON.parse(json) as unknown)
+      .pipe(Tags),
+  })
+  .transform(({ statusState, statusUpdatedAt, statusData, ...document }) => ({
+    ...document,
+    status: statusState === null ? null : Status.parse({ ...statusData, state: statusState, updated: statusUpdatedAt }),
+  }));
 
 // Responses. The API's types (api.ts) are these schemas' outputs, and its OpenAPI spec is
 // made from them; the API doesn't parse what it sends with them.
@@ -461,7 +443,7 @@ export const ApiError = z.object({ error: z.string() }).meta({ id: "ApiError" })
 export const Version = z.object({ version: z.string() }).meta({ id: "Version" });
 
 export const User = z
-  .object({ id: UserId, name: z.string(), email: z.string(), image: z.string().nullable(), type: UserType })
+  .object({ id: UserId, name: z.string(), email: z.string(), image: z.string().nullable(), type: RoleName })
   .meta({ id: "User" });
 
 /** A page of a list. next: the cursor for the page after it (?after=), null on the last page. */

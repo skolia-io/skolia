@@ -49,11 +49,9 @@ export async function list(
     items.map((item) => item.documentId),
     user.id,
   );
-  const shown = await Promise.all(
-    items.flatMap(({ documentId, ...entry }) => {
-      const record = documents.get(documentId);
-      return record === undefined ? [] : [listed(deps, record, user).then((document): ListedReading => ({ ...entry, document }))];
-    }),
-  );
+  const shown = items.flatMap(({ documentId, ...entry }): ListedReading[] => {
+    const record = documents.get(documentId);
+    return record === undefined ? [] : [{ ...entry, document: listed(record, user) }];
+  });
   return ok({ items: shown, next });
 }

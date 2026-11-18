@@ -27,7 +27,6 @@ import {
 import { LANGUAGES } from "@skolia/shared/lang";
 import { partKey, statusKey, textKey } from "@skolia/shared/keys";
 import type { Blob, Bundle, Status } from "@skolia/shared/schema";
-import { statusForStorage } from "@skolia/shared/status";
 import { AnnotationId, CardId, DocumentId, LemmaId, Timestamp, UserId } from "@skolia/shared/schemas";
 
 type Deps = Parameters<typeof createApp>[0];
@@ -223,8 +222,7 @@ const blobs: ReadonlyMap<string, StoredBlob> = new Map([
   [ANALYSIS, { body: new Uint8Array(brotliCompressSync(fixture("lalka.analysis.json"))), contentType: JSON_TYPE }],
   [BUNDLE, { body: new Uint8Array(brotliCompressSync(fixture("lalka.bundle.json"))), contentType: JSON_TYPE }],
   ...statuses.map(
-    ([id, status]) =>
-      [statusKey(id), { body: new TextEncoder().encode(JSON.stringify(statusForStorage(status))), contentType: JSON_TYPE }] as const,
+    ([id, status]) => [statusKey(id), { body: new TextEncoder().encode(JSON.stringify(status)), contentType: JSON_TYPE }] as const,
   ),
 ]);
 

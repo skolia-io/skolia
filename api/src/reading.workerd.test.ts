@@ -128,14 +128,14 @@ test("a current document isn't queued, nor any before ingest publishes its versi
   assert.deepEqual(await local.takeQueued(), []);
 });
 
-test("a document queued or analysing for too long is queued again", async () => {
+test("a document queued for too long is queued again", async () => {
   const app = setup();
   await importText(app);
   const id = await docId("pl", TEXT);
   await local.takeQueued();
   assert.equal((await summaryOf(app, id)).state, "queued");
   assert.deepEqual(await local.takeQueued(), []);
-  await putJson(statusKey(id), { state: "analysing", updated: "2026-11-03T23:00:00Z" });
+  await putJson(statusKey(id), { state: "queued", updated: "2026-11-03T23:00:00.000Z" });
   assert.equal((await summaryOf(app, id)).state, "queued");
   assert.equal((await local.takeQueued()).length, 1);
 });
@@ -158,12 +158,12 @@ test("listing a stuck document doesn't queue it again; opening it does", async (
   const app = setup();
   await importText(app);
   const id = await docId("pl", TEXT);
-  await putJson(statusKey(id), { state: "analysing", updated: "2026-11-03T23:00:00Z" });
+  await putJson(statusKey(id), { state: "queued", updated: "2026-11-03T23:00:00.000Z" });
   await local.takeQueued();
   const list = await body("documents", client(app, importer).documents.$get({ query: {} }));
   assert.deepEqual(
     list.items.map((d) => [d.id, d.state]),
-    [[id, "analysing"]],
+    [[id, "queued"]],
   );
   assert.deepEqual(await local.takeQueued(), []);
   assert.equal((await summaryOf(app, id)).state, "queued");

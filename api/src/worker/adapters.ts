@@ -89,7 +89,6 @@ import type {
 } from "../ports.ts";
 import { prepare } from "@skolia/util/d1";
 import { log } from "@skolia/util/log";
-import { statusForStorage } from "@skolia/shared/status";
 import type { User } from "./user.ts";
 
 const logger = log("adapters");
@@ -280,9 +279,9 @@ const COLUMNS = {
   lang: "document.lang",
   words: "document.words",
   importerName: "user.name",
-  status: select({ status: "status.status" })
-    .from("document_status", "status")
-    .where(eq("status.document_id", col("entry.document_id"))),
+  statusState: "status.state",
+  statusUpdatedAt: "status.updated_at",
+  statusData: "status.data",
   tags: select({ tags: fn.jsonGroupObject("tag.kind", "tag.value") })
     .from("user_document_tag", "tag")
     .where(eq("tag.user_id", col("entry.user_id")), eq("tag.document_id", col("entry.document_id"))),
@@ -292,7 +291,8 @@ const joined = (query: Select): Select =>
   query
     .join("document", eq("document.id", col("entry.document_id")))
     .join("user", eq("user.id", col("entry.user_id")))
-    .join("attribution", eq("attribution.id", col("entry.attribution_id")));
+    .join("attribution", eq("attribution.id", col("entry.attribution_id")))
+    .leftJoin("document_status", "status", eq("status.document_id", col("entry.document_id")));
 
 const SELECT_DOCUMENT = joined(select({ id: "entry.document_id", user: "entry.user_id", ...COLUMNS }).from("user_document", "entry"));
 
@@ -399,7 +399,7 @@ function hasQuery(id: DocumentId): Sql {
 }
 
 function addContentQuery({ id, lang, words }: DocumentContent): Sql {
-  return sql`INSERT OR IGNORE INTO document (id, lang, words) VALUES ${sql.tuple([id, lang, words])}`;
+  return sql`INSERT INTO document (id, lang, words) VALUES ${sql.tuple([id, lang, words])} ON CONFLICT (id) DO NOTHING`;
 }
 
 type Attribution = { readonly licence: Licence; readonly author: string | null; readonly source: string | null };
@@ -537,8 +537,7 @@ export const DOCUMENT_QUERIES = {
   known: compile(knownQuery([{ kind: "level", value: "A1" }])).text,
   visible: compile(visibleQuery(SOME_ENTRY.id, SOMEONE)).text,
   has: compile(hasQuery(SOME_ENTRY.id)).text,
-  setStatus: statusProjectionQuery(SOME_ENTRY.id, null).text,
-  backfillStatus: statusProjectionQuery(SOME_ENTRY.id, null, false).text,
+  setStatus: statusProjectionQuery(SOME_ENTRY.id, { state: "queued", updated: SOME_ENTRY.importedAt }).text,
   addContent: compile(addContentQuery({ id: SOME_ENTRY.id, lang: "pl", words: 1 })).text,
   addAttribution: compile(addAttributionQuery(SOME_ENTRY)).text,
   addEntry: compile(addEntryQuery(SOME_ENTRY)).text,
@@ -558,12 +557,10 @@ export const DOCUMENT_QUERIES = {
   unannotate: unannotateQuery(SOME_ENTRY.id, SOMEONE, SOME_ANNOTATION.id).text,
 } as const;
 
-/** Live publication replaces the projection; a backfill must never replace one. */
-export function statusProjectionQuery(id: DocumentId, status: z.output<typeof schemas.Status> | null, replace = true): Sql {
-  const conflict = replace ? sql`DO UPDATE SET updated_at = excluded.updated_at, status = excluded.status` : sql`DO NOTHING`;
-  return sql`INSERT INTO document_status (document_id, updated_at, status)
-    VALUES (${id}, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), ${JSON.stringify(status === null ? null : statusForStorage(status))})
-    ON CONFLICT (document_id) ${conflict}`;
+function statusProjectionQuery(id: DocumentId, { state, updated, ...data }: z.output<typeof schemas.Status>): Sql {
+  return sql`INSERT INTO document_status (document_id, state, updated_at, data)
+    VALUES (${id}, ${state}, ${updated}, ${JSON.stringify(data)})
+    ON CONFLICT (document_id) DO UPDATE SET state = excluded.state, updated_at = excluded.updated_at, data = excluded.data`;
 }
 
 export class D1Documents implements DocumentStore {

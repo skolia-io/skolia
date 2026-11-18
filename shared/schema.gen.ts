@@ -513,7 +513,7 @@ export interface JobAnswer {
 export type State = "queued" | "analysing" | "ready" | "failed";
 
 export interface QueuedStatus {
-  state: "queued" | "analysing";
+  state: "queued";
   updated: string;
   artifacts?: ReadyAnalysis;
 }

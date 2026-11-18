@@ -2,8 +2,8 @@ import { apiKey } from "@better-auth/api-key";
 import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { APIError } from "better-auth/api";
 import { oAuthProxy } from "better-auth/plugins/oauth-proxy";
-import { USER_TYPES, type User } from "@skolia/shared/api";
-import { UserId, UserType } from "@skolia/shared/schemas";
+import { ROLE_NAMES, type User } from "@skolia/shared/api";
+import { RoleName, UserId } from "@skolia/shared/schemas";
 import * as z from "zod";
 import type { Auth } from "./ports.ts";
 
@@ -33,7 +33,9 @@ export function authOptions(config: AuthConfig) {
     secret: config.secret,
     socialProviders: config.google ? { google: config.google } : {},
     account: { encryptOAuthTokens: true },
-    user: { additionalFields: { type: { type: [...USER_TYPES], required: false, defaultValue: "standard", input: false } } },
+    user: {
+      additionalFields: { role: { type: [...ROLE_NAMES], required: false, defaultValue: "standard", input: false } },
+    },
     disabledPaths: API_KEY_PATHS,
     plugins: [
       apiKey({ apiKeyHeaders: API_KEY_HEADER, enableSessionForAPIKeys: true, rateLimit: { enabled: false } }),
@@ -61,8 +63,8 @@ export function toAuth(auth: Pick<ReturnType<typeof betterAuth>, "handler" | "ap
       }
       if (!session) return null;
       const { id, name, email, image } = session.user;
-      const { type } = z.object({ type: UserType }).parse(session.user);
-      return { id: UserId.parse(id), name, email, image: image ?? null, type } satisfies User;
+      const { role } = z.object({ role: RoleName }).parse(session.user);
+      return { id: UserId.parse(id), name, email, image: image ?? null, type: role } satisfies User;
     },
   };
 }

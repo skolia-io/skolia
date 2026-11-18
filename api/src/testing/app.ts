@@ -73,7 +73,7 @@ export function ingestJobs(fields: Partial<IngestJobs> = {}): IngestJobs {
 export async function putJson(key: string, value: unknown): Promise<void> {
   const id = key.match(/^doc\/([a-f0-9]{64})\/status\.json$/u)?.[1];
   if (id !== undefined) {
-    await local.env.DOCUMENT_STATUS.publish(schemas.DocumentId.parse(id), schemas.StoredStatus.parse(value));
+    await local.env.DOCUMENT_STATUS.publish(schemas.DocumentId.parse(id), schemas.Status.parse(value));
   } else {
     await new R2Blobs(local.env.BLOBS).put(key, JSON.stringify(value), "application/json");
   }
@@ -221,7 +221,7 @@ export async function refusesBadPages(
 }
 
 /** A ready document whose analysis and bundle were made by version v, as ingest leaves it. */
-export async function readyAt(id: DocumentId, v: string, state = "ready"): Promise<void> {
+export async function readyAt(id: DocumentId, v: string): Promise<void> {
   const blobs = new R2Blobs(local.env.BLOBS);
   for (const [part, name] of [
     ["analysis", `s2-a${v}`],
@@ -230,13 +230,14 @@ export async function readyAt(id: DocumentId, v: string, state = "ready"): Promi
     await blobs.put(partKey(id, part, name), new Uint8Array(brotliCompressSync(`{"${part}":"${v}"}`)), "application/json");
   }
   await putJson(statusKey(id), {
-    state,
-    ...(state === "failed" ? { error: "ingest failed" } : {}),
-    updated: NOW,
-    analyzer: `pl/${v}`,
-    lexicon: "lex/1",
-    analysis: partKey(id, "analysis", `s2-a${v}`),
-    bundle: partKey(id, "bundle", `b1-a${v}-l1`),
+    state: "ready",
+    updated: new Date(NOW).toISOString(),
+    artifacts: {
+      analyzer: `pl/${v}`,
+      lexicon: "lex/1",
+      analysis: partKey(id, "analysis", `s2-a${v}`),
+      bundle: partKey(id, "bundle", `b1-a${v}-l1`),
+    },
   });
 }
 

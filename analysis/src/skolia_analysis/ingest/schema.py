@@ -78,7 +78,7 @@ type State = Literal["queued", "analysing", "ready", "failed"]
 
 
 class QueuedStatus(TypedDict):
-    state: Literal["queued", "analysing"]
+    state: Literal["queued"]
     updated: str
     artifacts: NotRequired[ReadyAnalysis]
     """The previous analysis stays readable while its replacement is being made."""

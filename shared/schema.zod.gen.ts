@@ -517,7 +517,7 @@ export const JobAnswer: z.ZodType<types.JobAnswer> = /* @__PURE__ */ (() => z.ob
 export const State: z.ZodType<types.State> = /* @__PURE__ */ (() => z.enum(["queued", "analysing", "ready", "failed"]).meta({ id: "State" }))();
 
 export const QueuedStatus: z.ZodType<types.QueuedStatus> = /* @__PURE__ */ (() => z.object({
-  state: z.enum(["queued", "analysing"]),
+  state: z.enum(["queued"]),
   updated: z.string(),
   artifacts: ReadyAnalysis.exactOptional(),
 }).meta({ id: "QueuedStatus" }))();

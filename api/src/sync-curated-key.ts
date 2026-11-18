@@ -1,5 +1,5 @@
 // sync-curated's API key (sync-curated.ts), as SQL for wrangler d1 execute: for the curated
-// user (migrations/0006_user_type.sql), replacing its last key, so each run has its own
+// user (migrations/0001_initial.sql), replacing its last key, so each run has its own
 // and none is kept anywhere.
 // usage: SYNC_CURATED_API_KEY=<key> node src/sync-curated-key.ts > key.sql
 import { sql } from "@skolia/util/sql";

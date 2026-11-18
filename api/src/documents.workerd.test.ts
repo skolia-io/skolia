@@ -36,9 +36,6 @@ import {
   type App,
 } from "./testing/app.ts";
 import { body, expectStatus } from "./testing/responses.ts";
-import { BACKGROUND_MIGRATIONS } from "./worker/background-migrations/index.ts";
-import { runBackgroundMigrations } from "./worker/background-migrations/runner.ts";
-import { R2Blobs } from "./worker/adapters.ts";
 
 useLocal();
 
@@ -77,12 +74,14 @@ test("listings keep the published status, versions and error without status blob
   const ready = await body("ready", api.documents[":id"].$get({ param: { id } }));
   await putJson(statusKey(id), {
     state: "failed",
-    updated: NOW,
+    updated: new Date(NOW).toISOString(),
     error: "ingest failed",
-    analyzer: "pl/1",
-    lexicon: "lex/1",
-    analysis: `doc/${id}/analysis/s2-a1.json.br`,
-    bundle: `doc/${id}/bundle/b1-a1-l1.json.br`,
+    artifacts: {
+      analyzer: "pl/1",
+      lexicon: "lex/1",
+      analysis: `doc/${id}/analysis/s2-a1.json.br`,
+      bundle: `doc/${id}/bundle/b1-a1-l1.json.br`,
+    },
   });
   await body("save", api.me["reading-list"][":id"].$put({ param: { id }, json: { status: "to-read" } }));
   await local.env.BLOBS.delete(statusKey(id));
@@ -96,20 +95,17 @@ test("listings keep the published status, versions and error without status blob
   );
 });
 
-test("legacy lists stay readable during backfill and stop needing blobs after it", async () => {
-  const app = setup();
-  const api = client(app, importer);
+test("a list does not fall back to R2 when the status row is missing", async () => {
+  const api = client(setup(), importer);
   const { id } = await body("import", api.documents.$post({ json: { text: TEXT, lang: "pl" } }), 202);
   await readyAt(id, "1");
   await local.env.DB.prepare("DELETE FROM document_status WHERE document_id = ?").bind(id).run();
-  const before = await body("legacy list", api.documents.$get({ query: {} }));
-  assert.equal(before.items[0]?.state, "ready");
-  await runBackgroundMigrations(
-    { db: local.env.DB.withSession("first-primary"), blobs: new R2Blobs(local.env.BLOBS) },
-    BACKGROUND_MIGRATIONS,
-  );
-  await local.env.BLOBS.delete(statusKey(id));
-  assert.deepEqual(await body("backfilled list", api.documents.$get({ query: {} })), before);
+  const {
+    items: [item],
+  } = await body("list", api.documents.$get({ query: {} }));
+  assert.equal(item?.state, "failed");
+  assert.equal(item?.error, "no status");
+  assert.equal((await body("detail", api.documents[":id"].$get({ param: { id } }))).state, "ready");
 });
 
 test("import stores the text, queues a job and reports queued", async () => {
@@ -133,7 +129,7 @@ test("importing the same text again doesn't queue it twice, unless it failed", a
   assert.equal(again.status, 200);
   assert.equal((await local.takeQueued()).length, 1);
   const id = await docId("pl", TEXT);
-  await putJson(statusKey(id), { state: "failed", updated: "x", error: "boom" });
+  await putJson(statusKey(id), { state: "failed", updated: new Date(NOW).toISOString(), error: "boom" });
   const retry = await importText(app);
   assert.equal(retry.status, 202);
   assert.equal((await local.takeQueued()).length, 1);
