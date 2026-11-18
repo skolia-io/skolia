@@ -72,7 +72,7 @@ async function setStatus(blobs: R2Bucket, publisher: StatusPublisher, doc: Docum
   const status = await (async (): Promise<Status> => {
     if (result.outcome === "ready" && result.analysis !== null) return { state: "ready", updated, artifacts: result.analysis };
     const previous = await blobs.get(statusKey(doc));
-    const parsed = previous === null ? null : schemas.StoredStatus.safeParse(await previous.json());
+    const parsed = previous === null ? null : schemas.Status.safeParse(await previous.json());
     const artifacts = parsed?.success ? parsed.data.artifacts : undefined;
     return {
       state: "failed",

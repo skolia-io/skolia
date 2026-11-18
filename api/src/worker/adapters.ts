@@ -89,7 +89,6 @@ import type {
 } from "../ports.ts";
 import { prepare } from "@skolia/util/d1";
 import { log } from "@skolia/util/log";
-import { statusForStorage } from "@skolia/shared/status";
 import type { User } from "./user.ts";
 
 const logger = log("adapters");
@@ -537,8 +536,7 @@ export const DOCUMENT_QUERIES = {
   known: compile(knownQuery([{ kind: "level", value: "A1" }])).text,
   visible: compile(visibleQuery(SOME_ENTRY.id, SOMEONE)).text,
   has: compile(hasQuery(SOME_ENTRY.id)).text,
-  setStatus: statusProjectionQuery(SOME_ENTRY.id, null).text,
-  backfillStatus: statusProjectionQuery(SOME_ENTRY.id, null, false).text,
+  setStatus: statusProjectionQuery(SOME_ENTRY.id, { state: "queued", updated: SOME_ENTRY.importedAt }).text,
   addContent: compile(addContentQuery({ id: SOME_ENTRY.id, lang: "pl", words: 1 })).text,
   addAttribution: compile(addAttributionQuery(SOME_ENTRY)).text,
   addEntry: compile(addEntryQuery(SOME_ENTRY)).text,
@@ -558,12 +556,10 @@ export const DOCUMENT_QUERIES = {
   unannotate: unannotateQuery(SOME_ENTRY.id, SOMEONE, SOME_ANNOTATION.id).text,
 } as const;
 
-/** Live publication replaces the projection; a backfill must never replace one. */
-export function statusProjectionQuery(id: DocumentId, status: z.output<typeof schemas.Status> | null, replace = true): Sql {
-  const conflict = replace ? sql`DO UPDATE SET updated_at = excluded.updated_at, status = excluded.status` : sql`DO NOTHING`;
+function statusProjectionQuery(id: DocumentId, status: z.output<typeof schemas.Status>): Sql {
   return sql`INSERT INTO document_status (document_id, updated_at, status)
-    VALUES (${id}, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), ${JSON.stringify(status === null ? null : statusForStorage(status))})
-    ON CONFLICT (document_id) ${conflict}`;
+    VALUES (${id}, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), ${JSON.stringify(status)})
+    ON CONFLICT (document_id) DO UPDATE SET updated_at = excluded.updated_at, status = excluded.status`;
 }
 
 export class D1Documents implements DocumentStore {

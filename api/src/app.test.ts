@@ -20,7 +20,7 @@ test("stuck and outdated rules", () => {
   assert.equal(isStuck({ state: "queued", updated: NOW }, at), false);
   assert.equal(isStuck({ state: "queued", updated: old }, at), true);
   assert.equal(isStuck({ state: "ready", updated: old, artifacts: ARTIFACTS }, at), false);
-  assert.equal(isStuck({ state: "analysing", updated: "garbage" }, at), true);
+  assert.equal(isStuck({ state: "queued", updated: "garbage" }, at), true);
   assert.equal(nameOf("doc/x/analysis/s2-a1.json.br"), "s2-a1");
   assert.equal(nameOf(undefined), undefined);
   const latest = { analyzer: "a", lexicon: "l", analysis: "s2-a1", bundle: "b1-a1-l1" };
@@ -44,16 +44,11 @@ test("status parsing ignores malformed blobs", () => {
   assert.equal(parseStatus(JSON.stringify({ state: "ready", updated: "x", bundle: 3 })), null);
   assert.equal(parseStatus(JSON.stringify({ state: "ready", updated: "x" })), null);
   assert.equal(parseStatus(JSON.stringify({ state: "failed", updated: "x" })), null);
-  assert.equal(parseStatus(JSON.stringify({ state: "queued", updated: "x", analysis: "partial" })), null);
   assert.equal(parseStatus(JSON.stringify({ state: "queued", updated: "x", artifacts: { analysis: "partial" } })), null);
   const ready = { state: "ready", updated: "x", artifacts: ARTIFACTS };
   assert.deepEqual(parseStatus(JSON.stringify({ ...ready, extra: 1 })), ready);
-  assert.deepEqual(parseStatus(JSON.stringify({ state: "ready", updated: "x", ...ARTIFACTS })), ready);
-  for (const state of ["queued", "analysing", "failed"] as const) {
-    const status = { state, updated: "x", ...(state === "failed" ? { error: "failed" } : {}) };
-    assert.deepEqual(parseStatus(JSON.stringify(status)), status);
-    assert.deepEqual(parseStatus(JSON.stringify({ ...status, ...ARTIFACTS })), { ...status, artifacts: ARTIFACTS });
-  }
+  assert.equal(parseStatus(JSON.stringify({ state: "ready", updated: "x", ...ARTIFACTS })), null);
+  assert.equal(parseStatus(JSON.stringify({ state: "analysing", updated: "x" })), null);
 });
 
 test("words are counted as runs containing letters", () => {

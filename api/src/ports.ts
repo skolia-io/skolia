@@ -79,8 +79,7 @@ export interface StoredDocument extends DocumentEntry {
   readonly lang: Lang;
   readonly words: number;
   readonly importerName: string;
-  /** Undefined only until the background backfill has projected this document. */
-  readonly status: Status | null | undefined;
+  readonly status: Status | null;
 }
 
 export interface DocumentStore {

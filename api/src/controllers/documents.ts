@@ -22,7 +22,6 @@ import {
 import type { PageRequest } from "@skolia/shared/page";
 import { PART_ENCODING, docId, partKey, statusKey, textKey, versionsKey } from "@skolia/shared/keys";
 import type { Status, Versions } from "@skolia/shared/schema";
-import { statusForStorage } from "@skolia/shared/status";
 import * as schemas from "@skolia/shared/schemas";
 import { log } from "@skolia/util/log";
 import type { BlobStore, Deps, EntryFields, IngestJobs, StoredDocument } from "../ports.ts";
@@ -42,14 +41,11 @@ export async function list(
 ): Promise<Ok<Paginated<DocumentSummary, DocumentKey>> | Failed<401>> {
   if (filter.mine && viewer === null) return fail(401, "sign in to see your own texts");
   const { items, next } = await deps.documents.list(viewer?.id ?? null, filter, page);
-  return ok({ items: await Promise.all(items.map((r) => listed(deps, r, viewer))), next });
+  return ok({ items: items.map((record) => listed(record, viewer)), next });
 }
 
-/** Backfill compatibility: only rows not yet projected read a blob. Once migration 1
- * completes, even missing or malformed statuses have a projection and never read R2. */
-export async function listed(deps: Deps, record: StoredDocument, viewer: User | null): Promise<DocumentSummary> {
-  const status = record.status === undefined ? await readStatus(deps.blobs, record.id) : record.status;
-  return summarize(record, status, viewer);
+export function listed(record: StoredDocument, viewer: User | null): DocumentSummary {
+  return summarize(record, record.status, viewer);
 }
 
 /** A page of the documents the user imported, public or private. */
@@ -163,7 +159,7 @@ export async function get(deps: Deps, id: string, viewer: User | null): Promise<
   const record = await findDocument(deps, id, viewer);
   if (!record) return noSuchDocument();
   const summary = await current(deps, record, versionsOf(deps.blobs), viewer);
-  if (summary.mine && (summary.state === "queued" || summary.state === "analysing")) {
+  if (summary.mine && summary.state === "queued") {
     const jobs = await deps.queue.jobs(record.lang);
     summary.queue = placeIn(jobs, record.id);
     // The run writes no status while the container works on it: the container says
@@ -287,14 +283,14 @@ export function isOutdated(status: Status, latest: Versions | null): boolean {
 }
 
 /** Longer than a job takes, waiting its turn included, short of a run's retries. A document
- * queued (or analysing, as a container before runs wrote) for this long may have lost its run:
+ * queued for this long may have lost its run:
  * its start failed, or its job was on the queue runs replaced. Starting it again is safe: a run
  * under way is left alone, one that ended is run again, and ingest reuses blobs that already
  * exist. */
 export const STUCK_AFTER_MS = 30 * 60 * 1000;
 
 export function isStuck(status: Status, at: Date): boolean {
-  if (status.state !== "queued" && status.state !== "analysing") return false;
+  if (status.state !== "queued") return false;
   const updated = Date.parse(status.updated);
   return Number.isNaN(updated) || at.getTime() - updated > STUCK_AFTER_MS;
 }
@@ -357,7 +353,7 @@ function summarize(
 
 /** Publish the detail blob and its list projection together. Callers retry on failure. */
 export async function publishStatus(deps: Pick<Deps, "blobs" | "documents">, id: DocumentId, status: Status): Promise<void> {
-  await deps.blobs.put(statusKey(id), JSON.stringify(statusForStorage(status)), "application/json");
+  await deps.blobs.put(statusKey(id), JSON.stringify(status), "application/json");
   await deps.documents.setStatus(id, status);
 }
 
@@ -369,7 +365,7 @@ export async function readStatus(blobs: BlobStore, id: DocumentId): Promise<Stat
 
 /** The status blob ingest writes. */
 export function parseStatus(raw: string): Status | null {
-  return parseJson(schemas.StoredStatus, raw);
+  return parseJson(schemas.Status, raw);
 }
 
 export function countWords(text: string): number {

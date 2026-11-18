@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile, writeFile } from "node:fs/promises";
 import { test } from "node:test";
+import { URL } from "node:url";
 import { startLocal } from "./testing/harness.ts";
 
 const SCHEMA = `SELECT name, sql FROM sqlite_schema WHERE sql IS NOT NULL
