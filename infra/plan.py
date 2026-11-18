@@ -259,18 +259,33 @@ def scope(of: str) -> list[str]:
 # Versions, from Nix
 
 
-@cache
-def nodes() -> list[str]:
-    """Every node a target reaches."""
-    seen: dict[str, None] = {}
+def reach(names: list[str]) -> tuple[list[str], list[str]]:
+    """The targets named and those they run against, and every node those reach."""
+    chosen: dict[str, None] = {}
+    pending = list(names)
+    while pending:
+        if (name := pending.pop()) not in chosen:
+            chosen[name] = None
+            pending += targets()[name].against
+    reached: dict[str, None] = {}
     todo = [
-        node for target in targets().values() for node in (*target.build, *target.test)
+        n for name in chosen for n in (*targets()[name].build, *targets()[name].test)
     ]
     while todo:
-        if (node := todo.pop()) not in seen:
-            seen[node] = None
+        if (node := todo.pop()) not in reached:
+            reached[node] = None
             todo += [dep for _, dep in direct_deps(node)]
-    return list(seen)
+    return [name for name in targets() if name in chosen], list(reached)
+
+
+# The targets this command keys (every one if empty), so it evaluates only their nodes: the
+# screenshots job runs on aarch64-linux, which the analysis flake doesn't build for
+WANTED: list[str] = []
+
+
+@cache
+def nodes() -> list[str]:
+    return reach(WANTED or list(targets()))[1]
 
 
 @cache
@@ -533,22 +548,7 @@ def record_deployment(env: str, name: str, value: str | None) -> None:
 
 def print_graph(names: list[str], as_dot: bool) -> None:
     """The targets named (every one by default) and the nodes they reach."""
-    # With the targets they run against
-    selected: dict[str, None] = {}
-    pending = names or list(targets())
-    while pending:
-        if (name := pending.pop()) not in selected:
-            selected[name] = None
-            pending += targets()[name].against
-    chosen = [name for name in targets() if name in selected]
-    reached: dict[str, None] = {}
-    todo = [
-        n for name in chosen for n in (*targets()[name].build, *targets()[name].test)
-    ]
-    while todo:
-        if (node := todo.pop()) not in reached:
-            reached[node] = None
-            todo += [dep for _, dep in direct_deps(node)]
+    chosen, reached = reach(names or list(targets()))
     if not as_dot:
         for name in chosen:
             target = targets()[name]
@@ -640,6 +640,11 @@ def main(args: list[str]) -> None:
     commands.add_parser("version", help="print the skolia Worker's version")
 
     parsed = parser.parse_args(args)
+    global WANTED
+    if parsed.command in ("passed", "built", "deployed"):
+        WANTED = [parsed.name]
+    elif parsed.command == "graph":
+        WANTED = parsed.names
     match parsed.command:
         case "plan":
             print(json.dumps(plan(parsed.envs)))
