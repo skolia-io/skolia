@@ -7,7 +7,6 @@
   import { hashQuery, readReadingList } from "../lib/filters.ts";
   import Button from "../components/Button.svelte";
   import Page from "../components/Page.svelte";
-  import ReadingListCover from "../components/ReadingListCover.svelte";
   import ReadingListContents from "../components/ReadingListContents.svelte";
 
   let { user }: { user: User | null | undefined } = $props();
@@ -85,23 +84,19 @@
     {#if selected.success}
       <a class="back" href="#/list"><span aria-hidden="true">←</span> Reading lists</a>
       {#if current}
-        <div class="detail">
-          <header class="summary">
-            <ReadingListCover name={current.name} />
-            <h2>{current.name}</h2>
-            <p class="muted">{current.documentsCount} {current.documentsCount === 1 ? "text" : "texts"}</p>
-            <div class="buttons">
-              <Button small variant="quiet" onclick={() => void show("rename")}>Rename</Button>
-              <Button small variant="danger" onclick={() => void show("delete")}>Delete list</Button>
-            </div>
-          </header>
-          <section class="contents" aria-label="List contents">
-            <div class="detail-filter">{@render filter()}</div>
-            {#key current.id}
-              <ReadingListContents id={current.id} {lang} />
-            {/key}
-          </section>
-        </div>
+        <header class="detail-bar">
+          <h2>{current.name}</h2>
+          <div class="buttons">
+            <Button small variant="quiet" onclick={() => void show("rename")}>Rename</Button>
+            <Button small variant="danger" onclick={() => void show("delete")}>Delete list</Button>
+          </div>
+        </header>
+        <section aria-label="List contents">
+          <div class="detail-filter">{@render filter()}</div>
+          {#key current.id}
+            <ReadingListContents id={current.id} {lang} />
+          {/key}
+        </section>
       {:else}
         {#if lists.isPending}
           <p class="muted" role="status">Loading…</p>
@@ -128,22 +123,27 @@
       </div>
       {#if lists.isPending}
         <p class="muted" role="status">Loading lists…</p>
+      {:else if shown.length}
+        <div class="list-table">
+          <table aria-label="Reading lists">
+            <thead
+              ><tr
+                ><th scope="col">List</th><th scope="col" class="count">Texts</th></tr
+              ></thead
+            >
+            <tbody>
+              {#each shown as list (list.id)}
+                <tr>
+                  <th scope="row"><a href={link(list.id)}>{list.name}</a></th>
+                  <td class="count">{list.documentsCount.toLocaleString()}</td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      {:else if lists.data}
+        <p class="muted">{search.trim() ? `No lists match “${search}”.` : "No reading lists yet."}</p>
       {/if}
-      <ul class="lists">
-        {#each shown as list (list.id)}
-          <li>
-            <a class="list" href={link(list.id)}>
-              <ReadingListCover name={list.name} count={list.documentsCount} />
-              <strong>{list.name}</strong>
-              <span class="sr-only">{list.documentsCount} {list.documentsCount === 1 ? "text" : "texts"}</span>
-            </a>
-          </li>
-        {:else}
-          {#if lists.data}
-            <li class="muted">{search.trim() ? `No lists match “${search}”.` : "No reading lists yet."}</li>
-          {/if}
-        {/each}
-      </ul>
     {/if}
     {#if lists.error}
       <p class="error" role="alert">{lists.error.message}</p><Button variant="quiet" onclick={() => void lists.refetch()}>Try again</Button>
@@ -230,39 +230,54 @@
     padding: 0.4rem 0.6rem 0.4rem 2rem;
     font-size: 0.875rem;
   }
-  .lists {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(min(100%, 11rem), 1fr));
-    gap: 1.25rem 1rem;
-    margin: 0;
+  .list-table {
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    overflow: hidden;
+    background: var(--surface);
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    text-align: left;
+  }
+  thead {
+    background: var(--bg);
+    color: var(--muted);
+    font-size: 0.85rem;
+  }
+  thead th,
+  .count {
+    padding: 0.65rem 1rem;
+  }
+  tbody tr {
+    border-top: 1px solid var(--line);
+  }
+  tbody tr:hover,
+  tbody tr:focus-within {
+    background: var(--bg);
+  }
+  tbody th {
     padding: 0;
-    list-style: none;
+    font-weight: 500;
   }
-  .list {
-    display: grid;
-    gap: 0.2rem;
-    color: var(--text);
-    text-decoration: none;
-    border-radius: 12px;
-  }
-  .list strong {
-    margin-top: 0.35rem;
-    font-weight: 650;
+  tbody a {
+    display: block;
+    padding: 0.7rem 1rem;
     overflow-wrap: anywhere;
+    text-decoration: none;
   }
-  .list > span {
-    font-size: 0.84rem;
-  }
-  .list:hover strong {
-    color: var(--accent);
+  tbody a:hover {
     text-decoration: underline;
   }
-  .sr-only {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
+  tbody a:focus-visible {
+    outline-offset: -3px;
+  }
+  .count {
+    width: 1%;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    color: var(--muted);
   }
   .back {
     display: inline-flex;
@@ -275,29 +290,19 @@
   .back:hover {
     text-decoration: underline;
   }
-  .detail {
-    display: grid;
-    grid-template-columns: minmax(0, 16rem) minmax(0, 1fr);
-    align-items: start;
-    gap: 1.5rem;
-  }
-  .summary {
-    display: grid;
+  .detail-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
     gap: 0.65rem;
-    padding: 0.85rem;
-    border: 1px solid var(--line);
-    border-radius: 16px;
-    background: var(--surface);
+    margin-bottom: 0.85rem;
   }
-  .summary h2 {
+  .detail-bar h2 {
     font-family: var(--reading);
     font-size: clamp(1.4rem, 3.5vw, 1.75rem);
     line-height: 1.2;
     overflow-wrap: anywhere;
-  }
-  .summary p {
-    margin: 0;
-    font-size: 0.88rem;
   }
   .buttons {
     display: flex;
@@ -344,24 +349,7 @@
   .error {
     color: var(--error);
   }
-  @media (max-width: 41rem) {
-    .detail {
-      grid-template-columns: minmax(0, 1fr);
-      gap: 1rem;
-    }
-    .summary {
-      grid-template-columns: minmax(4.5rem, 27%) minmax(0, 1fr);
-      align-items: start;
-      gap: 0.4rem 0.8rem;
-    }
-    .summary > :global(.cover) {
-      grid-row: span 3;
-    }
-  }
   @media (max-width: 34rem) {
-    .lists {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
     .search {
       flex: 1 1 8rem;
     }
