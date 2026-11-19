@@ -10,5 +10,5 @@ test("API key authentication", async () => {
   await expectStatus("/api/me without a key", client(base).me.$get(), 401);
   await expectStatus("/api/me with an unknown key", client(base, "00".repeat(32)).me.$get(), 401);
   assert.equal((await body("the system user", client(base, systemKey).me.$get())).id, "system");
-  assert.equal((await body("the e2e user", client(base, e2eUserKey(seed, "auth")).me.$get())).id, e2eUserId(runId, "auth"));
+  assert.equal((await body("the e2e user", client(base, e2eUserKey(seed, "en")).me.$get())).id, e2eUserId(runId, "en"));
 });

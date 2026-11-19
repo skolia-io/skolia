@@ -68,15 +68,15 @@ test("end-to-end runs get independent credentials and clean up only their own fi
   await batch(e2eKeysSql("first", keys, at));
   await batch(e2eKeysSql("second", other, at));
   assert.equal(await whoIs(app, keys.system), SYSTEM_USER);
-  for (const scenario of ["auth", "en", "fr", "pl"] as const) {
+  for (const scenario of ["en", "fr", "pl"] as const) {
     assert.equal(await whoIs(app, e2eUserKey(keys.user, scenario)), e2eUserId("first", scenario));
   }
   assert.equal((await importText(app, TEXT, { headers: { [API_KEY_HEADER]: keys.system }, visibility: "private" })).status, 202);
   await batch(e2eCleanupSql("first"));
   assert.equal(await whoIs(app, keys.system), null);
-  assert.equal(await whoIs(app, e2eUserKey(keys.user, "auth")), null);
+  assert.equal(await whoIs(app, e2eUserKey(keys.user, "en")), null);
   assert.equal(await whoIs(app, other.system), SYSTEM_USER);
-  assert.equal(await whoIs(app, e2eUserKey(other.user, "auth")), e2eUserId("second", "auth"));
+  assert.equal(await whoIs(app, e2eUserKey(other.user, "en")), e2eUserId("second", "en"));
 });
 
 async function whoIs(app: ReturnType<typeof setup>, key: string): Promise<string | null> {

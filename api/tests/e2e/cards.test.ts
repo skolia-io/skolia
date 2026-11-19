@@ -79,7 +79,7 @@ async function cards(base: string, key: string, lang: Lang): Promise<void> {
   log.info("{lang}: cards ok", { lang });
 }
 
-test("card journeys", { concurrency: Number(process.env["E2E_CARD_CONCURRENCY"] ?? LANGS.length) }, async (t) => {
+test("card journeys", { concurrency: LANGS.length }, async (t) => {
   const seed = process.env["E2E_USER_KEY"];
   assert.ok(seed, "E2E_USER_KEY is required");
   await Promise.all(LANGS.map((lang) => t.test(lang, () => cards(base, e2eUserKey(seed, lang), lang))));

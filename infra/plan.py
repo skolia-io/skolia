@@ -280,7 +280,7 @@ def targets() -> dict[str, Target]:
         "web": Target("deploy", (".#skolia-worker",), content=lambda planner: planner.version()),
         "e2e": Target(
             "deploy",
-            test=("api/tests/e2e", "api/scripts/run-e2e.sh", "justfile"),
+            test=("api/tests/e2e", "justfile"),
             against=("infra", "internal", "ingest", "lexicon", "web"),
         ),
         "curated": Target("deploy", test=("curated",), against=("web",)),

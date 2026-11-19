@@ -272,12 +272,25 @@ e2e env="local":
       just install build images
       exec api/scripts/e2e.sh {{ langs }}
     fi
-    url=$(just url {{ env }})
-    version=$(infra/plan.py version)
-    apply_e2e_keys() { just d1-sql {{ env }} api/src/e2e-keys.ts; }
-    source api/scripts/run-e2e.sh
-    run_e2e "$url" "$version" apply_e2e_keys
+    just e2e-tests {{ env }} "$(just url {{ env }})" "$(infra/plan.py version)"
     infra/plan.py deployed {{ env }} e2e
+
+[private]
+[positional-arguments]
+e2e-tests env url version persist="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    export E2E_URL="$2" E2E_VERSION="$3"
+    node api/tests/e2e/ready.ts
+    E2E_RUN_ID=$(openssl rand -hex 16)
+    E2E_API_KEY=$(openssl rand -hex 32)
+    E2E_USER_KEY=$(openssl rand -hex 32)
+    export E2E_RUN_ID E2E_API_KEY E2E_USER_KEY
+    trap 'E2E_KEYS_ACTION=cleanup just d1-sql "$1" api/src/e2e-keys.ts "$4" || exit 1' EXIT
+    started=$SECONDS
+    just d1-sql "$1" api/src/e2e-keys.ts "$4"
+    echo "Provisioned e2e credentials in $((SECONDS - started))s"
+    node --test --test-concurrency=4 api/tests/e2e/*.test.ts
 
 # Make the curated user's documents match curated/ (api/src/sync-curated.ts); with --check, only list what that takes.
 # A preview gets 5 of the texts (--sample), spread over languages, kinds and annotations.
@@ -309,14 +322,15 @@ url env:
 # a file goes through D1's import, which refuses every other query meanwhile, such as the
 # end-to-end tests' while sync-curated writes its key
 [private]
-d1-sql env script:
+[positional-arguments]
+d1-sql env script persist="":
     #!/usr/bin/env bash
     set -euo pipefail
-    sql=$(node {{ script }})
-    if [ {{ env }} = local ]; then
-      pnpm --dir api exec wrangler d1 execute DB --local --env='' --command "$sql" >/dev/null
+    sql=$(node "$2")
+    if [ "$1" = local ]; then
+      pnpm --dir api exec wrangler d1 execute DB --local --env='' ${3:+--persist-to "$3"} --command "$sql" >/dev/null
     else
-      infra/wrangler.sh {{ env }} d1 execute DB --remote --yes --command "$sql" >/dev/null
+      infra/wrangler.sh "$1" d1 execute DB --remote --yes --command "$sql" >/dev/null
     fi
 
 # Add infra/.terraform.lock.hcl's providers to skolia-tf-providers, which CI installs them from (infra/terraformrc)

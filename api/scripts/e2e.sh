@@ -46,16 +46,7 @@ done
 
 SYNC_CURATED_API_KEY=$(openssl rand -hex 32)
 export SYNC_CURATED_API_KEY
-node src/sync-curated-key.ts > "$state/sync-curated-key.sql"
-d1 execute DB --file "$state/sync-curated-key.sql"
-
-apply_e2e_keys() {
-  local sql
-  sql=$(node src/e2e-keys.ts) || return
-  d1 execute DB --command "$sql"
-}
-source scripts/run-e2e.sh
-# wrangler dev serves version "dev" (define in wrangler.jsonc)
-run_e2e "http://localhost:$port" dev apply_e2e_keys
+just d1-sql local api/src/sync-curated-key.ts "$api/$state"
+just e2e-tests local "http://localhost:$port" dev "$api/$state"
 node src/sync-curated.ts "http://localhost:$port" ../curated || { echo "sync-curated failed; see api/$log" >&2; exit 1; }
 node src/sync-curated.ts "http://localhost:$port" ../curated --check || { echo "sync-curated left changes; see api/$log" >&2; exit 1; }
