@@ -46,9 +46,18 @@ target-version = "py312"
 extend-exclude = ["scripts/vendor"]
 
 [tool.ruff.lint]
-select = ["E", "W", "F", "I", "UP", "B", "SIM", "RUF"]
+select = [
+    "A", "B", "C4", "DTZ", "E", "EXE", "F", "FA", "FLY", "I", "INT",
+    "LOG", "PERF", "PIE", "PT", "RUF", "SIM", "T10", "TID", "UP", "W",
+]
+# Allow intra-package relative imports and assertions that describe a single invariant.
+ignore = ["TID252", "PT018"]
+
 # IPA symbols in pronunciations: stress, length, and vowels that look like Latin letters
 allowed-confusables = ["ˈ", "ː", "ɪ", "ɑ", "ɡ"]
+
+[tool.ruff.lint.per-file-ignores]
+"*.pyi" = ["PIE790"]
 
 [tool.pyright]
 include = ["src", "tests", "scripts"]

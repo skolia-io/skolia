@@ -88,7 +88,7 @@ class GoldWord:
 class GoldSentence:
     sent_id: str
     text: str
-    words: list[GoldWord] = field(default_factory=lambda: [])
+    words: list[GoldWord] = field(default_factory=list[GoldWord])
 
 
 def parse_feats(raw: str) -> dict[str, str]:

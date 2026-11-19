@@ -4,17 +4,21 @@
 # dependencies = ["wordfreq==3.1.1"]
 # ///
 """Loads a language's lexicon into its D1 database (LEXICON_{LANG} in api/wrangler.jsonc):
-  load-lexicon.py <staging|production|pr-N|local> <sqlite> [--sample N] [--persist-to DIR] [--built-from OUT]
-  load-lexicon.py <staging|production|pr-N|local> --lang LANG --built-from OUT [--sample N] [--persist-to DIR]
+  load-lexicon.py <staging|production|pr-N|local> <sqlite>
+      [--sample N] [--persist-to DIR] [--built-from OUT]
+  load-lexicon.py <staging|production|pr-N|local> --lang LANG --built-from OUT
+      [--sample N] [--persist-to DIR]
 sqlite is analysis's {lang}.cards.sqlite (skolia-build-cards, or the Nix output
 analysis#cards-lexicon-{lang}); its meta table gives the language and version. Skipped if D1
 already serves that version. The new version's rows go in beside the old ones, then
 loaded points at it and the old rows are deleted in batches (api/lexicon-migrations), so a
 load that stops part way leaves the old version serving and can be run again. local is wrangler
-dev's database, or with --persist-to, the one in DIR (api/scripts/e2e.sh). --sample loads only the entries for wordfreq's N most common words, for
-previews, and their version ends in +sampleN. --built-from OUT, the Nix output sqlite is in, is
+dev's database, or with --persist-to, the one in DIR (api/scripts/e2e.sh).
+For previews, --sample loads entries for wordfreq's N most common words and adds +sampleN
+to their version. --built-from OUT, the Nix output sqlite is in, is
 recorded in loaded once the old rows are deleted; without sqlite, it prints current if D1 last
-loaded OUT, else stale (just load-lexicon, to skip the build). Needs the credentials infra/wrangler.sh needs.
+loaded OUT, else stale (just load-lexicon, to skip the build). Needs the credentials
+infra/wrangler.sh needs.
 """
 
 import argparse
@@ -109,7 +113,9 @@ def record_built_from(target: Target, version: str, key: str) -> None:
 
 
 def selection(lang: str, sample: int | None) -> str:
-    columns = "SELECT lemma_id, lemma, upos, senses, relations, pronunciations, paradigms FROM entry"
+    columns = (
+        "SELECT lemma_id, lemma, upos, senses, relations, pronunciations, paradigms FROM entry"
+    )
     if sample is None:
         return columns
     # A word's every entry (run the noun and the verb), not its proper nouns
@@ -120,9 +126,7 @@ def selection(lang: str, sample: int | None) -> str:
     )
 
 
-def statements(
-    db: sqlite3.Connection, lang: str, version: str, sample: int | None
-) -> list[str]:
+def statements(db: sqlite3.Connection, lang: str, version: str, sample: int | None) -> list[str]:
     which = f"version = {quote(version)}"
     out = [f"DELETE FROM entry WHERE {which};", f"DELETE FROM featureset WHERE {which};"]
     entries = cast(list[tuple[str, ...]], db.execute(selection(lang, sample)))
@@ -131,7 +135,9 @@ def statements(
         "pronunciations, paradigms) VALUES",
         ((lemma_id, version, *rest) for lemma_id, *rest in entries),
     )
-    features = cast(list[tuple[int, str, str]], db.execute("SELECT id, feature, value FROM featureset"))
+    features = cast(
+        list[tuple[int, str, str]], db.execute("SELECT id, feature, value FROM featureset")
+    )
     out += inserts(
         "INSERT INTO featureset (version, id, feature, value) VALUES",
         ((version, str(i), feature, value) for i, feature, value in features),
@@ -208,7 +214,7 @@ def main() -> None:
     parser.add_argument("--persist-to", type=Path, help="wrangler dev's state directory (local)")
     parser.add_argument(
         "--built-from",
-        help="the Nix output sqlite is in; without sqlite, prints current if D1 serves it, else stale",
+        help="the Nix output containing the SQLite file. With no file, reports current or stale.",
     )
     parser.add_argument("--lang", help="the language, when there's no sqlite")
     args = parser.parse_args()
@@ -250,6 +256,7 @@ def main() -> None:
     clean(target, version)
     if key is not None:
         record_built_from(target, version, key)
+
 
 if __name__ == "__main__":
     main()
