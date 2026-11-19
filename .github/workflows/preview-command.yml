@@ -1,0 +1,164 @@
+name: Run preview command
+
+on:
+  workflow_call:
+    inputs:
+      command:
+        type: string
+        required: true
+
+permissions:
+  contents: read
+  actions: read
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+  PREVIEW: pr-${{ github.event.issue.number }}
+  PR: ${{ github.event.issue.number }}
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    permissions:
+      pull-requests: read
+    outputs:
+      eligible: ${{ steps.pr.outputs.eligible }}
+      ref: ${{ steps.pr.outputs.ref }}
+      head: ${{ steps.pr.outputs.head }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      COMMAND: ${{ inputs.command }}
+    steps:
+      - id: pr
+        run: |
+          [[ "$COMMAND" == teardown || "$COMMAND" == reset ]]
+          [[ "$PR" =~ ^[0-9]+$ ]]
+          # Read after getting the lock: the PR could have closed while we waited.
+          pr=$(gh api "repos/{owner}/{repo}/pulls/$PR")
+          if ! jq -e --arg repo "$GH_REPO" '.state == "open" and .head.repo.full_name == $repo' <<<"$pr" >/dev/null; then
+            echo 'Preview commands require an open PR from this repository.'
+            exit 0
+          fi
+          if [[ "$COMMAND" == reset ]]; then
+            # Use the test merge revision, just as the ordinary PR deploy does.
+            if ! ref=$(jq -er 'select(.mergeable == true) | .merge_commit_sha | strings' <<<"$pr"); then
+              echo 'The PR has no merge revision yet. Resolve any conflicts or try again shortly.' >&2
+              exit 1
+            fi
+            head=$(jq -er '.head.sha' <<<"$pr")
+            [[ "$ref" =~ ^[0-9a-f]{40}$ && "$head" =~ ^[0-9a-f]{40}$ ]]
+            printf 'ref=%s\nhead=%s\n' "$ref" "$head" >> "$GITHUB_OUTPUT"
+          fi
+          echo 'eligible=true' >> "$GITHUB_OUTPUT"
+
+  plan-reset:
+    needs: prepare
+    if: needs.prepare.outputs.eligible == 'true' && inputs.command == 'reset'
+    runs-on: ubuntu-24.04
+    outputs:
+      plan: ${{ steps.plan.outputs.plan }}
+      url: ${{ steps.plan.outputs.url }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.ref }}
+          fetch-depth: 0
+      - uses: ./.github/actions/setup
+      - id: plan
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          plan=$(infra/plan.py plan --fresh-preview "$PREVIEW" | jq -ce --arg env "$PREVIEW" '.deploys[$env] // error("no preview deploy plan")')
+          url=$(just url "$PREVIEW")
+          printf 'plan=%s\nurl=%s\n' "$plan" "$url" >> "$GITHUB_OUTPUT"
+
+  mirror-providers:
+    needs: [prepare, plan-reset]
+    runs-on: ubuntu-24.04
+    concurrency:
+      group: mirror-providers
+      queue: max
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.ref }}
+      - uses: astral-sh/setup-uv@v10.3.3
+      - run: infra/mirror-providers.py
+        timeout-minutes: 10
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+
+  teardown:
+    needs: [prepare, mirror-providers]
+    if: ${{ !cancelled() && needs.prepare.outputs.eligible == 'true' && (inputs.command == 'teardown' || needs.mirror-providers.result == 'success') }}
+    runs-on: ubuntu-24.04
+    steps:
+      # The comment event's revision is on the default branch, not the PR branch.
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
+      - uses: ./.github/actions/pnpm
+      - run: .github/uninterruptible.sh just teardown "$PREVIEW"
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          TF_IN_AUTOMATION: "1"
+
+  redeploy:
+    needs: [prepare, plan-reset, teardown]
+    if: inputs.command == 'reset' && needs.teardown.result == 'success'
+    uses: ./.github/workflows/deploy.yml
+    with:
+      env: pr-${{ github.event.issue.number }}
+      ref: ${{ needs.prepare.outputs.ref }}
+      plan: ${{ needs.plan-reset.outputs.plan }}
+    secrets: inherit
+
+  comment:
+    needs: [prepare, plan-reset, teardown, redeploy]
+    if: ${{ !cancelled() && (needs.prepare.outputs.eligible == 'true' || needs.prepare.result == 'failure') }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      COMMAND: ${{ inputs.command }}
+      TEARDOWN: ${{ needs.teardown.result }}
+      SERVING: ${{ needs.redeploy.outputs.serving }}
+      DEPLOY: ${{ needs.redeploy.result }}
+      E2E: ${{ needs.redeploy.outputs.e2e }}
+      URL: ${{ needs.plan-reset.outputs.url }}
+      HEAD: ${{ needs.prepare.outputs.head }}
+      RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@v7
+      - run: |
+          if [[ "$TEARDOWN" != success ]]; then
+            # Don't replace the existing preview link if planning failed before teardown.
+            gh pr comment "$PR" --body "Preview $COMMAND failed ([run]($RUN))."
+            exit 0
+          fi
+          if [[ "$SERVING" == true ]]; then
+            outcome="end-to-end tests: ${E2E:-did not run}"
+            if [[ "$DEPLOY" != success ]]; then
+              outcome="$outcome; the deployment workflow failed"
+            fi
+            status="**Preview:** $URL
+
+          Reset from $HEAD ($outcome; [run]($RUN))."
+          elif [[ "$COMMAND" == reset ]]; then
+            status="**Preview:** torn down, but redeploy failed ([run]($RUN))."
+          else
+            status="**Preview:** torn down on request ([run]($RUN))."
+          fi
+          .github/preview-comment.sh "$PR" <<EOF
+          $status
+
+          Repo writers: post \`/preview teardown\` to delete this preview and its data, or \`/preview reset\` to delete and rebuild it.
+          EOF

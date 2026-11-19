@@ -1,0 +1,48 @@
+name: Preview commands
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions: {}
+
+jobs:
+  authorize:
+    if: github.event.issue.pull_request && github.event.comment.user.type == 'User' && contains(github.event.comment.body, '/preview ')
+    runs-on: ubuntu-24.04
+    outputs:
+      command: ${{ steps.command.outputs.command }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - id: command
+        run: |
+          # Match the whole comment, and never interpolate comment text into a script.
+          case $(jq -r '.comment.body | gsub("^\\s+|\\s+$"; "")' "$GITHUB_EVENT_PATH") in
+            '/preview teardown') command=teardown ;;
+            '/preview reset') command=reset ;;
+            *) exit 0 ;;
+          esac
+          author=$(jq -r '.comment.user.login' "$GITHUB_EVENT_PATH")
+          permission=$(gh api "repos/{owner}/{repo}/collaborators/$author/permission" --jq .permission)
+          case "$permission" in
+            admin|write) echo "command=$command" >> "$GITHUB_OUTPUT" ;;
+            *) echo 'Preview commands require repository write access.' ;;
+          esac
+
+  preview:
+    needs: authorize
+    if: needs.authorize.outputs.command != ''
+    # Only authorized commands enter the same queue as PR pushes and closes.
+    concurrency:
+      group: ci-pr-${{ github.event.issue.number }}
+      queue: max
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: write
+    uses: ./.github/workflows/preview-command.yml
+    with:
+      command: ${{ needs.authorize.outputs.command }}
+    secrets: inherit

@@ -23,15 +23,12 @@ on:
   merge_group:
   workflow_dispatch:
 
-# One run at a time for a pull request (its pushes and its close) and for main, so one
-# deploy of an environment at a time, and the plan, made at the start, holds: a newer run
-# cancels this one, and starts once it has stopped. A step that changes what's deployed
-# finishes first (.github/uninterruptible.sh). A tag's run and a merge group's run aren't
-# cancelled; a tag's staging deploy waits for main's (deploy-staging), so it may redo what
-# main's just did.
+# Serialize pushes, closes and authorized /preview commands for the same PR, from plan
+# through deploy. Queue instead of cancelling: a close or a reset must not be dropped
+# when another run arrives. A tag's staging deploy also waits for main's (deploy-staging).
 concurrency:
   group: ci-${{ github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+  queue: max
 
 # actions: read is for actions-timeline (deploy.yml), which lists the run's jobs
 permissions:
@@ -80,7 +77,7 @@ jobs:
     runs-on: ubuntu-24.04
     concurrency:
       group: mirror-providers
-      cancel-in-progress: false
+      queue: max
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       GH_TOKEN: ${{ github.token }}
@@ -194,6 +191,8 @@ jobs:
           **Preview:** $URL
 
           Deployed from $SHA; its end-to-end tests $tests ([run]($RUN)). It's torn down when this pull request closes.
+
+          Repo writers: post \`/preview teardown\` to delete this preview and its data, or \`/preview reset\` to delete and rebuild it.
           EOF
 
   # Required by main's ruleset, with check. It fails if the plan failed, if a check the plan
