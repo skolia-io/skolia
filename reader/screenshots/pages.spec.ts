@@ -30,10 +30,9 @@ test("explore", async ({ page }) => {
 test("my list", async ({ page }) => {
   await open(page, "#/list");
   await expect(page.getByRole("link", { name: "Book club" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Reading now", exact: true })).toBeHidden();
+  await expect(page.getByRole("link", { name: /^Finished/ })).toBeVisible();
   await expect(page).toHaveScreenshot("my-list.png", { fullPage: true });
-  await page.getByRole("button", { name: "Progress", exact: true }).click();
-  await page.getByRole("link", { name: "Reading now", exact: true }).click();
+  await page.getByRole("link", { name: /^Reading now/ }).click();
   await expect(page.getByText("Lalka", { exact: true })).toBeVisible();
 });
 
@@ -69,9 +68,8 @@ test("explore, reading list menu", async ({ page }) => {
   await expect(menu.getByRole("checkbox", { name: "Rabbit stories", exact: true })).toBeChecked();
 });
 
-test("reader, memberships and progress are separate", async ({ page }) => {
+test("reader, a document can belong to several lists", async ({ page }) => {
   await open(page, `#/doc/${LALKA}`);
-  await expect(page.getByLabel("Reading progress", { exact: true })).toHaveValue("reading");
   await page.getByRole("button", { name: "Add to reading lists", exact: true }).click();
   const menu = page.locator("[popover]:popover-open");
   const bookClub = menu.getByRole("checkbox", { name: "Book club", exact: true });
@@ -81,7 +79,7 @@ test("reader, memberships and progress are separate", async ({ page }) => {
   await expect(toRead).toBeEnabled();
   await expect(bookClub).toBeChecked();
   await page.keyboard.press("Escape");
-  await expect(page.getByLabel("Reading progress", { exact: true })).toHaveValue("reading");
+  await expect(menu).toBeHidden();
 });
 
 test("reading lists, detail and management", async ({ page }) => {

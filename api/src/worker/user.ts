@@ -15,12 +15,9 @@ import {
   type CardListing,
   type DocumentId,
   type Paginated,
-  type ReadingEntry,
   type ReadingListId,
   type ReadingList,
-  type ReadingFilter,
   type ReadingKey,
-  type ReadingStatus,
   type NewCard,
   type Timestamp,
   type Lang,
@@ -31,37 +28,12 @@ import {
 import { paginate, type PageRequest } from "@skolia/shared/page";
 import * as schemas from "@skolia/shared/schemas";
 import { CardId } from "@skolia/shared/schemas";
-import {
-  and,
-  col,
-  compile,
-  desc,
-  eq,
-  exists,
-  fn,
-  inQuery,
-  insertInto,
-  isNotNull,
-  le,
-  lit,
-  ne,
-  not,
-  or,
-  select,
-  type Query,
-} from "@skolia/util/query";
+import { and, col, compile, desc, eq, exists, fn, inQuery, isNotNull, le, lit, ne, not, or, select, type Query } from "@skolia/util/query";
 import { sql, type Sql } from "@skolia/util/sql";
-import type { CardOutcome, DueCards, ReviewOutcome, StoredPosition, StoredReading } from "../ports.ts";
+import type { CardOutcome, DueCards, ReviewOutcome, StoredPosition } from "../ports.ts";
 import { fromJson, fsrs, newCard, review, toJson } from "./scheduler.ts";
 import { MIGRATIONS } from "../user/migrations/index.ts";
-import {
-  BLANK_DOCUMENT,
-  BLANK_START,
-  READING_ENTRY,
-  cardsQuery,
-  readingProgressQuery,
-  readingListDocumentsQuery,
-} from "../user/queries.ts";
+import { BLANK_DOCUMENT, BLANK_START, cardsQuery, readingListDocumentsQuery } from "../user/queries.ts";
 import {
   LogEntry,
   MigrationError,
@@ -420,40 +392,6 @@ export class User extends DurableObject<UserEnv> {
     return paginate(
       rows.map((item) => ({ item, key: [item.addedAt, item.documentId] as const })),
       limit,
-    );
-  }
-
-  reading(documentId: DocumentId): ReadingEntry | null {
-    const row = this.#exec(select(READING_ENTRY).from("reading_progress").where(eq("document_id", documentId))).toArray()[0];
-    return row === undefined ? null : schemas.ReadingEntry.parse(row);
-  }
-
-  setReading(documentId: DocumentId, lang: Lang, status: ReadingStatus, now: Timestamp): ReadingEntry {
-    const row = this.#exec(
-      insertInto("reading_progress")
-        .values({ document_id: documentId, lang, status, added_at: now, updated_at: now })
-        .onConflict(["document_id"], {
-          set: {
-            status: col("excluded.status"),
-            updated_at: fn.iif(eq("excluded.status", col("reading_progress.status")), "reading_progress.updated_at", "excluded.updated_at"),
-          },
-        })
-        .returning(READING_ENTRY),
-    ).one();
-    return schemas.ReadingEntry.parse(row);
-  }
-
-  removeReading(documentId: DocumentId): void {
-    this.#exec(sql`DELETE FROM reading_progress WHERE document_id = ${documentId}`);
-  }
-
-  readingProgress(filter: ReadingFilter, page: PageRequest<ReadingKey>): Paginated<StoredReading, ReadingKey> {
-    const rows = this.#exec(readingProgressQuery(filter, page))
-      .toArray()
-      .map((row): StoredReading => ({ documentId: schemas.DocumentId.parse(row["documentId"]), ...schemas.ReadingEntry.parse(row) }));
-    return paginate(
-      rows.map((item) => ({ item, key: [item.updatedAt, item.documentId] as const })),
-      page.limit,
     );
   }
 

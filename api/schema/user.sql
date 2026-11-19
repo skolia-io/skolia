@@ -71,7 +71,7 @@ CREATE TABLE reading_list_count (
   total INTEGER NOT NULL CHECK(total BETWEEN 0 AND 200)
 ) STRICT;
 
-CREATE TABLE "reading_list_document" (
+CREATE TABLE reading_list_document (
   list_id TEXT NOT NULL REFERENCES reading_list(id) ON DELETE CASCADE,
   document_id TEXT NOT NULL,
   lang TEXT NOT NULL,
@@ -99,18 +99,6 @@ CREATE TABLE reading_position (
   token INTEGER NOT NULL CHECK (token >= 0),
   at TEXT NOT NULL CHECK (at IS strftime('%Y-%m-%dT%H:%M:%fZ', at))
 ) STRICT, WITHOUT ROWID;
-
-CREATE TABLE "reading_progress" (
-  document_id TEXT NOT NULL PRIMARY KEY,
-  lang TEXT NOT NULL,
-  status TEXT NOT NULL,
-  added_at TEXT NOT NULL CHECK (added_at IS strftime('%Y-%m-%dT%H:%M:%fZ', added_at)),
-  updated_at TEXT NOT NULL CHECK (updated_at IS strftime('%Y-%m-%dT%H:%M:%fZ', updated_at))
-) STRICT, WITHOUT ROWID;
-
-CREATE INDEX reading_list_lang ON "reading_progress" (lang, status, updated_at, document_id);
-
-CREATE INDEX reading_list_status ON "reading_progress" (status, updated_at, document_id);
 
 CREATE TABLE review (
   id TEXT NOT NULL PRIMARY KEY,

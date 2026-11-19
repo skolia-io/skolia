@@ -31,11 +31,6 @@ test("custom lists can be created, renamed, browsed, removed and independently c
   );
   assert.equal((await body("all", lists.$get())).lists.find((list) => list.id === first)?.name, "French stories");
   assert.equal((await body("all", lists.$get())).lists.find((list) => list.id === first)?.documentsCount, 1);
-  await expectStatus(
-    "progress",
-    client(app, importer).me["reading-list"][":id"].$put({ param: { id }, json: { status: "finished" } }),
-    200,
-  );
   await expectStatus("rename", lists[":listId"].$patch({ param: { listId: first }, json: { name: "Short stories" } }), 204);
   const page = await body("texts", lists[":listId"].documents.$get({ param: { listId: first }, query: { lang: "fr" } }));
   assert.deepEqual(
@@ -53,10 +48,6 @@ test("custom lists can be created, renamed, browsed, removed and independently c
   assert.deepEqual((await body("memberships", client(app, importer).me["reading-list-memberships"][":id"].$get({ param: { id } }))).lists, [
     "to-read",
   ]);
-  assert.equal(
-    (await body("progress unchanged", client(app, importer).me["reading-list"][":id"].$get({ param: { id } }))).entry?.status,
-    "finished",
-  );
   assert.equal((await lists[":listId"].documents.$get({ param: { listId: second }, query: {} })).status, 404);
   assert.equal((await lists[":listId"].$delete({ param: { listId: "to-read" } })).status, 400);
   await expectStatus("rename default", lists[":listId"].$patch({ param: { listId: "to-read" }, json: { name: "Later" } }), 204);

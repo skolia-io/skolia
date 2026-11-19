@@ -34,7 +34,6 @@ import { AnnotationId, CardId, DocumentId, LemmaId, ReadingListId, Timestamp, Us
 type Deps = Parameters<typeof createApp>[0];
 type StoredDocument = Awaited<ReturnType<Deps["documents"]["list"]>>["items"][number];
 type StoredBlob = NonNullable<Awaited<ReturnType<Deps["blobs"]["get"]>>>;
-type StoredReading = Awaited<ReturnType<Deps["users"]["readingProgress"]>>["items"][number];
 
 const DIST = join(import.meta.dirname, "..", "dist");
 const FIXTURES = join(import.meta.dirname, "fixtures");
@@ -200,22 +199,6 @@ const statuses: readonly (readonly [DocumentIdType, Status])[] = [
   [PETER_RABBIT.id, { state: "failed", updated: "2026-11-08T10:00:00.000Z", error: "The analyser stopped" }],
 ];
 
-/** The user's reading list: Lalka being read, Le Petit Prince to read. */
-const readingProgress: readonly StoredReading[] = [
-  {
-    documentId: LALKA,
-    status: "reading",
-    addedAt: Timestamp.parse("2026-11-07T10:00:00.000Z"),
-    updatedAt: Timestamp.parse("2026-11-08T18:00:00.000Z"),
-  },
-  {
-    documentId: PETIT_PRINCE.id,
-    status: "to-read",
-    addedAt: Timestamp.parse("2026-11-08T09:00:00.000Z"),
-    updatedAt: Timestamp.parse("2026-11-08T09:00:00.000Z"),
-  },
-];
-
 const JSON_TYPE = "application/json";
 
 /** The blobs as ingest stores them: analyses and bundles Brotli-compressed. */
@@ -327,6 +310,8 @@ function deps(signedIn: boolean, annotations: readonly Annotation[]): Deps {
   let kept = listedCards;
   let readingLists: readonly ReadingList[] = [
     "To read",
+    "Reading now",
+    "Finished",
     "Book club",
     "French short stories",
     "Polish classics",
@@ -347,8 +332,9 @@ function deps(signedIn: boolean, annotations: readonly Annotation[]): Deps {
     readonly addedAt: ReturnType<typeof Timestamp.parse>;
   }[] = [
     { listId: ReadingListId.parse("to-read"), documentId: PETIT_PRINCE.id, addedAt: Timestamp.parse(NOW.toISOString()) },
-    { listId: readingLists[1]!.id, documentId: PETIT_PRINCE.id, addedAt: Timestamp.parse(NOW.toISOString()) },
     { listId: readingLists[1]!.id, documentId: LALKA, addedAt: Timestamp.parse(NOW.toISOString()) },
+    { listId: readingLists[3]!.id, documentId: PETIT_PRINCE.id, addedAt: Timestamp.parse(NOW.toISOString()) },
+    { listId: readingLists[3]!.id, documentId: LALKA, addedAt: Timestamp.parse(NOW.toISOString()) },
   ];
   const withCounts = () =>
     readingLists.map((list) => ({ ...list, documentsCount: memberships.filter((item) => item.listId === list.id).length }));
@@ -418,23 +404,6 @@ function deps(signedIn: boolean, annotations: readonly Annotation[]): Deps {
       }),
       position: async () => null,
       setPosition: async () => {},
-      reading: async (_userId, id) => {
-        const found = readingProgress.find((r) => r.documentId === id);
-        return found ? { status: found.status, addedAt: found.addedAt, updatedAt: found.updatedAt } : null;
-      },
-      setReading: async (_userId, _id, _lang, status) => ({
-        status,
-        addedAt: Timestamp.parse(NOW.toISOString()),
-        updatedAt: Timestamp.parse(NOW.toISOString()),
-      }),
-      removeReading: async () => {},
-      // One page: there are only a few
-      readingProgress: async (_userId, { status, lang }) => ({
-        items: readingProgress.filter(
-          (r) => r.status === status && (lang === undefined || documents.find((d) => d.id === r.documentId)?.lang === lang),
-        ),
-        next: null,
-      }),
     },
     lexicon: {
       entries: async (ids) => ({ entries: ids.flatMap((id) => entry(id) ?? []), featureSets: { pl: featureSets } }),

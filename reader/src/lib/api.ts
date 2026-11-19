@@ -33,15 +33,12 @@ import {
   type Lookup,
   type NewCardInput,
   type Rating,
-  type ListedReading,
-  type ReadingEntry,
   type ReadingListId,
   type ReadingList,
   type ReadingListDocument,
   type ReadingKey,
   type ReadingPosition,
   type ReadingNames,
-  type ReadingStatus,
   type Reviewed,
   type Settings,
   type User,
@@ -306,36 +303,6 @@ export async function getPosition(id: DocumentId): Promise<ReadingPosition | nul
   if (response.status === 401) return undefined;
   if (!response.ok) throw await failure(response);
   return (await response.json()).position;
-}
-
-/** The text's entry on the reading list, null if it isn't on it, or undefined when signed out. */
-export async function getReadingEntry(id: DocumentId): Promise<ReadingEntry | null | undefined> {
-  const response = await api.me["reading-list"][":id"].$get({ param: { id } });
-  if (response.status === 401) return undefined;
-  if (!response.ok) throw await failure(response);
-  return (await response.json()).entry;
-}
-
-export async function setReadingStatus(id: DocumentId, status: ReadingStatus): Promise<ReadingEntry> {
-  const response = await api.me["reading-list"][":id"].$put({ param: { id }, json: { status } });
-  if (!response.ok) throw await failure(response);
-  return (await response.json()).entry;
-}
-
-export async function removeFromReadingList(id: DocumentId): Promise<void> {
-  const response = await api.me["reading-list"][":id"].$delete({ param: { id } });
-  if (!response.ok) throw await failure(response);
-}
-
-/** A page of the texts on the reading list with the status, in the language if one is given. */
-export async function listReading(
-  status: ReadingStatus,
-  lang: Lang | undefined,
-  after?: Cursor<ReadingKey>,
-): Promise<Paginated<ListedReading, ReadingKey>> {
-  const response = await api.me["reading-list"].$get({ query: { status, after, ...(lang ? { lang } : {}) } });
-  if (!response.ok) throw await failure(response);
-  return response.json();
 }
 
 export async function readingLists(): Promise<readonly ReadingList[]> {

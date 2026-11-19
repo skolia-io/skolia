@@ -9,12 +9,10 @@
   import Page from "../components/Page.svelte";
   import ReadingListCover from "../components/ReadingListCover.svelte";
   import ReadingListContents from "../components/ReadingListContents.svelte";
-  import ProgressContents from "../components/ProgressContents.svelte";
 
   let { user }: { user: User | null | undefined } = $props();
   let query = $state(hashQuery(location.hash));
   const selected = $derived(ReadingListId.safeParse(query.get("list")));
-  const progress = $derived(query.get("progress") === "reading" ? "reading" : query.get("progress") === "finished" ? "finished" : null);
   const lang = $derived(readReadingList(query) ?? undefined);
   const lists = queryReadingLists();
   const edit = createReadingListEdit();
@@ -22,20 +20,12 @@
   let name = $state("");
   let action = $state<"create" | "rename" | "delete">("create");
   let dialog: HTMLDialogElement;
-  const progressMenu = $props.id();
   let nameInput: HTMLInputElement | undefined = $state();
   const current = $derived(selected.success ? lists.data?.find((list) => list.id === selected.data) : undefined);
-  const detail = $derived(selected.success || progress !== null);
-  const title = $derived(
-    progress === "reading"
-      ? "Reading now"
-      : progress === "finished"
-        ? "Finished"
-        : (current?.name ?? (detail ? "Reading list" : "Reading lists")),
-  );
+  const title = $derived(current?.name ?? (selected.success ? "Reading list" : "Reading lists"));
   const shown = $derived(findReadingLists(lists.data, search));
-  function link(key: "list" | "progress", value: string): string {
-    const next = new URLSearchParams({ [key]: value });
+  function link(list: string): string {
+    const next = new URLSearchParams({ list });
     if (lang) next.set("lang", lang);
     return `#/list?${next}`;
   }
@@ -92,14 +82,9 @@
     <p class="muted">Sign in to save texts and make your own reading lists.</p>
     <Button variant="primary" onclick={() => void signIn()}>Sign in</Button>
   {:else if user}
-    {#if detail}
+    {#if selected.success}
       <a class="back" href="#/list"><span aria-hidden="true">←</span> Reading lists</a>
-      {#if progress}
-        <div class="detail-filter">{@render filter()}</div>
-        {#key progress}
-          <ProgressContents status={progress} {lang} />
-        {/key}
-      {:else if current}
+      {#if current}
         <div class="detail">
           <header class="summary">
             <ReadingListCover name={current.name} saved={current.id === "to-read"} />
@@ -137,11 +122,6 @@
           </label>
         {/if}
         <div class="library-actions">
-          <Button small variant="quiet" popovertarget={progressMenu}>Progress</Button>
-          <div class="progress-menu" id={progressMenu} popover>
-            <a href={link("progress", "reading")} onclick={(event) => event.currentTarget.parentElement?.hidePopover()}>Reading now</a>
-            <a href={link("progress", "finished")} onclick={(event) => event.currentTarget.parentElement?.hidePopover()}>Finished</a>
-          </div>
           <Button small variant="primary" onclick={() => void show("create")} disabled={!lists.data || lists.data.length >= 200}>
             <span aria-hidden="true">＋</span>
             New list
@@ -154,7 +134,7 @@
       <ul class="lists">
         {#each shown as list (list.id)}
           <li>
-            <a class="list" href={link("list", list.id)}>
+            <a class="list" href={link(list.id)}>
               <ReadingListCover name={list.name} count={list.documentsCount} saved={list.id === "to-read"} />
               <strong>{list.name}</strong>
               <span class="sr-only">{list.documentsCount} {list.documentsCount === 1 ? "text" : "texts"}</span>
@@ -182,7 +162,7 @@
     <form onsubmit={submit}>
       <h2 id="list-dialog-title">{action === "create" ? "New reading list" : action === "rename" ? "Rename list" : "Delete list?"}</h2>
       {#if action === "delete"}
-        <p>“{current?.name}” will be removed. Its texts and your reading progress won't be deleted.</p>
+        <p>“{current?.name}” will be removed. Its texts won't be deleted.</p>
       {:else}
         <label for="list-name">{action === "create" ? "New list name" : "List name"}</label>
         <input id="list-name" placeholder="e.g. Weekend reading" maxlength="100" required bind:this={nameInput} bind:value={name}>
@@ -225,31 +205,6 @@
   }
   .library-actions {
     margin-left: auto;
-  }
-  .progress-menu {
-    position: fixed;
-    inset: auto;
-    top: calc(anchor(bottom) + 0.35rem);
-    right: anchor(right);
-    position-try-fallbacks: flip-block, flip-inline;
-    margin: 0;
-    padding: 0.3rem;
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    background: var(--surface);
-    box-shadow: var(--card-shadow);
-  }
-  .progress-menu a {
-    display: block;
-    padding: 0.45rem 0.65rem;
-    border-radius: 4px;
-    text-decoration: none;
-    color: var(--text);
-    font-size: 0.875rem;
-  }
-  .progress-menu a:hover,
-  .progress-menu a:focus-visible {
-    background: var(--bg);
   }
   svg {
     width: 1.1rem;

@@ -15,7 +15,6 @@ import * as cards from "./controllers/cards.ts";
 import * as documents from "./controllers/documents.ts";
 import * as ingest from "./controllers/ingest.ts";
 import * as positions from "./controllers/positions.ts";
-import * as readingProgress from "./controllers/reading-progress.ts";
 import * as readingLists from "./controllers/reading-lists.ts";
 import { fail, ok, type BlobResult, type Failed, type NotModified, type Result } from "./controllers/result.ts";
 import { log } from "@skolia/util/log";
@@ -235,7 +234,7 @@ export function createApp(deps: Deps) {
     )
     .delete(
       "/api/me/reading-lists/:listId",
-      mine(TAGS.reading, "Delete a reading list without deleting its texts or reading progress"),
+      mine(TAGS.reading, "Delete a reading list without deleting its documents"),
       validator("param", z.object({ listId: schemas.ReadingListId }), badRequest()),
       responds({ 204: NO_BODY, 400: error("Built-in list"), 401: NOT_SIGNED_IN, 404: error("No such list") }),
       (c) => signedIn(c, (user) => readingLists.remove(deps, user, c.req.valid("param").listId)),
@@ -272,42 +271,6 @@ export function createApp(deps: Deps) {
       validator("param", z.object({ listId: schemas.ReadingListId, id: schemas.DocumentId }), badRequest()),
       responds({ 204: NO_BODY, 401: NOT_SIGNED_IN, 404: error("No such list") }),
       (c) => signedIn(c, (user) => readingLists.save(deps, user, c.req.valid("param").listId, c.req.valid("param").id, false)),
-    )
-    .get(
-      "/api/me/reading-list",
-      mine(TAGS.reading, "A page of the reading list", "The texts with a status, latest changed first."),
-      validator("query", schemas.ReadingQuery, badRequest()),
-      responds({ 200: json(schemas.page(schemas.ListedReading), "A page of texts"), 401: NOT_SIGNED_IN }),
-      (c) =>
-        signedIn(c, (user) => {
-          const { status, lang, ...page } = c.req.valid("query");
-          return readingProgress.list(deps, user, { status, lang }, page);
-        }),
-    )
-    .get(
-      "/api/me/reading-list/:id",
-      mine(TAGS.reading, "A text's place on the reading list"),
-      validator("param", z.object({ id: schemas.DocumentId }), badRequest(DOCUMENT_ID_MESSAGE)),
-      responds({
-        200: json(z.object({ entry: schemas.ReadingEntry.nullable() }), "Its entry, null if it isn't on the list"),
-        401: NOT_SIGNED_IN,
-      }),
-      (c) => signedIn(c, (user) => readingProgress.get(deps, user, c.req.valid("param").id)),
-    )
-    .put(
-      "/api/me/reading-list/:id",
-      mine(TAGS.reading, "Put a text on the reading list, or change its status"),
-      validator("param", z.object({ id: schemas.DocumentId }), badRequest(DOCUMENT_ID_MESSAGE)),
-      validator("json", schemas.SetReading, badRequest()),
-      responds({ 200: json(z.object({ entry: schemas.ReadingEntry }), "Its entry"), 401: NOT_SIGNED_IN, 404: error("No such document") }),
-      (c) => signedIn(c, (user) => readingProgress.set(deps, user, c.req.valid("param").id, c.req.valid("json").status)),
-    )
-    .delete(
-      "/api/me/reading-list/:id",
-      mine(TAGS.reading, "Take a text off the reading list"),
-      validator("param", z.object({ id: schemas.DocumentId }), badRequest(DOCUMENT_ID_MESSAGE)),
-      responds({ 204: NO_BODY, 401: NOT_SIGNED_IN }),
-      (c) => signedIn(c, (user) => readingProgress.remove(deps, user, c.req.valid("param").id)),
     )
     .get(
       "/api/me/documents",

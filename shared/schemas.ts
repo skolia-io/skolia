@@ -22,7 +22,6 @@ import {
   MAX_TAGS,
   RATINGS,
   READING_PAGE,
-  READING_STATUSES,
   SCHEDULE_STATUSES,
   SHAREABLE_LICENCES,
   TAG_KIND,
@@ -109,13 +108,8 @@ export const ReadingList = ReadingListName.extend({
 });
 export const ReadingListDocument = z.object({ document: z.lazy(() => DocumentSummary), addedAt: Timestamp });
 
-export const ReadingStatus = z.enum(READING_STATUSES).meta({ id: "ReadingStatus" });
-export const ReadingEntry = z.object({ status: ReadingStatus, addedAt: Timestamp, updatedAt: Timestamp }).meta({ id: "ReadingEntry" });
-export const SetReading = z.object({ status: ReadingStatus });
 export const ReadingKey = z.tuple([Timestamp, DocumentId]).readonly();
 export const ReadingListDocumentsQuery = pageQuery(ReadingKey, READING_PAGE).extend({ lang: Lang.optional() });
-/** A page of the texts on the reading list with the status; lang, only those in the language. */
-export const ReadingQuery = pageQuery(ReadingKey, READING_PAGE).extend({ status: ReadingStatus, lang: Lang.optional() });
 
 export const CountsQuery = z.object({ dayStart: IsoTime });
 /** group: only its cards; without one, both groups'. */
@@ -692,5 +686,3 @@ export const CardCounts = z.object({ lang: Lang, words: Tally, forms: Tally }).m
 export const Reviewed = z.object({ cardId: CardId, dueAt: Timestamp });
 
 export const CardMade = z.object({ cardId: CardId }).meta({ id: "CardMade" });
-
-export const ListedReading = ReadingEntry.extend({ document: DocumentSummary });

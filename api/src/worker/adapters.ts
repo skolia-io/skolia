@@ -31,12 +31,9 @@ import {
   type Lookup,
   type Timestamp,
   type UserId,
-  type ReadingEntry,
   type ReadingListId,
   type ReadingList,
-  type ReadingFilter,
   type ReadingKey,
-  type ReadingStatus,
   type ReviewRequest,
   type Settings,
   type AvailableTag,
@@ -86,7 +83,6 @@ import type {
   StoredBlob,
   StoredDocument,
   StoredPosition,
-  StoredReading,
   UserData,
 } from "../ports.ts";
 import { prepare } from "@skolia/util/d1";
@@ -178,26 +174,6 @@ export class DurableObjectUsers implements UserData {
   }
   async readingListDocuments(userId: UserId, id: ReadingListId, lang: Lang | undefined, page: PageRequest<ReadingKey>) {
     return this.users.getByName(userId).readingListDocuments(id, lang, page);
-  }
-
-  async reading(userId: UserId, documentId: DocumentId): Promise<ReadingEntry | null> {
-    return this.users.getByName(userId).reading(documentId);
-  }
-
-  async setReading(userId: UserId, documentId: DocumentId, lang: Lang, status: ReadingStatus, now: Timestamp): Promise<ReadingEntry> {
-    return this.users.getByName(userId).setReading(documentId, lang, status, now);
-  }
-
-  async removeReading(userId: UserId, documentId: DocumentId): Promise<void> {
-    await this.users.getByName(userId).removeReading(documentId);
-  }
-
-  async readingProgress(
-    userId: UserId,
-    filter: ReadingFilter,
-    page: PageRequest<ReadingKey>,
-  ): Promise<Paginated<StoredReading, ReadingKey>> {
-    return this.users.getByName(userId).readingProgress(filter, page);
   }
 }
 

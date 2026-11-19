@@ -28,13 +28,10 @@ import type {
   Licence,
   NewCard,
   NewLeft,
-  ReadingEntry,
   ReadingListId,
   ReadingList,
-  ReadingFilter,
   ReadingKey,
   ReadingPosition,
-  ReadingStatus,
   Reviewed,
   ReviewRequest,
   ScheduledCard,
@@ -208,20 +205,9 @@ export interface UserData {
     lang: Lang | undefined,
     page: PageRequest<ReadingKey>,
   ): Promise<Paginated<{ readonly documentId: DocumentId; readonly addedAt: Timestamp }, ReadingKey> | null>;
-
-  /** The text's entry on the reading list, null if it isn't on it. */
-  reading(userId: UserId, documentId: DocumentId): Promise<ReadingEntry | null>;
-  /** Puts the text on the list with the status, or gives it the status. updatedAt changes
-   * only with the status. lang: the text's. */
-  setReading(userId: UserId, documentId: DocumentId, lang: Lang, status: ReadingStatus, now: Timestamp): Promise<ReadingEntry>;
-  removeReading(userId: UserId, documentId: DocumentId): Promise<void>;
-  /** A page of the texts on the list that the filter keeps. */
-  readingProgress(userId: UserId, filter: ReadingFilter, page: PageRequest<ReadingKey>): Promise<Paginated<StoredReading, ReadingKey>>;
 }
 
 export type StoredPosition = z.output<typeof schemas.StoredPosition>;
-
-export type StoredReading = ReadingEntry & { readonly documentId: DocumentId };
 
 /** The lexicon, with the feature sets its entries' paradigms use. Ids it doesn't have are left out. */
 export interface Lexicon {
