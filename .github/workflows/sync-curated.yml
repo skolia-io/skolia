@@ -10,9 +10,6 @@ on:
       env:
         type: string
         required: true
-      ref:
-        description: Optional pinned revision for a preview reset
-        type: string
 
 permissions:
   contents: read
@@ -34,7 +31,6 @@ jobs:
       # The tags and history: the key it records has the skolia Worker's version (infra/plan.py)
       - uses: actions/checkout@v7
         with:
-          ref: ${{ inputs.ref }}
           fetch-depth: 0
       - uses: ./.github/actions/setup
       - uses: ./.github/actions/pnpm

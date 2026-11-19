@@ -4,42 +4,90 @@ on:
   issue_comment:
     types: [created]
 
-permissions: {}
+permissions:
+  actions: write # Re-run CI after reset
+  contents: read
+  pull-requests: write # Update the preview status comment
 
 jobs:
-  authorize:
-    if: github.event.issue.pull_request && github.event.comment.user.type == 'User' && contains(github.event.comment.body, '/preview ')
+  command:
+    if: >-
+      github.event.issue.pull_request && github.event.issue.state == 'open' &&
+      github.event.comment.user.type == 'User' &&
+      (github.event.comment.body == '/preview teardown' || github.event.comment.body == '/preview reset')
     runs-on: ubuntu-24.04
-    outputs:
-      command: ${{ steps.command.outputs.command }}
+    concurrency:
+      group: preview-command-${{ github.event.issue.number }}
+      queue: max
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
+      PR: ${{ github.event.issue.number }}
     steps:
       - id: command
+        shell: bash
         run: |
-          # Match the whole comment, and never interpolate comment text into a script.
-          case $(jq -r '.comment.body | gsub("^\\s+|\\s+$"; "")' "$GITHUB_EVENT_PATH") in
+          case $(jq -r '.comment.body' "$GITHUB_EVENT_PATH") in
             '/preview teardown') command=teardown ;;
             '/preview reset') command=reset ;;
             *) exit 0 ;;
           esac
           author=$(jq -r '.comment.user.login' "$GITHUB_EVENT_PATH")
-          permission=$(gh api "repos/{owner}/{repo}/collaborators/$author/permission" --jq .permission)
-          case "$permission" in
-            admin|write) echo "command=$command" >> "$GITHUB_OUTPUT" ;;
+          case $(gh api "repos/{owner}/{repo}/collaborators/$author/permission" --jq .permission) in
+            admin|write) echo "name=$command" >> "$GITHUB_OUTPUT" ;;
             *) echo 'Preview commands require repository write access.' ;;
           esac
+      - uses: actions/checkout@v7
+        if: steps.command.outputs.name != ''
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        if: steps.command.outputs.name != ''
+      - uses: ./.github/actions/pnpm
+        if: steps.command.outputs.name != ''
+      - if: steps.command.outputs.name != ''
+        shell: bash
+        env:
+          COMMAND: ${{ steps.command.outputs.name }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          pr=$(gh api "repos/{owner}/{repo}/pulls/$PR")
+          if ! jq -e --arg repo "$GH_REPO" '.state == "open" and .head.repo.full_name == $repo' <<<"$pr" >/dev/null; then
+            echo 'Preview commands require an open PR from this repository.' >&2
+            exit 1
+          fi
+          branch=$(jq -r '.head.ref' <<<"$pr")
+          head=$(jq -r '.head.sha' <<<"$pr")
+          base=$(jq -r '.base.sha' <<<"$pr")
+          runs=$(gh api --method GET 'repos/{owner}/{repo}/actions/workflows/ci.yml/runs' \
+            -f event=pull_request -f branch="$branch" -F per_page=100 |
+            jq -c --arg repo "$GH_REPO" --argjson pr "$PR" \
+              '[.workflow_runs[] | select(.head_repository.full_name == $repo and any(.pull_requests[]; .number == $pr))]')
+          if jq -e 'any(.[]; .status != "completed")' <<<"$runs" >/dev/null; then
+            echo 'CI is still running for this PR. Try again after it finishes.' >&2
+            exit 1
+          fi
+          if [[ "$COMMAND" == reset ]]; then
+            if ! run=$(jq -er --arg head "$head" --arg base "$base" --argjson pr "$PR" '
+              first(.[] | select(.head_sha == $head and
+                any(.pull_requests[]; .number == $pr and .base.sha == $base) and
+                (.conclusion == "success" or .conclusion == "failure") and
+                (.created_at | fromdateiso8601 > now - 30 * 86400))) | .id' <<<"$runs"); then
+              echo 'No rerunnable CI run for the current PR revision. Nothing was deleted.' >&2
+              exit 1
+            fi
+          fi
 
-  preview:
-    needs: authorize
-    if: needs.authorize.outputs.command != ''
-    # Only authorized commands enter CI's per-PR queue.
-    permissions:
-      actions: read
-      contents: read
-      pull-requests: write
-    uses: ./.github/workflows/ci.yml
-    with:
-      command: ${{ needs.authorize.outputs.command }}
-    secrets: inherit
+          .github/uninterruptible.sh just teardown "pr-$PR"
+          if ! echo '**Preview:** torn down on request.' | .github/preview-comment.sh "$PR" --if-exists; then
+            echo '::warning::Could not update the preview status comment.'
+          fi
+          if [[ "$COMMAND" == reset ]]; then
+            current=$(gh api "repos/{owner}/{repo}/pulls/$PR")
+            if ! jq -e --arg head "$head" --arg base "$base" '.state == "open" and .head.sha == $head and .base.sha == $base' <<<"$current" >/dev/null; then
+              echo 'Preview was torn down, but the PR changed during teardown. CI was not rerun.' >&2
+              exit 1
+            fi
+            gh run rerun "$run"
+          fi

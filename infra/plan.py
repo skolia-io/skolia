@@ -286,9 +286,7 @@ def targets() -> dict[str, Target]:
             "deploy", (".#skolia-worker",), content=lambda planner: planner.version()
         ),
         # The tests are in api/, so in the skolia Worker
-        "e2e": Target(
-            "deploy", against=("infra", "internal", "ingest", "lexicon", "web")
-        ),
+        "e2e": Target("deploy", against=("infra", "internal", "ingest", "lexicon", "web")),
         "curated": Target("deploy", test=("curated",), against=("web",)),
         "infra-shared": Target(
             "shared", ("infra/shared", *migrations("infra/skolia-ci/wrangler.jsonc"))
@@ -555,12 +553,10 @@ def needed(
     return {name: not current for name, current in done.items()}
 
 
-def plan_deploys(
-    planner: Planner, env: str, *, fresh: bool = False
-) -> dict[str, bool] | None:
+def plan_deploys(planner: Planner, env: str) -> dict[str, bool] | None:
     """Whether each of env's deploys is needed, or None for a preview that would be staging."""
     names = scope("shared" if env == "shared" else "deploy")
-    if fresh or not has_token():
+    if not has_token():
         return needed(planner, f"{env}, deploys", dict.fromkeys(names, False))
     keys = {name: planner.key(name) for name in names}
     last = last_keys(env, names)
@@ -576,9 +572,7 @@ def plan_deploys(
     )
 
 
-def plan(
-    planner: Planner, envs: list[str], *, fresh_preview: str | None = None
-) -> dict[str, object]:
+def plan(planner: Planner, envs: list[str]) -> dict[str, object]:
     """The run's: the checks still to pass, and each env's deploys with the builds they need
     (none for a preview that would be staging). terraform is whether anything needs the
     providers mirrored (ci.yml mirror-providers)."""
@@ -598,8 +592,7 @@ def plan(
     )
     deploys: dict[str, dict[str, object]] = {}
     for env in envs:
-        todo = plan_deploys(planner, env, fresh=env == fresh_preview)
-        if todo is None:
+        if (todo := plan_deploys(planner, env)) is None:
             continue
         deploys[env] = dict(todo)
         if env != "shared":
@@ -715,18 +708,11 @@ def main(args: list[str]) -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     commands = parser.add_subparsers(dest="command", required=True)
-    plan_args = commands.add_parser(
+    commands.add_parser(
         "plan",
         help="print the run's plan as JSON, for ci.yml: the checks, the builds, and each "
         "environment's deploys",
-    )
-    plan_args.add_argument("envs", nargs="*", type=environment, metavar="env")
-    plan_args.add_argument(
-        "--fresh-preview",
-        type=preview,
-        metavar="pr-<number>",
-        help="plan a full deploy of this preview before tearing it down",
-    )
+    ).add_argument("envs", nargs="*", type=environment, metavar="env")
     commands.add_parser("passed", help="record a check's pass").add_argument(
         "name", choices=scope("check")
     )
@@ -756,15 +742,7 @@ def main(args: list[str]) -> None:
     parsed = parser.parse_args(args)
     match parsed.command:
         case "plan":
-            fresh = parsed.fresh_preview
-            envs = parsed.envs
-            if fresh:
-                if envs:
-                    plan_args.error(
-                        "--fresh-preview cannot be combined with other environments"
-                    )
-                envs = [fresh]
-            print(json.dumps(plan(Planner(list(targets())), envs, fresh_preview=fresh)))
+            print(json.dumps(plan(Planner(list(targets())), parsed.envs)))
         case "passed":
             if has_token():
                 record_build(Planner([parsed.name]), parsed.name)

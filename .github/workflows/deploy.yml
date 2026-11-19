@@ -7,8 +7,8 @@ name: Deploy
 # Worker consumes the queue the skolia Worker feeds, so it goes first. Each job runs only if
 # the plan says its key isn't what the environment has, and records its key once it's done.
 # One deploy of an environment runs at a time (ci.yml's concurrency), so no older deploy
-# lands between the plan and what it skipped. Steps that change what's deployed use
-# .github/uninterruptible.sh. Previews (pr-<N>)
+# lands between the plan and what it skipped. A newer push cancels the run, but a step that
+# changes what's deployed finishes first (.github/uninterruptible.sh). Previews (pr-<N>)
 # share one GitHub environment, preview.
 
 on:
@@ -17,9 +17,6 @@ on:
       env:
         type: string
         required: true
-      ref:
-        description: Optional pinned revision for a preview reset
-        type: string
       plan:
         description: The environment's plan, from ci.yml's (infra/plan.py plan)
         type: string
@@ -52,8 +49,6 @@ jobs:
         lang: ${{ fromJSON(inputs.plan).images }}
     steps:
       - uses: actions/checkout@v7
-        with:
-          ref: ${{ inputs.ref }}
       # The model downloads read HF_TOKEN (impureEnvVars) from the daemon, not this job
       - uses: ./.github/actions/setup
         with:
@@ -72,8 +67,6 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
-        with:
-          ref: ${{ inputs.ref }}
       - uses: ./.github/actions/setup
       - run: |
           nix build --no-link --print-out-paths .#skolia-worker | cachix push andyyu2004
@@ -91,8 +84,6 @@ jobs:
       TF_CLI_ARGS_apply: -auto-approve
     steps:
       - uses: actions/checkout@v7
-        with:
-          ref: ${{ inputs.ref }}
       - uses: ./.github/actions/setup
       - uses: ./.github/actions/pnpm
       - run: .github/uninterruptible.sh just deploy-infra ${{ inputs.env }}
@@ -106,8 +97,6 @@ jobs:
     environment: ${{ startsWith(inputs.env, 'pr-') && 'preview' || inputs.env }}
     steps:
       - uses: actions/checkout@v7
-        with:
-          ref: ${{ inputs.ref }}
       - uses: ./.github/actions/setup
       - uses: ./.github/actions/pnpm
       - run: just load-lexicon ${{ inputs.env }}
@@ -122,8 +111,6 @@ jobs:
     environment: ${{ startsWith(inputs.env, 'pr-') && 'preview' || inputs.env }}
     steps:
       - uses: actions/checkout@v7
-        with:
-          ref: ${{ inputs.ref }}
       - uses: ./.github/actions/setup
       - uses: ./.github/actions/pnpm
       - run: .github/uninterruptible.sh just deploy-internal ${{ inputs.env }}
@@ -138,8 +125,6 @@ jobs:
       TF_IN_AUTOMATION: "1"
     steps:
       - uses: actions/checkout@v7
-        with:
-          ref: ${{ inputs.ref }}
       - uses: ./.github/actions/setup
       - uses: ./.github/actions/pnpm
       - run: .github/uninterruptible.sh infra/deploy-ingest.sh ${{ inputs.env }} deploy
@@ -168,7 +153,6 @@ jobs:
       # The tags and history, for the version
       - uses: actions/checkout@v7
         with:
-          ref: ${{ inputs.ref }}
           fetch-depth: 0
       - uses: ./.github/actions/setup
       - uses: ./.github/actions/pnpm
@@ -191,7 +175,6 @@ jobs:
       # The tags and history, for the version
       - uses: actions/checkout@v7
         with:
-          ref: ${{ inputs.ref }}
           fetch-depth: 0
       - uses: ./.github/actions/setup
       - uses: ./.github/actions/pnpm
@@ -206,7 +189,6 @@ jobs:
     uses: ./.github/workflows/sync-curated.yml
     with:
       env: ${{ inputs.env }}
-      ref: ${{ inputs.ref }}
     secrets: inherit
 
   # A Gantt chart of the run's jobs and steps up to here, in its summary
