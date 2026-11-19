@@ -99,13 +99,12 @@ test("a sample takes a text from each language, kind and whether it's annotated 
         ? "kind: inline\ntitle: A\nlicence: cc0\ntext: '[Ala]{a} ma kota.'\nannotations:\n  a: { kind: text, text: Alice, licence: cc0 }\n"
         : "kind: inline\ntitle: A\nlicence: cc0\ntext: Ala ma kota.\n",
     );
-  const lektura = (path: string) => parseCurated(path, "pl", `kind: wolnelektury\nslug: ${path.slice(3, -5)}\n`);
   const files = [
-    lektura("pl/w2.yaml"),
+    inline("pl/w2.yaml", "pl"),
     inline("pl/a2.yaml", "pl", true),
     inline("en/plain.yaml", "en"),
     inline("pl/a1.yaml", "pl", true),
-    lektura("pl/w1.yaml"),
+    inline("pl/w1.yaml", "pl"),
     inline("pl/plain.yaml", "pl"),
     inline("pl/a3.yaml", "pl", true),
   ];

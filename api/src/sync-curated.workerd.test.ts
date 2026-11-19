@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { Fetch } from "./curated-kinds.ts";
 import { parseCurated, resolveCurated, sync, toCurated, type Change, type Curated } from "./sync-curated.ts";
 import { CURATED_USER } from "./sync-curated-key.ts";
 import { client, listed, local, setup, useLocal, type App } from "./testing/app.ts";
@@ -48,13 +47,9 @@ test("the sync imports, updates and deletes until the curated user's documents m
   assert.deepEqual(await sync(api, [retitled, edited], { check: true }), []);
 });
 
-const noFetch: Fetch = async (url) => {
-  throw new Error(`fetched ${url}`);
-};
-
 async function inline(text: string, annotations = ""): Promise<Curated> {
   const yaml = `kind: inline\ntitle: Włosy\nlicence: cc-by-nc-4.0\ntext: |\n${text.replace(/^/gmu, "  ")}\n${annotations}`;
-  const [curated] = await resolveCurated([parseCurated("pl/w.yaml", "pl", yaml)], noFetch);
+  const [curated] = await resolveCurated([parseCurated("pl/w.yaml", "pl", yaml)]);
   assert.ok(curated);
   return curated;
 }

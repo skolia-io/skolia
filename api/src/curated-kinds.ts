@@ -1,11 +1,9 @@
-// The kinds of curated file, curated/{lang}/{name}.yaml. Each is checked without the
-// network (CuratedSpec), then resolved to a text and its credits, fetching it if its
-// kind names a source.
+// The kinds of curated file, curated/{lang}/{name}.yaml. Each is checked (CuratedSpec),
+// then resolved to a text and its credits.
 import * as z from "zod";
-import { LICENCES, type Lang, type Licence, type NewAnnotation, type Tags } from "@skolia/shared/api";
+import { LICENCES, type Licence, type NewAnnotation, type Tags } from "@skolia/shared/api";
 import * as schemas from "@skolia/shared/schemas";
 import { LABEL, parseSpans } from "./curated-spans.ts";
-import { describeError } from "@skolia/util/errors";
 
 /** A curated text, its credits and its annotations, as sync-curated imports them. */
 export type Resolved = {
@@ -78,22 +76,11 @@ const Inline = z
     }
   });
 
-/** A whole work from Wolne Lektury, by the slug in its catalogue URL
- * (wolnelektury.pl/katalog/lektura/<slug>/). title replaces Wolne Lektury's. */
-const WolneLektury = z.strictObject({
-  kind: z.literal("wolnelektury"),
-  slug: z.string().regex(/^[a-z0-9-]+$/u, "slug must be lowercase letters, digits and hyphens"),
-  title: z.string().min(1).optional(),
-  tags: schemas.Tags.default({}),
-});
-
-export const CuratedSpec = z.discriminatedUnion("kind", [Inline, WolneLektury]);
+export const CuratedSpec = z.discriminatedUnion("kind", [Inline]);
 export type CuratedSpec = z.output<typeof CuratedSpec>;
 
-export type Fetch = (url: string) => Promise<Response>;
-
 /** The text, its credits and its annotations, each where its span is in the text. */
-export async function resolve(spec: CuratedSpec, lang: Lang, fetch: Fetch): Promise<Resolved> {
+export function resolve(spec: CuratedSpec): Resolved {
   switch (spec.kind) {
     case "inline": {
       const { kind: _, text, annotations, ...credits } = spec;
@@ -103,87 +90,5 @@ export async function resolve(spec: CuratedSpec, lang: Lang, fetch: Fetch): Prom
         annotations: text.spans.flatMap(({ label, start, end }) => (annotations[label] ?? []).map((a) => ({ ...a, start, end }))),
       };
     }
-    case "wolnelektury":
-      return wolneLektury(spec, lang, fetch);
   }
-}
-
-const WOLNE_LEKTURY_API = "https://wolnelektury.pl/api/books/";
-
-const Book = z.object({
-  title: z.string(),
-  /** ISO 639-2: pol */
-  language: z.string(),
-  /** The catalogue page */
-  url: z.url(),
-  txt: z.url(),
-  authors: z.array(z.object({ name: z.string() })),
-});
-
-/** Wolne Lektury's ISO 639-2 language codes, for the languages skolia has. */
-const WOLNE_LEKTURY_LANGS: Readonly<Record<string, Lang>> = { pol: "pl", eng: "en", fre: "fr", fra: "fr" };
-
-/** Thrown for a fetch that may work if tried again: the network failed, or the server
- * answered 429 or 5xx. */
-export class TransientFetchError extends Error {}
-
-async function fetched(fetch: Fetch, url: string): Promise<Response> {
-  let response: Response;
-  try {
-    response = await fetch(url);
-  } catch (error) {
-    throw new TransientFetchError(`${url}: ${describeError(error)}`, { cause: error });
-  }
-  if (response.ok) return response;
-  const message = `${url}: ${response.status}`;
-  throw response.status === 429 || response.status >= 500 ? new TransientFetchError(message) : new Error(message);
-}
-
-async function wolneLektury(spec: z.output<typeof WolneLektury>, lang: Lang, fetch: Fetch): Promise<Resolved> {
-  const book = Book.parse(await (await fetched(fetch, `${WOLNE_LEKTURY_API}${spec.slug}/`)).json());
-  if (WOLNE_LEKTURY_LANGS[book.language] !== lang) throw new Error(`${spec.slug} is in ${book.language}, not ${lang}`);
-  const raw = (await (await fetched(fetch, book.txt)).text()).replace(/\r\n/gu, "\n");
-  const author = book.authors.map((a) => a.name).join(", ");
-  return {
-    title: spec.title ?? book.title,
-    licence: wolneLekturyLicence(raw),
-    ...(author === "" ? {} : { author }),
-    source: book.url,
-    tags: spec.tags,
-    text: wolneLekturyText(raw),
-    annotations: [],
-  };
-}
-
-const FOOTER = "\n-----\n";
-
-/** An ISBN line, which ends a header with any number of blank lines after it. */
-const ISBN_LINE = /^ISBN [0-9X-]+\n/mu;
-
-/** The work in a Wolne Lektury .txt: after its header (author and title, which may wrap,
- * then an ISBN line or three blank lines) and before its footer ("-----"), without the line
- * indents and *emphasis* the .txt keeps. */
-export function wolneLekturyText(raw: string): string {
-  const body = raw.split(FOOTER)[0] ?? "";
-  const blank = body.indexOf("\n\n\n\n");
-  const isbn = ISBN_LINE.exec(body);
-  const start = isbn && (blank < 0 || isbn.index < blank) ? isbn.index + isbn[0].length : blank;
-  if (start < 0) throw new Error("no blank lines after the header");
-  return body
-    .slice(start)
-    .split("\n")
-    .map((line) => line.trim().replace(/\*([^*\n]+)\*/gu, "$1"))
-    .join("\n")
-    .trim();
-}
-
-/** The work's licence, from the footer of a Wolne Lektury .txt. */
-export function wolneLekturyLicence(raw: string): Licence {
-  const footer = raw.split(FOOTER)[1];
-  if (footer === undefined) throw new Error('no "-----" footer');
-  if (footer.includes("Ten utwór jest w domenie publicznej.")) return "public-domain";
-  const cc = /creativecommons\.org\/licenses\/([a-z-]+)\/(\d\.\d)\//u.exec(footer);
-  const licence = LICENCES.find((l) => cc !== null && l === `cc-${cc[1]}-${cc[2]}`);
-  if (licence !== undefined) return licence;
-  throw new Error("the footer names no licence skolia knows");
 }
