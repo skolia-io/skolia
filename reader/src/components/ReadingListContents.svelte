@@ -25,7 +25,7 @@
       No texts here yet{lang ? " in this language" : ""}. Find something in <a href="#/">Explore</a> and add it to this list.
     {/snippet}
     {#snippet aside(doc)}
-      <Button small variant="quiet" disabled={change.isPending} onclick={() => change.mutate({ listId: id, id: doc.id, saved: false })}
+      <Button small variant="quiet" disabled={change.isPending} onclick={() => change.mutate({ listId: id, id: doc.id, action: "remove" })}
         >Remove</Button
       >
     {/snippet}

@@ -33,18 +33,17 @@ export async function memberships(deps: Deps, user: User, documentId: DocumentId
   return ok({ lists: await deps.users.readingListMemberships(user.id, documentId) });
 }
 
-export async function save(deps: Deps, user: User, id: ReadingListId, documentId: DocumentId, saved: boolean) {
-  // Removal remains possible after a text becomes unavailable.
-  const document = saved ? await deps.documents.visible(documentId, user.id) : null;
-  if (saved && !document) return fail(404, "No such document");
-  return (await deps.users.setReadingListDocument(
-    user.id,
-    id,
-    documentId,
-    document ? { lang: document.lang, createdAt: timestamp(deps.now()) } : null,
-  ))
+export async function addDocument(deps: Deps, user: User, listId: ReadingListId, documentId: DocumentId) {
+  const document = await deps.documents.visible(documentId, user.id);
+  if (!document) return fail(404, "No such document");
+  return (await deps.users.addDocumentToReadingList(user.id, listId, documentId, document.lang, timestamp(deps.now())))
     ? NO_CONTENT
     : fail(404, "No such reading list");
+}
+
+export async function removeDocument(deps: Deps, user: User, listId: ReadingListId, documentId: DocumentId) {
+  // Removal remains possible after a document becomes unavailable.
+  return (await deps.users.removeDocumentFromReadingList(user.id, listId, documentId)) ? NO_CONTENT : fail(404, "No such reading list");
 }
 
 export async function documents(deps: Deps, user: User, id: ReadingListId, lang: Lang | undefined, page: PageRequest<ReadingKey>) {

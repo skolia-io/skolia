@@ -201,9 +201,8 @@ test("reading lists migrate each status into a list without touching the resume 
   const id = await user.createReadingList("Stories", AT);
   assert.equal(id, 4);
   assert.ok(id);
-  const save = { lang: "pl", createdAt: AT } as const;
-  assert.equal(await user.setReadingListDocument(id, documents[0]!, save), true);
-  assert.equal(await user.setReadingListDocument(id, documents[0]!, save), true);
+  assert.equal(await user.addDocumentToReadingList(id, documents[0]!, "pl", AT), true);
+  assert.equal(await user.addDocumentToReadingList(id, documents[0]!, "pl", AT), true);
   assert.equal((await user.readingLists()).find((list) => list.id === id)?.documentsCount, 1);
   assert.equal(await user.deleteReadingList(id), true);
   assert.deepEqual(await user.readingListMemberships(documents[0]!), [toRead]);

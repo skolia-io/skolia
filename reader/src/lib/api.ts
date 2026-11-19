@@ -328,10 +328,12 @@ export async function readingListMemberships(id: DocumentId): Promise<readonly R
   if (!response.ok) throw await failure(response);
   return (await response.json()).lists;
 }
-export async function setReadingListDocument(listId: ReadingListId, id: DocumentId, saved: boolean): Promise<void> {
-  const route = api.me["reading-lists"][":listId"].documents[":id"];
-  const param = { listId: String(listId), id };
-  const response = await (saved ? route.$put({ param }) : route.$delete({ param }));
+export async function addDocumentToReadingList(listId: ReadingListId, id: DocumentId): Promise<void> {
+  const response = await api.me["reading-lists"][":listId"].documents[":id"].$put({ param: { listId: String(listId), id } });
+  if (!response.ok) throw await failure(response);
+}
+export async function removeDocumentFromReadingList(listId: ReadingListId, id: DocumentId): Promise<void> {
+  const response = await api.me["reading-lists"][":listId"].documents[":id"].$delete({ param: { listId: String(listId), id } });
   if (!response.ok) throw await failure(response);
 }
 export async function readingListDocuments(

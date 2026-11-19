@@ -363,18 +363,20 @@ export class User extends DurableObject<UserEnv> {
       .map((row) => schemas.ReadingListId.parse(row["list_id"]));
   }
 
-  setReadingListDocument(
-    id: ReadingListId,
-    documentId: DocumentId,
-    save: { readonly lang: Lang; readonly createdAt: Timestamp } | null,
-  ): boolean {
-    if (!this.#exec(sql`SELECT id FROM reading_list WHERE id = ${id}`).toArray().length) return false;
-    if (save) {
-      this.#exec(sql`INSERT INTO reading_list_document (list_id, document_id, lang, created_at)
-        VALUES (${id}, ${documentId}, ${save.lang}, ${save.createdAt}) ON CONFLICT DO NOTHING`);
-    } else {
-      this.#exec(sql`DELETE FROM reading_list_document WHERE list_id = ${id} AND document_id = ${documentId}`);
-    }
+  #hasReadingList(listId: ReadingListId): boolean {
+    return this.#exec(sql`SELECT id FROM reading_list WHERE id = ${listId}`).toArray().length > 0;
+  }
+
+  addDocumentToReadingList(listId: ReadingListId, documentId: DocumentId, lang: Lang, createdAt: Timestamp): boolean {
+    if (!this.#hasReadingList(listId)) return false;
+    this.#exec(sql`INSERT INTO reading_list_document (list_id, document_id, lang, created_at)
+      VALUES (${listId}, ${documentId}, ${lang}, ${createdAt}) ON CONFLICT DO NOTHING`);
+    return true;
+  }
+
+  removeDocumentFromReadingList(listId: ReadingListId, documentId: DocumentId): boolean {
+    if (!this.#hasReadingList(listId)) return false;
+    this.#exec(sql`DELETE FROM reading_list_document WHERE list_id = ${listId} AND document_id = ${documentId}`);
     return true;
   }
 
@@ -383,7 +385,7 @@ export class User extends DurableObject<UserEnv> {
     lang: Lang | undefined,
     page: PageRequest<ReadingKey>,
   ): Paginated<{ readonly documentId: DocumentId; readonly createdAt: Timestamp }, ReadingKey> | null {
-    if (!this.#exec(sql`SELECT id FROM reading_list WHERE id = ${id}`).toArray().length) return null;
+    if (!this.#hasReadingList(id)) return null;
     const { limit } = page;
     const rows = this.#exec(readingListDocumentsQuery(id, lang, page))
       .toArray()

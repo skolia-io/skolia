@@ -27,8 +27,8 @@ export function createMemberships(id: () => DocumentId, enabled: () => boolean) 
 }
 export function createReadingListChange() {
   return createMutation(() => ({
-    mutationFn: ({ listId, id, saved }: { readonly listId: ReadingListId; readonly id: DocumentId; readonly saved: boolean }) =>
-      api.setReadingListDocument(listId, id, saved),
+    mutationFn: ({ listId, id, action }: { readonly listId: ReadingListId; readonly id: DocumentId; readonly action: "add" | "remove" }) =>
+      action === "add" ? api.addDocumentToReadingList(listId, id) : api.removeDocumentFromReadingList(listId, id),
     onSuccess: async (_data, { listId, id }, _held, { client }) => {
       await Promise.all([
         client.invalidateQueries({ queryKey: membershipKey(id) }),

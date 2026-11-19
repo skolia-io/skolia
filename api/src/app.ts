@@ -263,14 +263,14 @@ export function createApp(deps: Deps) {
       mine(TAGS.reading, "Add a text to a reading list"),
       validator("param", z.object({ listId: schemas.ReadingListIdParam, id: schemas.DocumentId }), badRequest()),
       responds({ 204: NO_BODY, 401: NOT_SIGNED_IN, 404: error("No such list or document") }),
-      (c) => signedIn(c, (user) => readingLists.save(deps, user, c.req.valid("param").listId, c.req.valid("param").id, true)),
+      (c) => signedIn(c, (user) => readingLists.addDocument(deps, user, c.req.valid("param").listId, c.req.valid("param").id)),
     )
     .delete(
       "/api/me/reading-lists/:listId/documents/:id",
       mine(TAGS.reading, "Remove a text from a reading list"),
       validator("param", z.object({ listId: schemas.ReadingListIdParam, id: schemas.DocumentId }), badRequest()),
       responds({ 204: NO_BODY, 401: NOT_SIGNED_IN, 404: error("No such list") }),
-      (c) => signedIn(c, (user) => readingLists.save(deps, user, c.req.valid("param").listId, c.req.valid("param").id, false)),
+      (c) => signedIn(c, (user) => readingLists.removeDocument(deps, user, c.req.valid("param").listId, c.req.valid("param").id)),
     )
     .get(
       "/api/me/documents",

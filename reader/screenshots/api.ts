@@ -393,9 +393,16 @@ function deps(signedIn: boolean, annotations: readonly Annotation[]): Deps {
         return true;
       },
       readingListMemberships: async (_userId, id) => memberships.filter((item) => item.documentId === id).map((item) => item.listId),
-      setReadingListDocument: async (_userId, listId, documentId, save) => {
+      addDocumentToReadingList: async (_userId, listId, documentId, _lang, createdAt) => {
+        if (!readingLists.some((list) => list.id === listId)) return false;
+        if (!memberships.some((item) => item.listId === listId && item.documentId === documentId)) {
+          memberships = [...memberships, { listId, documentId, createdAt }];
+        }
+        return true;
+      },
+      removeDocumentFromReadingList: async (_userId, listId, documentId) => {
+        if (!readingLists.some((list) => list.id === listId)) return false;
         memberships = memberships.filter((item) => item.listId !== listId || item.documentId !== documentId);
-        if (save) memberships = [...memberships, { listId, documentId, createdAt: save.createdAt }];
         return true;
       },
       readingListDocuments: async (_userId, listId, lang) => ({

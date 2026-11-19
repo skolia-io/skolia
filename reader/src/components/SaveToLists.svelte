@@ -86,12 +86,14 @@
         <label>
           <input
             type="checkbox"
-            checked={change.isPending && change.variables.listId === list.id ? change.variables.saved : memberships.data.includes(list.id)}
+            checked={change.isPending && change.variables.listId === list.id
+              ? change.variables.action === "add"
+              : memberships.data.includes(list.id)}
             aria-disabled={change.isPending}
             onchange={(event) => {
               const input = event.currentTarget;
               if (change.isPending) input.checked = !input.checked;
-              else change.mutate({ listId: list.id, id, saved: input.checked });
+              else change.mutate({ listId: list.id, id, action: input.checked ? "add" : "remove" });
             }}
           >
           <span>{list.name}</span>
@@ -109,7 +111,7 @@
               { action: "create", name },
               {
                 onSuccess: (listId) => {
-                  if (listId) change.mutate({ listId, id, saved: true });
+                  if (listId) change.mutate({ listId, id, action: "add" });
                   creating = false;
                   name = "";
                   search = "";
