@@ -518,19 +518,19 @@ export const State: z.ZodType<types.State> = /* @__PURE__ */ (() => z.enum(["que
 
 export const QueuedStatus: z.ZodType<types.QueuedStatus> = /* @__PURE__ */ (() => z.object({
   state: z.enum(["queued"]),
-  updated: z.string(),
+  updatedAt: z.string(),
   artifacts: ReadyAnalysis.exactOptional(),
 }).meta({ id: "QueuedStatus" }))();
 
 export const ReadyStatus: z.ZodType<types.ReadyStatus> = /* @__PURE__ */ (() => z.object({
   state: z.enum(["ready"]),
-  updated: z.string(),
+  updatedAt: z.string(),
   artifacts: ReadyAnalysis,
 }).meta({ id: "ReadyStatus" }))();
 
 export const FailedStatus: z.ZodType<types.FailedStatus> = /* @__PURE__ */ (() => z.object({
   state: z.enum(["failed"]),
-  updated: z.string(),
+  updatedAt: z.string(),
   error: z.string(),
   artifacts: ReadyAnalysis.exactOptional(),
 }).meta({ id: "FailedStatus" }))();

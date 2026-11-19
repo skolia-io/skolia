@@ -23,6 +23,7 @@ import type { PageRequest } from "@skolia/shared/page";
 import { PART_ENCODING, docId, partKey, statusKey, textKey, versionsKey } from "@skolia/shared/keys";
 import type { Status, Versions } from "@skolia/shared/schema";
 import * as schemas from "@skolia/shared/schemas";
+import { compatibleStatus } from "@skolia/shared/status";
 import { log } from "@skolia/util/log";
 import type { BlobStore } from "../ports/blobs.ts";
 import type { Clock } from "../ports/index.ts";
@@ -286,11 +287,11 @@ async function requeue(
     lang: record.lang,
     reason,
     previous: status?.state ?? null,
-    since: status?.updated ?? null,
+    since: status?.updatedAt ?? null,
   });
   const queued: Status = {
     state: "queued",
-    updated: timestamp(at),
+    updatedAt: timestamp(at),
     ...(status?.artifacts === undefined ? {} : { artifacts: status.artifacts }),
   };
   await publishStatus(deps, record.id, queued);
@@ -314,7 +315,7 @@ export const STUCK_AFTER_MS = 30 * 60 * 1000;
 
 export function isStuck(status: Status, at: Date): boolean {
   if (status.state !== "queued") return false;
-  const updated = Date.parse(status.updated);
+  const updated = Date.parse(status.updatedAt);
   return Number.isNaN(updated) || at.getTime() - updated > STUCK_AFTER_MS;
 }
 
@@ -380,7 +381,7 @@ export async function publishStatus(
   id: DocumentId,
   status: Status,
 ): Promise<void> {
-  await deps.blobs.put(statusKey(id), JSON.stringify(status), "application/json");
+  await deps.blobs.put(statusKey(id), JSON.stringify(compatibleStatus(status)), "application/json");
   await deps.documents.setStatus(id, status);
 }
 
@@ -392,7 +393,7 @@ export async function readStatus(blobs: BlobStore, id: DocumentId): Promise<Stat
 
 /** The status blob ingest writes. */
 export function parseStatus(raw: string): Status | null {
-  return parseJson(schemas.Status, raw);
+  return parseJson(schemas.CompatibleStatus, raw);
 }
 
 export function countWords(text: string): number {

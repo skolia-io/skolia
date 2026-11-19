@@ -17,14 +17,14 @@ test("accept-encoding parsing", () => {
 test("stuck and outdated rules", () => {
   const at = new Date(NOW);
   const old = new Date(at.getTime() - STUCK_AFTER_MS - 1).toISOString();
-  assert.equal(isStuck({ state: "queued", updated: NOW }, at), false);
-  assert.equal(isStuck({ state: "queued", updated: old }, at), true);
-  assert.equal(isStuck({ state: "ready", updated: old, artifacts: ARTIFACTS }, at), false);
-  assert.equal(isStuck({ state: "queued", updated: "garbage" }, at), true);
+  assert.equal(isStuck({ state: "queued", updatedAt: NOW }, at), false);
+  assert.equal(isStuck({ state: "queued", updatedAt: old }, at), true);
+  assert.equal(isStuck({ state: "ready", updatedAt: old, artifacts: ARTIFACTS }, at), false);
+  assert.equal(isStuck({ state: "queued", updatedAt: "garbage" }, at), true);
   assert.equal(nameOf("doc/x/analysis/s2-a1.json.br"), "s2-a1");
   assert.equal(nameOf(undefined), undefined);
   const latest = { analyzer: "a", lexicon: "l", analysis: "s2-a1", bundle: "b1-a1-l1" };
-  const ready = { state: "ready", updated: NOW, artifacts: ARTIFACTS } as const;
+  const ready = { state: "ready", updatedAt: NOW, artifacts: ARTIFACTS } as const;
   assert.equal(isOutdated(ready, latest), false);
   assert.equal(isOutdated(ready, { ...latest, analysis: "s3-a1" }), true);
   assert.equal(isOutdated(ready, null), false);
@@ -40,15 +40,17 @@ test("versions parsing ignores malformed blobs", () => {
 
 test("status parsing ignores malformed blobs", () => {
   assert.equal(parseStatus("not json"), null);
-  assert.equal(parseStatus(JSON.stringify({ state: "done", updated: "x" })), null);
-  assert.equal(parseStatus(JSON.stringify({ state: "ready", updated: "x", bundle: 3 })), null);
-  assert.equal(parseStatus(JSON.stringify({ state: "ready", updated: "x" })), null);
-  assert.equal(parseStatus(JSON.stringify({ state: "failed", updated: "x" })), null);
-  assert.equal(parseStatus(JSON.stringify({ state: "queued", updated: "x", artifacts: { analysis: "partial" } })), null);
-  const ready = { state: "ready", updated: "x", artifacts: ARTIFACTS };
+  assert.equal(parseStatus(JSON.stringify({ state: "done", updatedAt: "x" })), null);
+  assert.equal(parseStatus(JSON.stringify({ state: "ready", updatedAt: "x", bundle: 3 })), null);
+  assert.equal(parseStatus(JSON.stringify({ state: "ready", updatedAt: "x" })), null);
+  assert.equal(parseStatus(JSON.stringify({ state: "failed", updatedAt: "x" })), null);
+  assert.equal(parseStatus(JSON.stringify({ state: "queued", updatedAt: "x", artifacts: { analysis: "partial" } })), null);
+  const ready = { state: "ready", updatedAt: "x", artifacts: ARTIFACTS };
   assert.deepEqual(parseStatus(JSON.stringify({ ...ready, extra: 1 })), ready);
-  assert.equal(parseStatus(JSON.stringify({ state: "ready", updated: "x", ...ARTIFACTS })), null);
-  assert.equal(parseStatus(JSON.stringify({ state: "analysing", updated: "x" })), null);
+  assert.deepEqual(parseStatus(JSON.stringify({ state: "ready", updated: "x", artifacts: ARTIFACTS })), ready);
+  assert.deepEqual(parseStatus(JSON.stringify({ ...ready, updated: "older" })), ready);
+  assert.equal(parseStatus(JSON.stringify({ state: "ready", updatedAt: "x", ...ARTIFACTS })), null);
+  assert.equal(parseStatus(JSON.stringify({ state: "analysing", updatedAt: "x" })), null);
 });
 
 test("words are counted as runs containing letters", () => {

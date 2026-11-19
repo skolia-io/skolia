@@ -247,7 +247,7 @@ export async function readyAt(id: DocumentId, v: string): Promise<void> {
   }
   await putJson(statusKey(id), {
     state: "ready",
-    updated: new Date(NOW).toISOString(),
+    updatedAt: new Date(NOW).toISOString(),
     artifacts: {
       analyzer: `pl/${v}`,
       lexicon: "lex/1",

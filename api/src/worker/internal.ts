@@ -24,7 +24,7 @@ export class DocumentStatus extends WorkerEntrypoint<Env> implements StatusPubli
         documents: new D1Documents(this.env.DB.withSession("first-primary")),
       },
       schemas.DocumentId.parse(id),
-      schemas.Status.parse(status),
+      schemas.CompatibleStatus.parse(status),
     );
   }
 }

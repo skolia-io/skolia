@@ -401,10 +401,18 @@ export const AnnotationRow = z
 export const State = gen.State;
 
 export const Status = z.discriminatedUnion("state", [
-  z.object({ state: z.literal("queued"), updated: z.string(), artifacts: gen.ReadyAnalysis.exactOptional() }),
-  z.object({ state: z.literal("ready"), updated: z.string(), artifacts: gen.ReadyAnalysis }),
-  z.object({ state: z.literal("failed"), updated: z.string(), error: z.string(), artifacts: gen.ReadyAnalysis.exactOptional() }),
+  z.object({ state: z.literal("queued"), updatedAt: z.string(), artifacts: gen.ReadyAnalysis.exactOptional() }),
+  z.object({ state: z.literal("ready"), updatedAt: z.string(), artifacts: gen.ReadyAnalysis }),
+  z.object({ state: z.literal("failed"), updatedAt: z.string(), error: z.string(), artifacts: gen.ReadyAnalysis.exactOptional() }),
 ]) satisfies z.ZodType<StatusType>;
+
+/** Stored blobs and older status publishers can still use the original timestamp key. */
+export const CompatibleStatus = z.preprocess((value) => {
+  if (typeof value === "object" && value !== null && !("updatedAt" in value) && "updated" in value) {
+    return { ...value, updatedAt: value.updated };
+  }
+  return value;
+}, Status);
 
 export const Versions = z.object({
   analyzer: z.string(),
@@ -441,7 +449,7 @@ export const DocumentRow = z
   })
   .transform(({ statusState, statusUpdatedAt, statusData, ...document }) => ({
     ...document,
-    status: statusState === null ? null : Status.parse({ ...statusData, state: statusState, updated: statusUpdatedAt }),
+    status: statusState === null ? null : Status.parse({ ...statusData, state: statusState, updatedAt: statusUpdatedAt }),
   }));
 
 // Responses. The API's types (api.ts) are these schemas' outputs, and its OpenAPI spec is

@@ -3,9 +3,6 @@ import { test } from "node:test";
 import * as z from "zod";
 import * as schemas from "./schemas.ts";
 
-/** Fields that hold a time but keep an older name, each with the git-bug issue to rename it. */
-const allowed: ReadonlyMap<string, string> = new Map([["Status.updated", "52f9392: stored in R2 status blobs"]]);
-
 /** A place in a schema: its path from the export, the object key it's under (null for an
  * array's element, a tuple's item or a record's key or value), and the schema there. */
 type Place = { readonly path: string; readonly name: string | null; readonly schema: z.core.$ZodType };
@@ -71,13 +68,6 @@ test("the walk finds timestamps through objects, intersections, pipes and tuples
 });
 
 test("a field that holds a Timestamp is at, or named for its event with At", () => {
-  const misnamed = timestamps
-    .filter((p) => p.name !== null && p.name !== "at" && !p.name.endsWith("At") && !allowed.has(p.path))
-    .map((p) => p.path);
+  const misnamed = timestamps.filter((p) => p.name !== null && p.name !== "at" && !p.name.endsWith("At")).map((p) => p.path);
   assert.deepEqual(misnamed, []);
-});
-
-test("every allowed field is still there", () => {
-  const paths = new Set(all.map((p) => p.path));
-  for (const path of allowed.keys()) assert.ok(paths.has(path), `${path} is gone; take it out of the allowed list`);
 });

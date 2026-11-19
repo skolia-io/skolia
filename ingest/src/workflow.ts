@@ -9,7 +9,7 @@
 import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep, type WorkflowStepConfig } from "cloudflare:workers";
 import { timestamp, type DocumentId } from "@skolia/shared/api";
 import { statusKey } from "@skolia/shared/keys";
-import type { StatusPublisher } from "@skolia/shared/status";
+import { compatibleStatus, type StatusPublisher } from "@skolia/shared/status";
 import type { JobAnswer, JobResult, Status } from "@skolia/shared/schema";
 import * as schemas from "@skolia/shared/schemas";
 import { log } from "@skolia/util/log";
@@ -68,18 +68,18 @@ export class IngestWorkflow extends WorkflowEntrypoint<Env, IngestParams> {
 /** Writes the document's status, ready or failed. A failed one keeps the last analysis's keys,
  * so the reader can still show it. */
 async function setStatus(blobs: R2Bucket, publisher: StatusPublisher, doc: DocumentId, result: JobResult): Promise<void> {
-  const updated = timestamp(new Date());
+  const updatedAt = timestamp(new Date());
   const status = await (async (): Promise<Status> => {
-    if (result.outcome === "ready" && result.analysis !== null) return { state: "ready", updated, artifacts: result.analysis };
+    if (result.outcome === "ready" && result.analysis !== null) return { state: "ready", updatedAt, artifacts: result.analysis };
     const previous = await blobs.get(statusKey(doc));
-    const parsed = previous === null ? null : schemas.Status.safeParse(await previous.json());
+    const parsed = previous === null ? null : schemas.CompatibleStatus.safeParse(await previous.json());
     const artifacts = parsed?.success ? parsed.data.artifacts : undefined;
     return {
       state: "failed",
-      updated,
+      updatedAt,
       error: result.error ?? "ingest failed without saying why",
       ...(artifacts === undefined ? {} : { artifacts }),
     };
   })();
-  await publisher.publish(doc, status);
+  await publisher.publish(doc, compatibleStatus(status));
 }

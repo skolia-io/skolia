@@ -514,19 +514,19 @@ export type State = "queued" | "analysing" | "ready" | "failed";
 
 export interface QueuedStatus {
   state: "queued";
-  updated: string;
+  updatedAt: string;
   artifacts?: ReadyAnalysis;
 }
 
 export interface ReadyStatus {
   state: "ready";
-  updated: string;
+  updatedAt: string;
   artifacts: ReadyAnalysis;
 }
 
 export interface FailedStatus {
   state: "failed";
-  updated: string;
+  updatedAt: string;
   error: string;
   artifacts?: ReadyAnalysis;
 }

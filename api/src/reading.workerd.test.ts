@@ -135,7 +135,7 @@ test("a document queued for too long is queued again", async () => {
   await local.takeQueued();
   assert.equal((await summaryOf(app, id)).state, "queued");
   assert.deepEqual(await local.takeQueued(), []);
-  await putJson(statusKey(id), { state: "queued", updated: "2026-11-03T23:00:00.000Z" });
+  await putJson(statusKey(id), { state: "queued", updatedAt: "2026-11-03T23:00:00.000Z" });
   assert.equal((await summaryOf(app, id)).state, "queued");
   assert.equal((await local.takeQueued()).length, 1);
 });
@@ -158,7 +158,7 @@ test("listing a stuck document doesn't queue it again; opening it does", async (
   const app = setup();
   await importText(app);
   const id = await docId("pl", TEXT);
-  await putJson(statusKey(id), { state: "queued", updated: "2026-11-03T23:00:00.000Z" });
+  await putJson(statusKey(id), { state: "queued", updatedAt: "2026-11-03T23:00:00.000Z" });
   await local.takeQueued();
   const list = await body("documents", client(app, importer).documents.$get({ query: {} }));
   assert.deepEqual(

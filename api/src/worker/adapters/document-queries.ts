@@ -302,7 +302,7 @@ export const DOCUMENT_QUERIES = {
   known: compile(knownQuery([{ kind: "level", value: "A1" }])).text,
   visible: compile(visibleQuery(SOME_ENTRY.id, SOMEONE)).text,
   has: compile(hasQuery(SOME_ENTRY.id)).text,
-  setStatus: statusProjectionQuery(SOME_ENTRY.id, { state: "queued", updated: SOME_ENTRY.importedAt }).text,
+  setStatus: statusProjectionQuery(SOME_ENTRY.id, { state: "queued", updatedAt: SOME_ENTRY.importedAt }).text,
   addContent: compile(addContentQuery({ id: SOME_ENTRY.id, lang: "pl", words: 1 })).text,
   addAttribution: compile(addAttributionQuery(SOME_ENTRY)).text,
   addEntry: compile(addEntryQuery(SOME_ENTRY)).text,
@@ -322,8 +322,8 @@ export const DOCUMENT_QUERIES = {
   unannotate: unannotateQuery(SOME_ENTRY.id, SOMEONE, SOME_ANNOTATION.id).text,
 } as const;
 
-export function statusProjectionQuery(id: DocumentId, { state, updated, ...data }: z.output<typeof schemas.Status>): Sql {
+export function statusProjectionQuery(id: DocumentId, { state, updatedAt, ...data }: z.output<typeof schemas.Status>): Sql {
   return sql`INSERT INTO document_status (document_id, state, updated_at, data)
-    VALUES (${id}, ${state}, ${updated}, ${JSON.stringify(data)})
+    VALUES (${id}, ${state}, ${updatedAt}, ${JSON.stringify(data)})
     ON CONFLICT (document_id) DO UPDATE SET state = excluded.state, updated_at = excluded.updated_at, data = excluded.data`;
 }
