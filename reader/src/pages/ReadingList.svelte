@@ -22,6 +22,7 @@
   let name = $state("");
   let action = $state<"create" | "rename" | "delete">("create");
   let dialog: HTMLDialogElement;
+  const progressMenu = $props.id();
   let nameInput: HTMLInputElement | undefined = $state();
   const current = $derived(selected.success ? lists.data?.find((list) => list.id === selected.data) : undefined);
   const detail = $derived(selected.success || progress !== null);
@@ -86,20 +87,15 @@
   </select>
 {/snippet}
 
-<Page {title} wide ownHeading>
-  {#if user === undefined}
-    <h1>{title}</h1>
-  {/if}
+<Page {title} wide>
   {#if user === null}
-    <h1>Reading lists</h1>
     <p class="muted">Sign in to save texts and make your own reading lists.</p>
     <Button variant="primary" onclick={() => void signIn()}>Sign in</Button>
   {:else if user}
     {#if detail}
       <a class="back" href="#/list"><span aria-hidden="true">←</span> Reading lists</a>
       {#if progress}
-        <div class="section-bar"><h1>{title}</h1>{@render filter()}</div>
-        <p class="muted">Your reading progress is separate from your saved lists.</p>
+        <div class="detail-filter">{@render filter()}</div>
         {#key progress}
           <ProgressContents status={progress} {lang} />
         {/key}
@@ -107,14 +103,9 @@
         <div class="detail">
           <header class="summary">
             <ReadingListCover name={current.name} saved={current.id === "to-read"} />
-            <h1>{current.name}</h1>
-            <p class="metadata"
-              ><span>Private list</span><span aria-hidden="true">·</span
-              ><span>{current.textsCount} {current.textsCount === 1 ? "text" : "texts"}</span></p
-            >
-            {#if current.id === "to-read"}
-              <p class="muted">Save texts here to come back to them later.</p>
-            {:else}
+            <h2>{current.name}</h2>
+            <p class="muted">{current.textsCount} {current.textsCount === 1 ? "text" : "texts"}</p>
+            {#if current.id !== "to-read"}
               <div class="buttons">
                 <Button small variant="quiet" onclick={() => void show("rename")}>Rename</Button>
                 <Button small variant="danger" onclick={() => void show("delete")}>Delete list</Button>
@@ -122,14 +113,13 @@
             {/if}
           </header>
           <section class="contents" aria-label="List contents">
-            <div class="section-bar"><h2>Texts</h2>{@render filter()}</div>
+            <div class="detail-filter">{@render filter()}</div>
             {#key current.id}
               <ReadingListContents id={current.id} {lang} />
             {/key}
           </section>
         </div>
       {:else}
-        <h1>{title}</h1>
         {#if lists.isPending}
           <p class="muted" role="status">Loading…</p>
         {:else if !lists.error}
@@ -137,27 +127,7 @@
         {/if}
       {/if}
     {:else}
-      <header class="library-head">
-        <div
-          ><h1>Reading lists</h1><p class="muted">Organize saved texts and find your next read.</p></div
-        >
-        <Button variant="primary" onclick={() => void show("create")} disabled={!lists.data || lists.data.length >= 200}
-          ><span aria-hidden="true">＋</span>
-          New list</Button
-        >
-      </header>
-      <nav class="progress-links" aria-label="Reading progress">
-        <a href={link("progress", "reading")}
-          ><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h6l2 2 2-2h6v15h-6l-2 2-2-2H4zM12 6v15" /></svg>
-          Reading now</a
-        >
-        <a href={link("progress", "finished")}
-          ><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6" /></svg>
-          Finished</a
-        >
-      </nav>
-      <div class="section-bar library-bar">
-        <h2>Your lists</h2>
+      <div class="library-bar">
         {#if (lists.data?.length ?? 0) > 6}
           <label class="search">
             <svg viewBox="0 0 24 24" aria-hidden="true"
@@ -166,6 +136,17 @@
             <input type="search" aria-label="Find a reading list" placeholder="Find a list" bind:value={search}>
           </label>
         {/if}
+        <div class="library-actions">
+          <Button small variant="quiet" popovertarget={progressMenu}>Progress</Button>
+          <div class="progress-menu" id={progressMenu} popover>
+            <a href={link("progress", "reading")} onclick={(event) => event.currentTarget.parentElement?.hidePopover()}>Reading now</a>
+            <a href={link("progress", "finished")} onclick={(event) => event.currentTarget.parentElement?.hidePopover()}>Finished</a>
+          </div>
+          <Button small variant="primary" onclick={() => void show("create")} disabled={!lists.data || lists.data.length >= 200}>
+            <span aria-hidden="true">＋</span>
+            New list
+          </Button>
+        </div>
       </div>
       {#if lists.isPending}
         <p class="muted" role="status">Loading lists…</p>
@@ -176,7 +157,6 @@
             <a class="list" href={link("list", list.id)}>
               <ReadingListCover name={list.name} count={list.textsCount} saved={list.id === "to-read"} />
               <strong>{list.name}</strong>
-              <span class="muted">{list.id === "to-read" ? "Quick save" : "Private list"}</span>
               <span class="sr-only">{list.textsCount} {list.textsCount === 1 ? "text" : "texts"}</span>
             </a>
           </li>
@@ -225,39 +205,51 @@
 </Page>
 
 <style>
-  h1 {
-    margin: 0;
-    font-size: clamp(1.85rem, 4.5vw, 2.5rem);
-    overflow-wrap: anywhere;
-  }
   h2 {
     margin: 0;
     font-size: 1.1rem;
     font-weight: 650;
   }
-  .muted,
-  .metadata {
+  .muted {
     color: var(--muted);
   }
-  .library-head,
-  .section-bar {
+  .library-bar,
+  .library-actions {
     display: flex;
     flex-wrap: wrap;
-    justify-content: space-between;
     align-items: center;
-    gap: 0.75rem 1rem;
-  }
-  .library-head {
-    align-items: flex-start;
-  }
-  .library-head p {
-    margin: 0.4rem 0 0;
-  }
-  .progress-links {
-    display: flex;
-    flex-wrap: wrap;
     gap: 0.5rem;
-    margin-top: 1.25rem;
+  }
+  .library-bar {
+    margin-bottom: 1rem;
+  }
+  .library-actions {
+    margin-left: auto;
+  }
+  .progress-menu {
+    position: fixed;
+    inset: auto;
+    top: calc(anchor(bottom) + 0.35rem);
+    right: anchor(right);
+    position-try-fallbacks: flip-block, flip-inline;
+    margin: 0;
+    padding: 0.3rem;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--surface);
+    box-shadow: var(--card-shadow);
+  }
+  .progress-menu a {
+    display: block;
+    padding: 0.45rem 0.65rem;
+    border-radius: 4px;
+    text-decoration: none;
+    color: var(--text);
+    font-size: 0.875rem;
+  }
+  .progress-menu a:hover,
+  .progress-menu a:focus-visible {
+    background: var(--bg);
   }
   svg {
     width: 1.1rem;
@@ -267,24 +259,6 @@
     stroke-width: 1.7;
     stroke-linecap: round;
     stroke-linejoin: round;
-  }
-  .progress-links a {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.45rem;
-    padding: 0.4rem 0.7rem;
-    border: 1px solid var(--line);
-    border-radius: 999px;
-    background: var(--surface);
-    text-decoration: none;
-    color: var(--text);
-    font-size: 0.875rem;
-  }
-  .progress-links a:hover {
-    border-color: var(--accent);
-  }
-  .library-bar {
-    margin: 1.8rem 0 1rem;
   }
   .search {
     position: relative;
@@ -362,20 +336,24 @@
     border-radius: 16px;
     background: var(--surface);
   }
-  .summary h1 {
-    font-size: clamp(1.55rem, 3.5vw, 1.95rem);
+  .summary h2 {
+    font-family: var(--reading);
+    font-size: clamp(1.4rem, 3.5vw, 1.75rem);
+    line-height: 1.2;
+    overflow-wrap: anywhere;
   }
   .summary p {
     margin: 0;
     font-size: 0.88rem;
   }
-  .metadata,
   .buttons {
     display: flex;
     flex-wrap: wrap;
     gap: 0.5rem;
   }
-  .contents > .section-bar {
+  .detail-filter {
+    display: flex;
+    justify-content: flex-end;
     margin-bottom: 0.65rem;
   }
   select {
@@ -432,7 +410,10 @@
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
     .search {
-      width: min(100%, 11rem);
+      flex: 1 1 8rem;
+    }
+    .library-actions {
+      flex-shrink: 0;
     }
   }
 </style>

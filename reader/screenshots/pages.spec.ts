@@ -29,9 +29,12 @@ test("explore", async ({ page }) => {
 
 test("my list", async ({ page }) => {
   await open(page, "#/list");
-  await expect(page.getByRole("heading", { name: "Reading lists", exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "Book club" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Reading now", exact: true })).toBeHidden();
   await expect(page).toHaveScreenshot("my-list.png", { fullPage: true });
+  await page.getByRole("button", { name: "Progress", exact: true }).click();
+  await page.getByRole("link", { name: "Reading now", exact: true }).click();
+  await expect(page.getByText("Lalka", { exact: true })).toBeVisible();
 });
 
 test("explore, reading list menu", async ({ page }) => {
@@ -84,7 +87,7 @@ test("reader, memberships and progress are separate", async ({ page }) => {
 test("reading lists, detail and management", async ({ page }) => {
   await open(page, "#/list");
   await page.getByRole("link", { name: "Book club" }).click();
-  await expect(page.getByRole("heading", { name: "Book club", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Book club", exact: true, level: 2 })).toBeVisible();
   await expect(page.getByText("Lalka", { exact: true })).toBeVisible();
   await expect(page).toHaveScreenshot("reading-list-detail.png", { fullPage: true });
   await page.getByLabel("Language", { exact: true }).selectOption("fr");
@@ -94,10 +97,10 @@ test("reading lists, detail and management", async ({ page }) => {
   await page.getByRole("button", { name: "Rename", exact: true }).click();
   await page.getByLabel("List name", { exact: true }).fill("Monthly book club");
   await page.getByRole("button", { name: "Save name" }).click();
-  await expect(page.getByRole("heading", { name: "Monthly book club", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Monthly book club", exact: true, level: 2 })).toBeVisible();
   await page.getByRole("button", { name: "Delete list", exact: true }).click();
   await page.getByRole("dialog").getByRole("button", { name: "Delete list", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Reading lists", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "New list", exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "Monthly book club" })).toBeHidden();
   await page.getByRole("button", { name: "New list", exact: true }).click();
   await page.getByLabel("New list name").fill("My new list");
