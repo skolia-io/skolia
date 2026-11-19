@@ -111,20 +111,25 @@ Text on stdin, the analysis on stdout (blob JSON, or CoNLL-U with `--format conl
 
 ```fish
 uv run pytest -q
-uv run ruff check .          # lint; add --fix to apply safe fixes
-uv run ruff format .         # format; --check to only report
+uv run --locked ruff check . ../infra/*.py    # add --fix to apply safe fixes
+uv run --locked ruff format . ../infra/*.py   # add --check to report only
 uv run pyright               # strict type check of src, tests, scripts
 ```
 
-All four together:
+From the repo root, run the same Python checks as CI:
 
 ```fish
-uv run ruff format --check . ; and uv run ruff check . ; and uv run pyright ; and uv run pytest -q
+just check-project analysis
 ```
 
 Pyright is strict: no untyped parameters, no `Unknown` types. Stanza, Morfeusz and COMBO ship no type information, so `typings/` holds hand-written stubs for the parts we use, and each parser backend checks labels at runtime with `ud.py`. Update the stubs if we start using more of a library.
 
 `scripts/vendor/` holds third-party code (the CoNLL 2018 evaluator) and is excluded from lint and type checks.
+
+For Rust, install the Clippy component with `rustup component add clippy` and run
+`just lint-rust path/to/Cargo.toml` from the repo root. It checks all workspace targets
+and features and treats warnings and Clippy's pedantic lints as errors. CI can run
+this recipe once the repository has a Cargo manifest.
 
 ### Evaluate against a treebank
 

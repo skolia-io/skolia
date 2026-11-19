@@ -21,7 +21,7 @@ from typing import cast
 
 import json5
 
-type Json = str | int | float | bool | None | list[Json] | dict[str, Json]
+type Json = str | int | float | bool | list[Json] | dict[str, Json] | None
 type JsonObject = dict[str, Json]
 
 API = Path(__file__).resolve().parent.parent / "api"
@@ -82,7 +82,9 @@ def url(env: str) -> str:
     )
     with urllib.request.urlopen(request) as response:
         body = as_object(cast(Json, json.load(response)), "workers.dev subdomain")
-    subdomain = as_string(as_object(body.get("result"), "workers.dev subdomain").get("subdomain"), "subdomain")
+    subdomain = as_string(
+        as_object(body.get("result"), "workers.dev subdomain").get("subdomain"), "subdomain"
+    )
     name = as_string(read("wrangler.jsonc").get("name"), "wrangler.jsonc name")
     return f"https://{name}-{env}.{subdomain}.workers.dev"
 
@@ -92,7 +94,12 @@ def config(env: str) -> None:
     web["workers_dev"] = True
     web["preview_urls"] = False
     # Google sign-in goes through the OAuth proxy (oauth-proxy/)
-    proxy = as_string(as_object(read("../oauth-proxy/wrangler.jsonc").get("vars"), "oauth-proxy vars").get("BASE_URL"), "oauth-proxy BASE_URL")
+    proxy = as_string(
+        as_object(read("../oauth-proxy/wrangler.jsonc").get("vars"), "oauth-proxy vars").get(
+            "BASE_URL"
+        ),
+        "oauth-proxy BASE_URL",
+    )
     web["vars"] = {
         **as_object(web.get("vars"), "vars"),
         "BASE_URL": url(env),
@@ -100,7 +107,10 @@ def config(env: str) -> None:
         "OAUTH_PROXY_URL": proxy,
     }
     ingest = promote("../ingest/wrangler.jsonc", env)
-    ingest["vars"] = {**as_object(ingest.get("vars", {}), "vars"), "SLEEP_AFTER": PREVIEW_SLEEP_AFTER}
+    ingest["vars"] = {
+        **as_object(ingest.get("vars", {}), "vars"),
+        "SLEEP_AFTER": PREVIEW_SLEEP_AFTER,
+    }
     configs = {
         f"api/wrangler.{env}.json": web,
         f"api/wrangler.internal.{env}.json": promote("wrangler.internal.jsonc", env),
@@ -115,7 +125,11 @@ def config(env: str) -> None:
 
 
 def main() -> None:
-    if len(sys.argv) != 3 or sys.argv[1] not in ("config", "url") or not re.fullmatch(r"pr-[0-9]+", sys.argv[2]):
+    if (
+        len(sys.argv) != 3
+        or sys.argv[1] not in ("config", "url")
+        or not re.fullmatch(r"pr-[0-9]+", sys.argv[2])
+    ):
         raise SystemExit("usage: preview.py <config|url> pr-<N>")
     command, env = sys.argv[1], sys.argv[2]
     if command == "url":

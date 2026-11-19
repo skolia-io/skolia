@@ -25,8 +25,8 @@ lint project:
     case {{ project }} in
       analysis)
         cd analysis
-        uv run ruff check .
-        uv run ruff format --check .
+        uv run --locked ruff check . ../infra/*.py
+        uv run --locked ruff format --check . ../infra/*.py
         uv run pyright
         ;;
       terraform)
@@ -58,8 +58,13 @@ unit project:
 # Format everything just check checks the format of
 fmt:
     pnpm exec biome format --write
-    cd analysis && uv run ruff format .
+    cd analysis && uv run --locked ruff format . ../infra/*.py
     terraform -chdir=infra fmt -recursive
+
+# Lint a Rust crate or workspace, including tests and examples
+[positional-arguments]
+lint-rust manifest="Cargo.toml":
+    cargo clippy --manifest-path "$1" --workspace --all-targets --all-features -- -D warnings -D clippy::pedantic
 
 # Unit tests, and the built Worker's Durable Object in workerd
 test: build (unit "api") (unit "ingest") (unit "oauth-proxy") (unit "reader") (unit "shared") (unit "util") (unit "analysis")

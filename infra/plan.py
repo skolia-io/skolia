@@ -122,9 +122,7 @@ def packages() -> dict[str, str]:
     """Each pnpm-workspace.yaml package's directory, by its package.json name."""
     workspace = (ROOT / "pnpm-workspace.yaml").read_text().split("\n\n")[0]
     dirs = re.findall(r"^  - (\S+)$", workspace, re.MULTILINE)
-    return {
-        json.loads((ROOT / d / "package.json").read_text())["name"]: d for d in dirs
-    }
+    return {json.loads((ROOT / d / "package.json").read_text())["name"]: d for d in dirs}
 
 
 def npm_deps(node: str) -> list[tuple[Kind, str]]:
@@ -155,9 +153,7 @@ def terraform_deps(node: str) -> list[tuple[Kind, str]]:
     modules = {
         normalize(f"{node}/{source}")
         for tf in terraform_files(node)[:-1]
-        for source in re.findall(
-            r'source\s*=\s*"(\.\.?/[^"]+)"', (ROOT / tf).read_text()
-        )
+        for source in re.findall(r'source\s*=\s*"(\.\.?/[^"]+)"', (ROOT / tf).read_text())
     }
     return [build(dep) for dep in (*TERRAFORM_BASE, *sorted(modules))]
 
@@ -191,9 +187,7 @@ def direct_deps(node: str) -> tuple[tuple[Kind, str], ...]:
         if is_terraform_root(node):
             deps += terraform_deps(node)
     if node in STATIC:
-        deps += [
-            edge(kind, dep) for kind, static in STATIC[node].items() for dep in static
-        ]
+        deps += [edge(kind, dep) for kind, static in STATIC[node].items() for dep in static]
     return tuple(dict.fromkeys(dep for dep in deps if dep[1] != node))
 
 
@@ -228,10 +222,15 @@ CHECK_RECIPE = (
 )
 # What a project's tests read outside it, besides its workspace dependencies: the reader's
 # build, which the API's bundle serves (api/wrangler.jsonc assets), the curated texts
-# (api/src/curated.test.ts) and the TypeScript the analysis generates (tests/test_ts_types.py)
+# (api/src/curated.test.ts) and the TypeScript the analysis generates (tests/test_ts_types.py).
+# The analysis check also runs Ruff on the infrastructure scripts.
 CHECK_READS: dict[str, tuple[str, ...]] = {
     "api": ("reader", "curated"),
-    "analysis": ("shared/schema.gen.ts", "shared/schema.zod.gen.ts"),
+    "analysis": (
+        "shared/schema.gen.ts",
+        "shared/schema.zod.gen.ts",
+        *(path.relative_to(ROOT).as_posix() for path in sorted((ROOT / "infra").glob("*.py"))),
+    ),
     "terraform": ("infra", "infra/shared", "infra/tokens", "infra/skolia-ci"),
 }
 
@@ -248,7 +247,7 @@ def targets() -> dict[str, Target]:
     return {
         **{
             image: Target("build", (f"./analysis#ingest-{lang}",))
-            for image, lang in zip(IMAGES, LANGS)
+            for image, lang in zip(IMAGES, LANGS, strict=True)
         },
         "worker": Target("build", (".#skolia-worker",)),
         **{
@@ -276,15 +275,9 @@ def targets() -> dict[str, Target]:
             ),
         ),
         "internal": Target("deploy", ("api",)),
-        "ingest": Target(
-            "deploy", ("ingest", *(f"./analysis#ingest-{lang}" for lang in LANGS))
-        ),
-        "lexicon": Target(
-            "deploy", tuple(f"./analysis#cards-lexicon-{lang}" for lang in LANGS)
-        ),
-        "web": Target(
-            "deploy", (".#skolia-worker",), content=lambda planner: planner.version()
-        ),
+        "ingest": Target("deploy", ("ingest", *(f"./analysis#ingest-{lang}" for lang in LANGS))),
+        "lexicon": Target("deploy", tuple(f"./analysis#cards-lexicon-{lang}" for lang in LANGS)),
+        "web": Target("deploy", (".#skolia-worker",), content=lambda planner: planner.version()),
         # The tests are in api/, so in the skolia Worker
         "e2e": Target("deploy", against=("infra", "internal", "ingest", "lexicon", "web")),
         "curated": Target("deploy", test=("curated",), against=("web",)),
@@ -311,9 +304,7 @@ def reach(names: list[str]) -> tuple[list[str], list[str]]:
             chosen[name] = None
             pending += targets()[name].against
     reached: dict[str, None] = {}
-    todo = [
-        n for name in chosen for n in (*targets()[name].build, *targets()[name].test)
-    ]
+    todo = [n for name in chosen for n in (*targets()[name].build, *targets()[name].test)]
     while todo:
         if (node := todo.pop()) not in reached:
             reached[node] = None
@@ -379,13 +370,10 @@ class Planner:
             f"packages = {out_paths(root)}; }}",
         )
         result = cast(dict[str, str], found["sources"]) | {
-            f".#{attr}": path
-            for attr, path in cast(dict[str, str], found["packages"]).items()
+            f".#{attr}": path for attr, path in cast(dict[str, str], found["packages"]).items()
         }
         for flake, attrs in flakes.items():
-            built = nix_eval(
-                flake, f"packages.{system()}", f"packages: {out_paths(attrs)}"
-            )
+            built = nix_eval(flake, f"packages.{system()}", f"packages: {out_paths(attrs)}")
             result |= {f"{flake}#{attr}": path for attr, path in built.items()}
         return result
 
@@ -408,10 +396,7 @@ class Planner:
             deps = [(kind, dep) for kind, dep in direct_deps(node) if kind in kinds]
             self.checksums[node, kinds] = digest(
                 self.node_version(node),
-                *(
-                    f"{kind} {dep} {self.checksum(dep, kinds, (*path, node))}"
-                    for kind, dep in deps
-                ),
+                *(f"{kind} {dep} {self.checksum(dep, kinds, (*path, node))}" for kind, dep in deps),
             )
         return self.checksums[node, kinds]
 
@@ -454,9 +439,7 @@ def cloudflare(method: str, path: str, body: object = None) -> object:
 
 @cache
 def database() -> str:
-    found = cast(
-        list[dict[str, str]], cloudflare("GET", f"d1/database?name={DATABASE}")
-    )
+    found = cast(list[dict[str, str]], cloudflare("GET", f"d1/database?name={DATABASE}"))
     return next(db["uuid"] for db in found if db["name"] == DATABASE)
 
 
@@ -475,9 +458,7 @@ def d1(sql: str) -> list[list[dict[str, object]]]:
 def has_token() -> bool:
     if os.environ.get("CLOUDFLARE_API_TOKEN"):
         return True
-    log.warning(
-        "no CLOUDFLARE_API_TOKEN: everything is needed, and nothing is recorded"
-    )
+    log.warning("no CLOUDFLARE_API_TOKEN: everything is needed, and nothing is recorded")
     return False
 
 
@@ -491,16 +472,17 @@ def built(planner: Planner, names: list[str]) -> tuple[dict[str, bool], dict[str
         " ".join(
             f"SELECT EXISTS (SELECT 1 FROM build WHERE package = {quote(name)} "
             f"AND key = {quote(planner.key(name))}) AS done, "
-            f"(SELECT key FROM build WHERE package = {quote(name)} ORDER BY id DESC LIMIT 1) AS last;"
+            f"(SELECT key FROM build WHERE package = {quote(name)} "
+            "ORDER BY id DESC LIMIT 1) AS last;"
             for name in names
         )
     )
     rows = [result[0] for result in results]
     return (
-        {name: row["done"] == 1 for name, row in zip(names, rows)},
+        {name: row["done"] == 1 for name, row in zip(names, rows, strict=True)},
         {
             name: cast(str | None, row["last"]) or NEVER_RECORDED
-            for name, row in zip(names, rows)
+            for name, row in zip(names, rows, strict=True)
         },
     )
 
@@ -521,7 +503,7 @@ def last_keys(env: str, names: list[str]) -> dict[str, str]:
     )
     return {
         name: cast(str | None, rows[0]["key"]) or TORN_DOWN if rows else NEVER_DEPLOYED
-        for name, rows in zip(names, results)
+        for name, rows in zip(names, results, strict=True)
     }
 
 
@@ -578,18 +560,10 @@ def plan(planner: Planner, envs: list[str]) -> dict[str, object]:
     providers mirrored (ci.yml mirror-providers)."""
 
     def recorded(names: list[str]) -> tuple[dict[str, bool], dict[str, str] | None]:
-        return (
-            built(planner, names)
-            if has_token()
-            else (dict.fromkeys(names, False), None)
-        )
+        return built(planner, names) if has_token() else (dict.fromkeys(names, False), None)
 
-    check = needed(
-        planner, "checks, once for every environment", *recorded(scope("check"))
-    )
-    unbuilt = needed(
-        planner, "builds, once for every environment", *recorded(scope("build"))
-    )
+    check = needed(planner, "checks, once for every environment", *recorded(scope("check")))
+    unbuilt = needed(planner, "builds, once for every environment", *recorded(scope("build")))
     deploys: dict[str, dict[str, object]] = {}
     for env in envs:
         if (todo := plan_deploys(planner, env)) is None:
@@ -599,14 +573,12 @@ def plan(planner: Planner, envs: list[str]) -> dict[str, object]:
             # The lexicon loads from the images' venv (just load-lexicon)
             images = todo["ingest"] or todo["lexicon"]
             deploys[env]["images"] = [
-                lang for lang, image in zip(LANGS, IMAGES) if images and unbuilt[image]
+                lang for lang, image in zip(LANGS, IMAGES, strict=True) if images and unbuilt[image]
             ]
             deploys[env]["worker"] = todo["web"] and unbuilt["worker"]
     plan_infra = [env for env in PLAN_INFRA if check[f"plan-infra-{env}"]]
     projects_needed = [p for p in projects() if check[f"check-{p}"]]
-    deploying = any(
-        value is True for todo in deploys.values() for value in todo.values()
-    )
+    deploying = any(value is True for todo in deploys.values() for value in todo.values())
     count = sum(check.values()) + sum(
         value is True for todo in deploys.values() for value in todo.values()
     )
@@ -634,7 +606,8 @@ def record_build(planner: Planner, name: str) -> None:
 def record_deployment(env: str, name: str, value: str | None) -> None:
     d1(
         "INSERT INTO deployment (env, package, key, deployed_at) "
-        f"VALUES ({quote(env)}, {quote(name)}, {'NULL' if value is None else quote(value)}, {quote(now())})"
+        f"VALUES ({quote(env)}, {quote(name)}, "
+        f"{'NULL' if value is None else quote(value)}, {quote(now())})"
     )
     log.info("%s %s %s: %s", env, "deployed" if value else "deploying", name, value)
 
@@ -648,18 +621,12 @@ def print_graph(planner: Planner, as_dot: bool) -> None:
     if not as_dot:
         for name in chosen:
             target = targets()[name]
-            edges = [f"build:{n}" for n in target.build] + [
-                f"test:{n}" for n in target.test
-            ]
+            edges = [f"build:{n}" for n in target.build] + [f"test:{n}" for n in target.test]
             edges += [f"against:{t}" for t in target.against]
-            print(
-                f"{target.scope} {name} {planner.key(name)} {' '.join(edges)}".rstrip()
-            )
+            print(f"{target.scope} {name} {planner.key(name)} {' '.join(edges)}".rstrip())
         for node in sorted(reached):
             edges = [f"{kind}:{dep}" for kind, dep in direct_deps(node)]
-            print(
-                f"node {node} {planner.checksum(node, TEST)} {' '.join(edges)}".rstrip()
-            )
+            print(f"node {node} {planner.checksum(node, TEST)} {' '.join(edges)}".rstrip())
         return
     shapes = {
         "build": "box",
@@ -670,14 +637,10 @@ def print_graph(planner: Planner, as_dot: bool) -> None:
     lines = ["digraph plan {", "  rankdir=LR;", "  node [fontname=Helvetica];"]
     for name in chosen:
         target = targets()[name]
-        lines.append(
-            f'  "target:{name}" [shape={shapes[target.scope]}, label="{name}"];'
-        )
+        lines.append(f'  "target:{name}" [shape={shapes[target.scope]}, label="{name}"];')
         lines += [f'  "target:{name}" -> "{n}";' for n in target.build]
         lines += [f'  "target:{name}" -> "{n}" [style=dashed];' for n in target.test]
-        lines += [
-            f'  "target:{name}" -> "target:{t}" [style=dotted];' for t in target.against
-        ]
+        lines += [f'  "target:{name}" -> "target:{t}" [style=dotted];' for t in target.against]
     for node in sorted(reached):
         lines.append(f'  "{node}" [shape=folder];')
         for kind, dep in direct_deps(node):
@@ -688,9 +651,7 @@ def print_graph(planner: Planner, as_dot: bool) -> None:
 
 def environment(value: str) -> str:
     if value != "shared" and not ENV.fullmatch(value):
-        raise argparse.ArgumentTypeError(
-            f"not staging, production, pr-<N> or shared: {value}"
-        )
+        raise argparse.ArgumentTypeError(f"not staging, production, pr-<N> or shared: {value}")
     return value
 
 
@@ -719,11 +680,11 @@ def main(args: list[str]) -> None:
     commands.add_parser(
         "built", help="record a build's key once it's in the registry or Cachix"
     ).add_argument("name", choices=scope("build"))
-    for command, help in (
+    for command, description in (
         ("deploying", "record that a deploy has started, before it changes anything"),
         ("deployed", "record a deploy's key once it's deployed"),
     ):
-        deploy = commands.add_parser(command, help=help)
+        deploy = commands.add_parser(command, help=description)
         deploy.add_argument("env", type=environment)
         deploy.add_argument("name", choices=scope("deploy") + scope("shared"))
     commands.add_parser(
@@ -733,9 +694,7 @@ def main(args: list[str]) -> None:
         "graph",
         help="print targets' keys and edges, and the nodes they reach (every target by default)",
     )
-    graph.add_argument(
-        "--dot", action="store_true", help="as Graphviz: | dot -Tsvg >plan.svg"
-    )
+    graph.add_argument("--dot", action="store_true", help="as Graphviz: | dot -Tsvg >plan.svg")
     graph.add_argument("names", nargs="*", choices=list(targets()), metavar="target")
     commands.add_parser("version", help="print the skolia Worker's version")
 

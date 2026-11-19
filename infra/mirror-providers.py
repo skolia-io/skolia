@@ -141,8 +141,8 @@ def download(url: str) -> bytes:
             raise SystemExit(f"GET {url}: 404")
         return body
     repo, tag, filename = github[1], github[2], github[3]
-    with tempfile.TemporaryDirectory() as dir:
-        out = Path(dir) / filename
+    with tempfile.TemporaryDirectory() as directory:
+        out = Path(directory) / filename
         for attempt in range(1, ATTEMPTS + 1):
             try:
                 subprocess.run(
