@@ -6,6 +6,8 @@ import { prepare } from "@skolia/util/d1";
 
 const logger = log("background-migrations");
 const LEASE_MS = 5 * 60 * 1000;
+const MAX_BATCHES = 10;
+const BATCH_START_BUDGET_MS = 20_000;
 const Row = z.object({ name: z.string(), cursor: z.string().nullable(), completedAt: z.string().nullable() });
 const Claimed = Row.pick({ cursor: true });
 
@@ -22,7 +24,7 @@ export interface BackgroundMigration {
   readonly run: (context: Context, cursor: string | null) => Promise<{ readonly cursor: string | null; readonly done: boolean }>;
 }
 
-/** Run one batch of the first unfinished script. Cron drives progress independently
+/** Run bounded batches of the first unfinished script. Cron drives progress independently
  * of traffic and deploys. A lease excludes overlapping ticks, but scripts must still
  * tolerate replay: a Worker can stop after writing data and before checkpointing. */
 export async function runBackgroundMigrations(
@@ -33,6 +35,7 @@ export async function runBackgroundMigrations(
   if (!migrations.every((migration, index) => migration.version === index + 1)) {
     throw new Error("background migrations must be ordered, contiguous versions starting at 1");
   }
+  const started = performance.now();
   const { db } = context;
   for (const migration of migrations) {
     const { version, name } = migration;
@@ -58,26 +61,45 @@ export async function runBackgroundMigrations(
       RETURNING cursor`,
     ).first();
     if (claimed === null) return;
-    const { cursor } = Claimed.parse(claimed);
+    let { cursor } = Claimed.parse(claimed);
+    let batches = 0;
+    let done = false;
     try {
-      const next = await migration.run(context, cursor);
-      const updated = new Date().toISOString();
-      await prepare(
-        db,
-        sql`UPDATE background_migration SET cursor = ${next.cursor}, updated_at = ${updated},
-        lease_expires_at = ${updated}, completed_at = ${next.done ? updated : null}
-        WHERE version = ${version} AND lease_token = ${token}`,
-      ).run();
-      logger.info("ran background migration batch", { version, name, cursor: next.cursor, done: next.done });
+      // Finish the current batch and checkpoint it even if the time budget has elapsed.
+      while (!done && batches < MAX_BATCHES && performance.now() - started < BATCH_START_BUDGET_MS) {
+        const next = await migration.run(context, cursor);
+        const updated = new Date().toISOString();
+        const checkpoint = await prepare(
+          db,
+          sql`UPDATE background_migration SET cursor = ${next.cursor}, updated_at = ${updated},
+          completed_at = ${next.done ? updated : null}
+          WHERE version = ${version} AND lease_token = ${token}`,
+        ).run();
+        if (checkpoint.meta.changes !== 1) throw new Error("background migration lease lost");
+        ({ cursor, done } = next);
+        batches += 1;
+        logger.info("ran background migration batch", { version, name, cursor, done });
+      }
+      logger.info("finished background migration invocation", {
+        version,
+        name,
+        batches,
+        done,
+        ms: Math.round(performance.now() - started),
+        maxBatches: MAX_BATCHES,
+        batchStartBudgetMs: BATCH_START_BUDGET_MS,
+      });
     } catch (error) {
-      // Don't advance the cursor. The next tick retries the same batch.
+      logger.error("background migration batch failed", { version, name, cursor, error });
+      throw error;
+    } finally {
+      // Release only our lease. After a crash the lease expires and the next tick
+      // resumes at the last committed checkpoint.
       await prepare(
         db,
         sql`UPDATE background_migration SET lease_expires_at = ${new Date().toISOString()}
         WHERE version = ${version} AND lease_token = ${token}`,
       ).run();
-      logger.error("background migration batch failed", { version, name, cursor, error });
-      throw error;
     }
     return;
   }
