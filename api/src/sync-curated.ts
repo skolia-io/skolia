@@ -1,12 +1,10 @@
 // Makes the curated user's documents match curated/: imports each text there publicly,
 // updates the title, licence, author, source or tags of those already imported, and deletes the
 // curated user's documents that aren't there any more. A document's id is its text's hash,
-// so an edited text, in the file or at its source, is a new document and the old one is
-// deleted. Each text's annotations are added, and those not in its file any more removed;
+// so an edited text is a new document and the old one is deleted. Each text's annotations are added, and those not in its file any more removed;
 // an annotation's id is a hash of what it says, so an edited one is removed and added again.
 // With --check, only lists what it would do, and fails if that's anything.
-// curated/{lang}/{name}.yaml: one text, of a kind (curated-kinds.ts) that has it inline or
-// names where to fetch it.
+// curated/{lang}/{name}.yaml: one text, of a kind (curated-kinds.ts).
 // With --concurrency, makes that many changes at once (default CONCURRENCY). With --sample,
 // syncs only that many of the texts (sampleCurated), as previews do.
 // usage: SYNC_CURATED_API_KEY=<key> node src/sync-curated.ts <base url> <curated dir> [--check] [--concurrency <n>] [--sample <n>]
@@ -39,7 +37,7 @@ import * as schemas from "@skolia/shared/schemas";
 import { GraphBuilder, runGraph, type Graph } from "@skolia/util/graph";
 import type { AppType } from "./app.ts";
 import { API_KEY_HEADER } from "./auth.ts";
-import { CuratedSpec, resolve, TransientFetchError, type Fetch, type Resolved } from "./curated-kinds.ts";
+import { CuratedSpec, resolve, type Resolved } from "./curated-kinds.ts";
 import { describeError } from "@skolia/util/errors";
 import { trimSpans } from "./curated-spans.ts";
 import { runScript, scriptLog, since } from "./script-log.ts";
@@ -114,7 +112,7 @@ export async function toCurated(path: string, lang: Lang, resolved: Resolved): P
   return { path, id: await docId(lang, text), request: request.data, annotations };
 }
 
-/** Every file in curated/{lang}/, checked; nothing is fetched. */
+/** Every file in curated/{lang}/, checked. */
 export async function readCurated(dir: string): Promise<CuratedFile[]> {
   const langs = (await readdir(dir, { withFileTypes: true })).filter((e) => e.isDirectory()).sort((a, b) => a.name.localeCompare(b.name));
   const files = await Promise.all(
@@ -151,29 +149,13 @@ export function sampleCurated(files: readonly CuratedFile[], n: number): Curated
     .slice(0, n);
 }
 
-/** How long to wait before each retry of a file whose fetch may work if tried again */
-const RETRY_MS = [1_000, 5_000, 15_000] as const;
-
-/** The files' texts, fetching those their kind names a source for, and trying again, after
- * each of retryMs, a fetch that may work then. Throws, naming each file, if any can't be had
- * or two are the same text. */
-export async function resolveCurated(
-  files: readonly CuratedFile[],
-  fetch: Fetch = globalThis.fetch,
-  retryMs: readonly number[] = RETRY_MS,
-): Promise<Curated[]> {
-  const settled = await Promise.allSettled(
-    files.map(async ({ path, lang, spec }) => {
-      const start = performance.now();
-      const resolved = await resolveRetrying(path, () => resolve(spec, lang, fetch), retryMs);
-      log.info("resolved {path}", { path, kind: spec.kind, ms: since(start) });
-      return toCurated(path, lang, resolved);
-    }),
-  );
+/** The files' texts. Throws, naming each file, if any isn't a valid import or two are the
+ * same text. */
+export async function resolveCurated(files: readonly CuratedFile[]): Promise<Curated[]> {
+  const settled = await Promise.allSettled(files.map(({ path, lang, spec }) => toCurated(path, lang, resolve(spec))));
   const failed = settled.flatMap((result) => (result.status === "rejected" ? [result.reason] : []));
   if (failed.length === 1) throw failed[0];
-  if (failed.length > 1)
-    throw new AggregateError(failed, `${failed.length} files couldn't be had: ${failed.map(describeError).join("; ")}`);
+  if (failed.length > 1) throw new AggregateError(failed, `${failed.length} files are invalid: ${failed.map(describeError).join("; ")}`);
   const texts = settled.flatMap((result) => (result.status === "fulfilled" ? [result.value] : []));
   const seen = new Map<DocumentId, string>();
   for (const text of texts) {
@@ -182,19 +164,6 @@ export async function resolveCurated(
     seen.set(text.id, text.path);
   }
   return texts;
-}
-
-async function resolveRetrying(path: string, attempt: () => Promise<Resolved>, retryMs: readonly number[]): Promise<Resolved> {
-  try {
-    return await attempt();
-  } catch (error) {
-    const [wait, ...rest] = retryMs;
-    if (!(error instanceof TransientFetchError) || wait === undefined)
-      throw new Error(`${path}: ${describeError(error)}`, { cause: error });
-    log.warning("retrying {path} in {waitMs} ms: {error}", { path, waitMs: wait, retries: rest.length + 1, error: describeError(error) });
-    await new Promise((done) => setTimeout(done, wait));
-    return resolveRetrying(path, attempt, rest);
-  }
 }
 
 /** The changes that make the curated user's documents, and the annotations on those already

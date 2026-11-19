@@ -1,6 +1,4 @@
-// The curated files in curated/. Only parsed and checked against their kind: fetching a
-// text from its source is left to the sync, so a test doesn't need the network. Inline
-// texts, which aren't fetched, are resolved too.
+// The curated files in curated/, parsed, checked against their kind and resolved.
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";
@@ -17,7 +15,7 @@ test("every file in curated/ is YAML of a curated kind", async () => {
 
 test("every inline text resolves, and one without [span]{label} markup is imported as it is in its file", async () => {
   const inline = (await readCurated(CURATED)).filter((f) => f.spec.kind === "inline");
-  const texts = await resolveCurated(inline, async (url) => assert.fail(`fetched ${url}`));
+  const texts = await resolveCurated(inline);
   const plain = inline.flatMap((file, i) =>
     file.spec.kind === "inline" && file.spec.text.spans.length === 0 ? [{ file, text: texts[i] }] : [],
   );
