@@ -9,10 +9,10 @@ export function replaceKeySql(id: string, user: string, key: string, at: string)
   return [sql.inline(sql`DELETE FROM "apikey" WHERE "id" = ${id};`), insertKeySql(id, user, key, at)];
 }
 
-export function insertKeySql(id: string, user: string, key: string, at: string): string {
+export function insertKeySql(id: string, user: string, key: string, at: string, expiresAt: string | null = null): string {
   const hash = createHash("sha256").update(key).digest("base64url");
-  return sql.inline(sql`INSERT INTO "apikey" ("id", "configId", "name", "referenceId", "key", "enabled", "rateLimitEnabled", "requestCount", "createdAt", "updatedAt")
-     VALUES (${id}, 'default', ${id}, ${user}, ${hash}, 1, 0, 0, ${at}, ${at});`);
+  return sql.inline(sql`INSERT INTO "apikey" ("id", "configId", "name", "referenceId", "key", "enabled", "rateLimitEnabled", "requestCount", "createdAt", "updatedAt", "expiresAt")
+     VALUES (${id}, 'default', ${id}, ${user}, ${hash}, 1, 0, 0, ${at}, ${at}, ${expiresAt});`);
 }
 
 /** The key in this environment variable, if it's 64 hex characters (openssl rand -hex 32). */

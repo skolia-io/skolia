@@ -20,6 +20,7 @@
             (fs.unions ([ ./package.json ./pnpm-lock.yaml ./pnpm-workspace.yaml ] ++ dirs))
             (fs.unions [
               ./reader/screenshots
+              (fs.maybeMissing ./api/tests/e2e)
               (fs.fileFilter (f: f.hasExt "md" || nixpkgs.lib.hasSuffix ".test.ts" f.name) ./.)
             ]);
         };

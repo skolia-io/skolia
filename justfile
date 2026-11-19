@@ -264,11 +264,7 @@ deploy-oauth-proxy:
 deploy-ingest env:
     infra/deploy-ingest.sh {{ env }}
 
-# local (the default): against wrangler dev with fresh local state and the lexicon samples
-# (api/scripts/e2e.sh; needs Docker). Otherwise the deployed environment, after checking it serves this
-# checkout's version, with new API keys for the system user and a new e2e user written to its D1 first
-# (api/src/e2e-keys.ts).
-# The end-to-end tests (api/src/e2e.ts): import a text and wait until it's ready, auth, the lexicon, cards
+# Run api/tests/e2e against fresh local state (Docker) or against a deployed environment.
 e2e env="local":
     #!/usr/bin/env bash
     set -euo pipefail
@@ -277,10 +273,10 @@ e2e env="local":
       exec api/scripts/e2e.sh {{ langs }}
     fi
     url=$(just url {{ env }})
-    E2E_API_KEY=$(openssl rand -hex 32) E2E_USER_KEY=$(openssl rand -hex 32)
-    export E2E_API_KEY E2E_USER_KEY
-    just d1-sql {{ env }} api/src/e2e-keys.ts
-    node api/src/e2e.ts "$url" "$(infra/plan.py version)"
+    version=$(infra/plan.py version)
+    apply_e2e_keys() { just d1-sql {{ env }} api/src/e2e-keys.ts; }
+    source api/scripts/run-e2e.sh
+    run_e2e "$url" "$version" apply_e2e_keys
     infra/plan.py deployed {{ env }} e2e
 
 # Make the curated user's documents match curated/ (api/src/sync-curated.ts); with --check, only list what that takes.
