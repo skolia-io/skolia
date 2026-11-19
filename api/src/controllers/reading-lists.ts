@@ -8,7 +8,7 @@ import {
   type ReadingListDocument,
 } from "@skolia/shared/api";
 import type { PageRequest } from "@skolia/shared/page";
-import type { Deps, DocumentLookup, ReadingLists } from "../ports.ts";
+import type { Clock, DocumentLookup, ReadingLists } from "../ports.ts";
 import { listed } from "./documents.ts";
 import { ok, fail, NO_CONTENT } from "./result.ts";
 
@@ -16,7 +16,7 @@ export async function all(deps: { users: ReadingLists }, user: User) {
   return ok({ lists: await deps.users.readingLists(user.id) });
 }
 
-export async function create(deps: { users: ReadingLists } & Pick<Deps, "now">, user: User, name: string) {
+export async function create(deps: { users: ReadingLists } & Clock, user: User, name: string) {
   const id = await deps.users.createReadingList(user.id, name, timestamp(deps.now()));
   return id === null ? fail(409, "You can have up to 200 reading lists.") : ok({ id });
 }
@@ -34,7 +34,7 @@ export async function memberships(deps: { users: ReadingLists }, user: User, doc
 }
 
 export async function addDocument(
-  deps: { users: ReadingLists; documents: DocumentLookup } & Pick<Deps, "now">,
+  deps: { users: ReadingLists; documents: DocumentLookup } & Clock,
   user: User,
   listId: ReadingListId,
   documentId: DocumentId,

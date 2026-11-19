@@ -17,7 +17,7 @@ import { annotationId } from "@skolia/shared/annotations";
 import { textKey } from "@skolia/shared/keys";
 import type { PageRequest } from "@skolia/shared/page";
 import type * as schemas from "@skolia/shared/schemas";
-import type { Deps, DocumentAnnotations, DocumentLookup, StoredDocument } from "../ports.ts";
+import type { BlobStore, Clock, DocumentAnnotations, DocumentLookup, StoredDocument } from "../ports.ts";
 import { findDocument, noSuchDocument } from "./documents.ts";
 import { NO_CONTENT, fail, ok, type Failed, type Json, type NoContent, type Ok } from "./result.ts";
 
@@ -39,7 +39,7 @@ export async function list(
 
 /** The annotations on the user's own entry, those it hasn't already added, in one go. */
 export async function add(
-  deps: AnnotationDeps & Pick<Deps, "blobs" | "now">,
+  deps: AnnotationDeps & Clock & { blobs: BlobStore },
   user: User,
   id: string,
   body: z.output<typeof schemas.NewAnnotations>,
@@ -70,7 +70,7 @@ export async function remove(deps: AnnotationDeps, user: User, id: string, annot
 }
 
 /** The text's length in UTF-16 code units, where its annotations end at most. */
-async function textLength(deps: Pick<Deps, "blobs">, id: DocumentId): Promise<number> {
+async function textLength(deps: { blobs: BlobStore }, id: DocumentId): Promise<number> {
   const text = await deps.blobs.get(textKey(id));
   if (!text) throw new Error(`document ${id} has no text`);
   return new TextDecoder().decode(text.body).length;

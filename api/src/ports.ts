@@ -240,7 +240,11 @@ export interface Auth {
   user(headers: Headers): Promise<User | null>;
 }
 
-export interface Deps {
+export interface Clock {
+  now: () => Date;
+}
+
+export interface Deps extends Clock {
   auth: Auth;
   users: UserData;
   lexicon: Lexicon;
@@ -250,7 +254,6 @@ export interface Deps {
   ingestHistory: IngestHistory;
   /** git describe of the build */
   version: string;
-  now: () => Date;
   /** For the tests: a response its route's spec doesn't describe is a 500 (openapi.ts). */
   checkResponses?: boolean;
 }

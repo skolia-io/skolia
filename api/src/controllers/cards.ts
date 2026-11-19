@@ -27,7 +27,7 @@ import {
   type Timestamp,
   type User,
 } from "@skolia/shared/api";
-import type { Deps, DocumentLookup, Lexicon, UserCards, UserSettings } from "../ports.ts";
+import type { Clock, DocumentLookup, Lexicon, UserCards, UserSettings } from "../ports.ts";
 import { noSuchDocument } from "./documents.ts";
 import { NO_CONTENT, fail, ok, type Failed, type Json, type NoContent, type Ok } from "./result.ts";
 
@@ -37,13 +37,13 @@ const MAX_DUE = 200;
 export const MAX_CLOCK_SKEW_MS = 5 * 60 * 1000;
 
 /** dayStart: when the user's day started, any ISO time; today's new cards count from it. */
-export async function counts(deps: { users: UserCards } & Pick<Deps, "now">, user: User, dayStart: string): Promise<Ok<CardCounts[]>> {
+export async function counts(deps: { users: UserCards } & Clock, user: User, dayStart: string): Promise<Ok<CardCounts[]>> {
   return ok(await deps.users.counts(user.id, timestamp(deps.now()), stored(dayStart)));
 }
 
 /** group: only its cards; undefined, both groups'. */
 export async function due(
-  deps: { users: UserCards } & Pick<Deps, "now" | "lexicon">,
+  deps: { users: UserCards; lexicon: Lexicon } & Clock,
   user: User,
   lang: Lang,
   dayStart: string,
@@ -54,7 +54,7 @@ export async function due(
 }
 
 export async function review(
-  deps: { users: UserCards } & Pick<Deps, "now">,
+  deps: { users: UserCards } & Clock,
   user: User,
   request: ReviewRequest,
 ): Promise<Ok<Reviewed> | Failed<400 | 404 | 409>> {
@@ -87,7 +87,7 @@ async function seesData(deps: { documents: DocumentLookup }, user: User, card: N
 /** 201 for a new card, 200 when the word had one of its kind, or the text had one at the
  * blank. */
 export async function makeCard(
-  deps: { users: UserCards; documents: DocumentLookup } & Pick<Deps, "now">,
+  deps: { users: UserCards; documents: DocumentLookup } & Clock,
   user: User,
   card: NewCard,
 ): Promise<Json<CardMade, 201> | Ok<CardMade> | Failed<404 | 409>> {
@@ -130,7 +130,7 @@ export async function setSettings(deps: { users: UserSettings }, user: User, set
   return NO_CONTENT;
 }
 
-export async function lookUp(deps: Pick<Deps, "lexicon">, ids: LemmaId[]): Promise<Ok<Lookup>> {
+export async function lookUp(deps: { lexicon: Lexicon }, ids: LemmaId[]): Promise<Ok<Lookup>> {
   return ok(await deps.lexicon.entries(ids));
 }
 

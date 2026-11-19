@@ -26,13 +26,14 @@ import * as schemas from "@skolia/shared/schemas";
 import { log } from "@skolia/util/log";
 import type {
   BlobStore,
-  Deps,
+  Clock,
   DocumentEntries,
   DocumentLookup,
   DocumentStatusStore,
   DocumentTags,
   EntryFields,
   IngestJobs,
+  JobQueue,
   StoredDocument,
 } from "../ports.ts";
 import { NO_CONTENT, fail, ok, type BlobResult, type Failed, type Json, type NoContent, type NotModified, type Ok } from "./result.ts";
@@ -41,8 +42,8 @@ const logger = log("documents");
 
 const NAME = /^[a-z0-9-]{1,64}$/;
 
-type RequeueDeps = { documents: DocumentStatusStore } & Pick<Deps, "blobs" | "queue">;
-type DocumentDetailDeps = { documents: DocumentLookup & DocumentStatusStore } & Pick<Deps, "blobs" | "now" | "queue">;
+type RequeueDeps = { documents: DocumentStatusStore; blobs: BlobStore; queue: JobQueue };
+type DocumentDetailDeps = RequeueDeps & Clock & { documents: DocumentLookup };
 type DocumentEditDeps = DocumentDetailDeps & { documents: DocumentEntries & DocumentTags };
 
 /** A page of the entries the viewer can see that the filter keeps. Listing only reads
@@ -195,7 +196,7 @@ export function placeIn(jobs: Pick<IngestJobs, "loading" | "running" | "waiting"
 
 /** The id is the text's hash, so the text at this URL never changes. */
 export async function text(
-  deps: { documents: DocumentLookup } & Pick<Deps, "blobs">,
+  deps: { documents: DocumentLookup; blobs: BlobStore },
   id: string,
   viewer: User | null,
   ifNoneMatch: string | undefined,
@@ -209,7 +210,7 @@ export async function text(
  * what's at the URL never changes, and the reader gets an analysis and bundle that
  * belong together. */
 export async function part(
-  deps: { documents: DocumentLookup } & Pick<Deps, "blobs">,
+  deps: { documents: DocumentLookup; blobs: BlobStore },
   id: string,
   viewer: User | null,
   which: "analysis" | "bundle",
@@ -223,7 +224,7 @@ export async function part(
 
 /** The blob at a key that never changes, or 304 without reading it when the client has it. */
 async function stored<S extends ContentfulStatusCode>(
-  deps: Pick<Deps, "blobs">,
+  deps: { blobs: BlobStore },
   key: string,
   encoding: typeof PART_ENCODING | undefined,
   ifNoneMatch: string | undefined,
@@ -254,7 +255,7 @@ async function ownEntry(deps: { documents: DocumentLookup }, id: DocumentId, use
 /** The summary, after queueing the document again if ingest now produces other
  * versions, or if its run seems lost. */
 async function current(
-  deps: RequeueDeps & Pick<Deps, "now">,
+  deps: RequeueDeps & Clock,
   record: StoredDocument,
   versions: VersionsOf,
   viewer: User | null,
