@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { describe, test } from "node:test";
 import { LANGS, type CardCounts, type CardKey, type Due, type Lang } from "@skolia/shared/api";
 import { allPages, type Cursor } from "@skolia/shared/page";
 import { e2eUserKey } from "../../src/e2e-keys.ts";
 import { body, expectStatus } from "../../src/testing/responses.ts";
-import { base, client, log } from "./client.ts";
+import { client } from "./client.ts";
 import { WORDS } from "./words.ts";
 
 /** The start of today in UTC: when today's new cards count from. */
@@ -15,8 +15,8 @@ function dayStart(): string {
 }
 
 /** A new user's journey with one word: make its cards, review one, mark them known. */
-async function cards(base: string, key: string, lang: Lang): Promise<void> {
-  const api = client(base, key);
+async function cards(key: string, lang: Lang): Promise<void> {
+  const api = client(key);
   const word = WORDS[lang];
   const startOfDay = dayStart();
   const due = async (): Promise<Due> =>
@@ -26,7 +26,7 @@ async function cards(base: string, key: string, lang: Lang): Promise<void> {
     (await body("card counts", api.me.cards.counts.$get({ query: { dayStart: startOfDay } }))).find((c) => c.lang === lang);
   const wordCards = () =>
     allPages((after?: Cursor<CardKey>) => body(`${word}'s cards`, api.me.cards.$get({ query: { lemmaId: word, after } })));
-  const review = (cardId: string, id = crypto.randomUUID()) =>
+  const review = (cardId: string, id: string) =>
     body(`${lang} review`, api.me.reviews.$post({ json: { id, cardId, rating: 3, at: new Date().toISOString() } }));
 
   const { newLemmasPerDay } = await body("settings", api.me.settings.$get());
@@ -76,11 +76,10 @@ async function cards(base: string, key: string, lang: Lang): Promise<void> {
   }
   assert.deepEqual((await due()).cards, [], `${lang}: a known word's cards are due`);
   assert.deepEqual(await counts(), { lang, words: none, forms: none }, `${lang}: counts after marking a word known`);
-  log.info("{lang}: cards ok", { lang });
 }
 
-test("card journeys", { concurrency: LANGS.length }, async (t) => {
+describe("card journeys", { concurrency: LANGS.length }, () => {
   const seed = process.env["E2E_USER_KEY"];
   assert.ok(seed, "E2E_USER_KEY is required");
-  await Promise.all(LANGS.map((lang) => t.test(lang, () => cards(base, e2eUserKey(seed, lang), lang))));
+  for (const lang of LANGS) test(lang, () => cards(e2eUserKey(seed, lang), lang));
 });

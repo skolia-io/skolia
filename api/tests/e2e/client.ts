@@ -1,3 +1,4 @@
+import { setTimeout as sleep } from "node:timers/promises";
 import { hc } from "hono/client";
 import type { AppType } from "../../src/app.ts";
 import { API_KEY_HEADER } from "../../src/auth.ts";
@@ -13,7 +14,7 @@ export const base = process.env["E2E_URL"]?.replace(/\/$/, "") ?? "";
 export const systemKey = process.env["E2E_API_KEY"] ?? "";
 export const runId = process.env["E2E_RUN_ID"] ?? "";
 
-export const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+export { sleep };
 
 /** Whether a response is Cloudflare's own 404 page, which says no Worker answered, rather
  * than one of the API's, which aren't HTML. */
@@ -53,14 +54,18 @@ export async function retryingFetch(input: string | URL | Request, init?: Reques
 
 export type Api = ReturnType<typeof hc<AppType>>["api"];
 
-export function client(base: string, key?: string): Api {
-  return hc<AppType>(base, { fetch: retryingFetch, ...(key === undefined ? {} : { headers: { [API_KEY_HEADER]: key } }) }).api;
+function headers(key?: string): Record<string, string> {
+  return key === undefined ? {} : { [API_KEY_HEADER]: key };
+}
+
+export function client(key?: string): Api {
+  return hc<AppType>(base, { fetch: retryingFetch, headers: headers(key) }).api;
 }
 
 /** A URL the typed client doesn't describe (text and blobs, which aren't JSON), as the
  * key's user if given. */
-export async function fetchOk(what: string, url: string, key?: string): Promise<Response> {
-  const response = await retryingFetch(url, key === undefined ? {} : { headers: { [API_KEY_HEADER]: key } });
+export async function fetchOk(what: string, url: string, key: string): Promise<Response> {
+  const response = await retryingFetch(url, { headers: headers(key) });
   if (!response.ok) throw new Error(`${what}: ${response.status}: ${await response.text()}`);
   return response;
 }

@@ -2,11 +2,9 @@ import type { Version } from "@skolia/shared/api";
 import { since } from "../../src/script-log.ts";
 import { base, log, sleep, VERSION_TIMEOUT_MS } from "./client.ts";
 
-const POLL_MS = 10_000;
-
-// A new Worker's workers.dev name can take a while to answer (24 s for a preview's), so
-// errors are retried until the deadline too
-async function checkVersion(base: string, expected: string): Promise<void> {
+// A new preview may take time to start serving the deployed version.
+async function checkVersion(expected: string): Promise<void> {
+  const started = performance.now();
   const deadline = Date.now() + VERSION_TIMEOUT_MS;
   for (;;) {
     let result: string;
@@ -18,7 +16,7 @@ async function checkVersion(base: string, expected: string): Promise<void> {
       }
       const { version } = (await response.json()) as Version;
       if (version === expected) {
-        log.info("version {version}", { version });
+        log.info("version verified", { version, ms: since(started) });
         return;
       }
       result = `serving ${version}, expected ${expected}`;
@@ -27,12 +25,10 @@ async function checkVersion(base: string, expected: string): Promise<void> {
     }
     if (Date.now() > deadline) throw new Error(`version: ${result}`);
     log.info("version: {result}", { result, expected });
-    await sleep(POLL_MS);
+    await sleep(10_000);
   }
 }
 
 const expected = process.env["E2E_VERSION"];
 if (!base || !expected) throw new Error("E2E_URL and E2E_VERSION are required");
-const started = performance.now();
-await checkVersion(base, expected);
-log.info("version verified", { ms: since(started) });
+await checkVersion(expected);

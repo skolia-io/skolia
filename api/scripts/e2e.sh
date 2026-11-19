@@ -48,5 +48,5 @@ SYNC_CURATED_API_KEY=$(openssl rand -hex 32)
 export SYNC_CURATED_API_KEY
 just d1-sql local api/src/sync-curated-key.ts "$api/$state"
 just e2e-tests local "http://localhost:$port" dev "$api/$state"
-node src/sync-curated.ts "http://localhost:$port" ../curated || { echo "sync-curated failed; see api/$log" >&2; exit 1; }
-node src/sync-curated.ts "http://localhost:$port" ../curated --check || { echo "sync-curated left changes; see api/$log" >&2; exit 1; }
+node src/sync-curated.ts "http://localhost:$port" ../curated
+node src/sync-curated.ts "http://localhost:$port" ../curated --check

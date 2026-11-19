@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { test, type TestContext } from "node:test";
+import { describe, test, type TestContext } from "node:test";
 import { LANGS, type DocumentId, type ImportRequest, type Lang } from "@skolia/shared/api";
 import { since } from "../../src/script-log.ts";
 import { body, expectStatus } from "../../src/testing/responses.ts";
@@ -15,8 +15,8 @@ const TEXTS: Record<Lang, string> = {
 };
 
 async function documents(t: TestContext, lang: Lang): Promise<void> {
-  const api = client(base, systemKey);
-  const anonymous = client(base);
+  const api = client(systemKey);
+  const anonymous = client();
   const fixture = `${runId}-${lang}`;
   const started = performance.now();
   const request: ImportRequest = {
@@ -41,10 +41,39 @@ async function documents(t: TestContext, lang: Lang): Promise<void> {
     `${lang}: the importer's list hasn't their private text`,
   );
 
+  const reading = await waitForReading(api, lang, id, imported);
+  const observedReadyAt = Date.now();
+  const verification = performance.now();
+  const url = `${base}/api/documents/${id}`;
+
+  // Keep the entry until every check settles, including on failure.
+  const checks = await Promise.allSettled([
+    checkText(lang, `${url}/text`, request.text),
+    ...Object.entries(reading).map(([part, name]) => checkBlob(lang, part, `${url}/${part}/${name}`)),
+    checkIngestHistory(api, anonymous, lang, id, observedReadyAt),
+  ]);
+  const failures = checks.flatMap((check) => (check.status === "rejected" ? [check.reason] : []));
+  if (failures.length) throw new AggregateError(failures, `${lang}: document verification failed`);
+  log.info("{lang}: verified document", { lang, doc: id, ms: since(verification) });
+}
+
+async function checkText(lang: Lang, url: string, expected: string): Promise<void> {
+  const text = await fetchOk(`${lang} text`, url, systemKey);
+  assert.equal(await text.text(), expected, `${lang}: the text isn't the one imported`);
+  const hidden = await retryingFetch(url);
+  await hidden.body?.cancel();
+  assert.equal(hidden.status, 404, `${lang}: a private text is readable signed out`);
+}
+
+async function checkBlob(lang: Lang, part: string, url: string): Promise<void> {
+  const response = await fetchOk(`${lang} ${part}`, url, systemKey);
+  assert.ok((await response.arrayBuffer()).byteLength > 0, `${lang}: empty ${part}`);
+}
+
+async function waitForReading(api: Api, lang: Lang, id: DocumentId, imported: number) {
   const deadline = Date.now() + TIMEOUT_MS;
   let delay = 1000;
   for (;;) {
-    // As the importer, who's told where it is in the queue (from the ingest Worker)
     const summary = await body(`${lang} status`, api.documents[":id"].$get({ param: { id } }));
     log.info("{lang}: {state}", { lang, doc: id, state: summary.state, queue: summary.queue, ms: since(imported) });
     if (summary.state === "queued" || summary.state === "analysing") {
@@ -52,32 +81,8 @@ async function documents(t: TestContext, lang: Lang): Promise<void> {
     }
     if (summary.state === "failed") throw new Error(`${lang} analysis failed: ${summary.error ?? ""}`);
     if (summary.state === "ready") {
-      if (!summary.reading) throw new Error(`${lang}: ready without analysis and bundle names`);
-      const verification = performance.now();
-      const observedReadyAt = Date.now();
-      const reading = summary.reading;
-      // Finish outstanding reads before the test's cleanup removes the entry.
-      const checks = await Promise.allSettled([
-        (async () => {
-          const url = `${base}/api/documents/${id}/text`;
-          const text = await (await fetchOk(`${lang} text`, url, systemKey)).text();
-          assert.equal(text, request.text, `${lang}: the text isn't the one imported`);
-          const hidden = await retryingFetch(url);
-          await hidden.body?.cancel();
-          assert.equal(hidden.status, 404, `${lang}: a private text is readable signed out`);
-        })(),
-        (async () => {
-          for (const [part, name] of Object.entries(reading)) {
-            const blob = await fetchOk(`${lang} ${part}`, `${base}/api/documents/${id}/${part}/${name}`, systemKey);
-            log.info("{lang}: {part} {name}", { lang, doc: id, part, name, bytes: (await blob.arrayBuffer()).byteLength });
-          }
-        })(),
-        ingestHistory(api, anonymous, lang, id, observedReadyAt),
-      ]);
-      const failures = checks.flatMap((check) => (check.status === "rejected" ? [check.reason] : []));
-      if (failures.length) throw new AggregateError(failures, `${lang}: document verification failed`);
-      log.info("{lang}: verified document", { lang, doc: id, ms: since(verification) });
-      return;
+      assert.ok(summary.reading, `${lang}: ready without analysis and bundle names`);
+      return summary.reading;
     }
     if (Date.now() > deadline) throw new Error(`${lang}: still ${summary.state} after ${TIMEOUT_MS / 60000} min`);
     await sleep(delay + Math.random() * 500);
@@ -87,7 +92,7 @@ async function documents(t: TestContext, lang: Lang): Promise<void> {
 
 /** The analysis of a document just ready is in the ingest history once its run has recorded
  * it; signed out, the private text isn't. */
-async function ingestHistory(api: Api, anonymous: Api, lang: Lang, id: DocumentId, observedReadyAt: number): Promise<void> {
+async function checkIngestHistory(api: Api, anonymous: Api, lang: Lang, id: DocumentId, observedReadyAt: number): Promise<void> {
   const deadline = Date.now() + HISTORY_TIMEOUT_MS;
   for (;;) {
     // A retried attempt's job comes before the one that made it ready
@@ -121,7 +126,7 @@ async function ingestHistory(api: Api, anonymous: Api, lang: Lang, id: DocumentI
   }
 }
 
-test("document ingestion", { concurrency: LANGS.length }, async (t) => {
+describe("document ingestion", { concurrency: LANGS.length }, () => {
   assert.ok(runId && systemKey, "e2e fixtures are required");
-  await Promise.all(LANGS.map((lang) => t.test(lang, (scenario) => documents(scenario, lang))));
+  for (const lang of LANGS) test(lang, (t) => documents(t, lang));
 });
