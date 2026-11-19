@@ -1,9 +1,10 @@
 <script lang="ts">
+  import type { Snippet } from "svelte";
   import type { Lang, ReadingListId } from "@skolia/shared/api";
   import { createReadingListDocuments, createReadingListChange } from "../lib/reading-lists.ts";
   import DocumentList from "./DocumentList.svelte";
   import Button from "./Button.svelte";
-  let { id, lang }: { id: ReadingListId; lang: Lang | undefined } = $props();
+  let { id, lang, controls }: { id: ReadingListId; lang: Lang | undefined; controls: Snippet } = $props();
   const texts = createReadingListDocuments(
     () => id,
     () => lang,
@@ -16,6 +17,8 @@
   <button onclick={() => void texts.refetch()}>Try again</button>
 {:else}
   <DocumentList
+    {controls}
+    compactAside
     documents={texts.data?.pages.flatMap((page) => page.items.map((item) => item.document))}
     hasMore={texts.hasNextPage}
     loadingMore={texts.isFetchingNextPage}
