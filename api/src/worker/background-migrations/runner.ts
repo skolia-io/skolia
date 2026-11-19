@@ -7,9 +7,9 @@ import { prepare } from "@skolia/util/d1";
 const logger = log("background-migrations");
 const LEASE_MS = 5 * 60 * 1000;
 const MAX_BATCHES = 10;
-const BATCH_START_BUDGET_MS = 20_000;
-const Row = z.object({ name: z.string(), cursor: z.string().nullable(), completedAt: z.string().nullable() });
-const Claimed = Row.pick({ cursor: true });
+const RUN_BUDGET_MS = 20_000;
+const MigrationRow = z.object({ name: z.string(), completedAt: z.string().nullable() });
+const Claim = z.object({ cursor: z.string().nullable() });
 
 export interface Context {
   readonly db: D1DatabaseSession;
@@ -36,16 +36,20 @@ export async function runBackgroundMigrations(
     throw new Error("background migrations must be ordered, contiguous versions starting at 1");
   }
   const started = performance.now();
+  const deadline = started + RUN_BUDGET_MS;
   const { db } = context;
   for (const migration of migrations) {
     const { version, name } = migration;
-    const raw = await prepare(
+    const stored = await prepare(
       db,
-      sql`SELECT name, cursor, completed_at AS completedAt FROM background_migration WHERE version = ${version}`,
+      sql`SELECT name, completed_at AS completedAt FROM background_migration WHERE version = ${version}`,
     ).first();
-    const row = raw === null ? null : Row.parse(raw);
-    if (row !== null && row.name !== name) throw new Error(`background migration ${version} was renamed`);
-    if (row?.completedAt !== null && row?.completedAt !== undefined) continue;
+    if (stored !== null) {
+      const row = MigrationRow.parse(stored);
+      if (row.name !== name) throw new Error(`background migration ${version} was renamed`);
+      if (row.completedAt !== null) continue;
+    }
+
     const token = crypto.randomUUID();
     const at = now.toISOString();
     const expires = new Date(now.getTime() + LEASE_MS).toISOString();
@@ -61,12 +65,10 @@ export async function runBackgroundMigrations(
       RETURNING cursor`,
     ).first();
     if (claimed === null) return;
-    let { cursor } = Claimed.parse(claimed);
-    let batches = 0;
-    let done = false;
+    let { cursor } = Claim.parse(claimed);
     try {
       // Finish the current batch and checkpoint it even if the time budget has elapsed.
-      while (!done && batches < MAX_BATCHES && performance.now() - started < BATCH_START_BUDGET_MS) {
+      for (let batch = 1; batch <= MAX_BATCHES && performance.now() < deadline; batch += 1) {
         const next = await migration.run(context, cursor);
         const updated = new Date().toISOString();
         const checkpoint = await prepare(
@@ -76,19 +78,19 @@ export async function runBackgroundMigrations(
           WHERE version = ${version} AND lease_token = ${token}`,
         ).run();
         if (checkpoint.meta.changes !== 1) throw new Error("background migration lease lost");
-        ({ cursor, done } = next);
-        batches += 1;
-        logger.info("ran background migration batch", { version, name, cursor, done });
+        cursor = next.cursor;
+        logger.info("ran background migration batch", {
+          version,
+          name,
+          batch,
+          cursor,
+          done: next.done,
+          ms: Math.round(performance.now() - started),
+          maxBatches: MAX_BATCHES,
+          budgetMs: RUN_BUDGET_MS,
+        });
+        if (next.done) break;
       }
-      logger.info("finished background migration invocation", {
-        version,
-        name,
-        batches,
-        done,
-        ms: Math.round(performance.now() - started),
-        maxBatches: MAX_BATCHES,
-        batchStartBudgetMs: BATCH_START_BUDGET_MS,
-      });
     } catch (error) {
       logger.error("background migration batch failed", { version, name, cursor, error });
       throw error;
