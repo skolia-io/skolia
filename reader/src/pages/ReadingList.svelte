@@ -8,6 +8,7 @@
   import Button from "../components/Button.svelte";
   import Page from "../components/Page.svelte";
   import ReadingListContents from "../components/ReadingListContents.svelte";
+  import SearchField from "../components/SearchField.svelte";
 
   let { user }: { user: User | null | undefined } = $props();
   let query = $state(hashQuery(location.hash));
@@ -68,7 +69,12 @@
 />
 
 {#snippet filter()}
-  <select value={lang ?? "all"} onchange={(event) => language(event.currentTarget.value)} aria-label="Language">
+  <select
+    class:active={lang !== undefined}
+    value={lang ?? "all"}
+    onchange={(event) => language(event.currentTarget.value)}
+    aria-label="Language"
+  >
     <option value="all">All languages</option>
     {#each LANGS as code (code)}
       <option value={code} lang={code}>{LANGUAGE_INFO[code].flag} {LANGUAGE_INFO[code].endonym}</option>
@@ -92,9 +98,8 @@
           </div>
         </header>
         <section aria-label="List contents">
-          <div class="detail-filter">{@render filter()}</div>
           {#key current.id}
-            <ReadingListContents id={current.id} {lang} />
+            <ReadingListContents id={current.id} {lang} controls={filter} />
           {/key}
         </section>
       {:else}
@@ -105,26 +110,17 @@
         {/if}
       {/if}
     {:else}
-      <div class="library-bar">
-        {#if (lists.data?.length ?? 0) > 6}
-          <label class="search">
-            <svg viewBox="0 0 24 24" aria-hidden="true"
-              ><circle cx="10.5" cy="10.5" r="5.5" /><path d="m15 15 4 4" /></svg
-            >
-            <input type="search" aria-label="Find a reading list" placeholder="Find a list" bind:value={search}>
-          </label>
-        {/if}
-        <div class="library-actions">
-          <Button small variant="primary" onclick={() => void show("create")} disabled={!lists.data || lists.data.length >= 200}>
-            <span aria-hidden="true">＋</span>
-            New list
-          </Button>
+      <SearchField bind:value={search} label="Find a reading list" />
+      <div class="list-table">
+        <div class="list-table-head">
+          <span>{shown.length.toLocaleString()} {shown.length === 1 ? "list" : "lists"}</span>
+          <Button small variant="quiet" onclick={() => void show("create")} disabled={!lists.data || lists.data.length >= 200}
+            >New list</Button
+          >
         </div>
-      </div>
-      {#if lists.isPending}
-        <p class="muted" role="status">Loading lists…</p>
-      {:else if shown.length}
-        <div class="list-table">
+        {#if lists.isPending}
+          <p class="empty muted" role="status">Loading lists…</p>
+        {:else if shown.length}
           <table aria-label="Reading lists">
             <thead
               ><tr
@@ -140,10 +136,10 @@
               {/each}
             </tbody>
           </table>
-        </div>
-      {:else if lists.data}
-        <p class="muted">{search.trim() ? `No lists match “${search}”.` : "No reading lists yet."}</p>
-      {/if}
+        {:else if lists.data}
+          <p class="empty muted">{search.trim() ? `No lists match “${search}”.` : "No reading lists yet."}</p>
+        {/if}
+      </div>
     {/if}
     {#if lists.error}
       <p class="error" role="alert">{lists.error.message}</p><Button variant="quiet" onclick={() => void lists.refetch()}>Try again</Button>
@@ -191,50 +187,27 @@
   .muted {
     color: var(--muted);
   }
-  .library-bar,
-  .library-actions {
+  .list-table-head {
     display: flex;
-    flex-wrap: wrap;
     align-items: center;
+    justify-content: space-between;
     gap: 0.5rem;
+    padding: 0.4rem 0.6rem 0.4rem 1rem;
+    border-bottom: 1px solid var(--line);
+    background: var(--bg);
+    font-size: 0.9rem;
+    font-weight: 600;
   }
-  .library-bar {
-    margin-bottom: 1rem;
-  }
-  .library-actions {
-    margin-left: auto;
-  }
-  svg {
-    width: 1.1rem;
-    height: 1.1rem;
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 1.7;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-  }
-  .search {
-    position: relative;
-    color: var(--muted);
-    width: min(100%, 14rem);
-  }
-  .search svg {
-    position: absolute;
-    top: 50%;
-    left: 0.65rem;
-    transform: translateY(-50%);
-    pointer-events: none;
-  }
-  .search input {
-    width: 100%;
-    padding: 0.4rem 0.6rem 0.4rem 2rem;
-    font-size: 0.875rem;
+  .empty {
+    margin: 0;
+    padding: 1.25rem 1rem;
   }
   .list-table {
     border: 1px solid var(--line);
     border-radius: 10px;
     overflow: hidden;
     background: var(--surface);
+    box-shadow: var(--card-shadow);
   }
   table {
     width: 100%;
@@ -242,9 +215,8 @@
     text-align: left;
   }
   thead {
-    background: var(--bg);
     color: var(--muted);
-    font-size: 0.85rem;
+    font-size: 0.8rem;
   }
   thead th,
   .count {
@@ -259,15 +231,18 @@
   }
   tbody th {
     padding: 0;
-    font-weight: 500;
+    font-family: var(--reading);
+    font-weight: 600;
   }
   tbody a {
     display: block;
     padding: 0.7rem 1rem;
     overflow-wrap: anywhere;
+    color: var(--text);
     text-decoration: none;
   }
   tbody a:hover {
+    color: var(--accent);
     text-decoration: underline;
   }
   tbody a:focus-visible {
@@ -309,14 +284,6 @@
     flex-wrap: wrap;
     gap: 0.5rem;
   }
-  .detail-filter {
-    display: flex;
-    justify-content: flex-end;
-    margin-bottom: 0.65rem;
-  }
-  select {
-    font-size: 0.85rem;
-  }
   dialog {
     width: min(25rem, calc(100% - 2rem));
     padding: 1.35rem;
@@ -348,13 +315,5 @@
   }
   .error {
     color: var(--error);
-  }
-  @media (max-width: 34rem) {
-    .search {
-      flex: 1 1 8rem;
-    }
-    .library-actions {
-      flex-shrink: 0;
-    }
   }
 </style>

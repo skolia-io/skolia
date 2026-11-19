@@ -10,6 +10,7 @@
   import DocumentList from "../components/DocumentList.svelte";
   import ExploreReadingMenu from "../components/ExploreReadingMenu.svelte";
   import Page from "../components/Page.svelte";
+  import SearchField from "../components/SearchField.svelte";
 
   let { user }: { user: User | null | undefined } = $props();
 
@@ -72,12 +73,7 @@
 {/snippet}
 
 <Page title="Explore" wide>
-  <label class="search">
-    <svg viewBox="0 0 20 20" aria-hidden="true"
-      ><circle cx="8.5" cy="8.5" r="5.5" /><path d="m13 13 4.5 4.5" /></svg
-    >
-    <input type="search" bind:value={query} placeholder="Search titles" aria-label="Search titles">
-  </label>
+  <SearchField bind:value={query} label="Search titles" />
 
   {#if listing.error}
     <p class="error">{listing.error.message}</p>
@@ -121,33 +117,5 @@
 <style>
   .error {
     color: var(--error);
-  }
-
-  .search {
-    position: relative;
-    display: block;
-    margin-bottom: 1rem;
-  }
-
-  .search svg {
-    position: absolute;
-    left: 0.85rem;
-    top: 50%;
-    width: 1.1rem;
-    height: 1.1rem;
-    translate: 0 -50%;
-    fill: none;
-    stroke: var(--muted);
-    stroke-width: 1.8;
-    stroke-linecap: round;
-    pointer-events: none;
-  }
-
-  .search input {
-    width: 100%;
-    height: 2.5rem;
-    padding: 0 1rem 0 2.5rem;
-    border-radius: 8px;
-    box-shadow: var(--card-shadow);
   }
 </style>
