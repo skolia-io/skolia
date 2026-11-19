@@ -15,7 +15,7 @@ import * as cards from "./controllers/cards.ts";
 import * as documents from "./controllers/documents.ts";
 import * as ingest from "./controllers/ingest.ts";
 import * as positions from "./controllers/positions.ts";
-import * as readingList from "./controllers/reading-list.ts";
+import * as readingLists from "./controllers/reading-lists.ts";
 import { fail, ok, type BlobResult, type Failed, type NotModified, type Result } from "./controllers/result.ts";
 import { log } from "@skolia/util/log";
 import {
@@ -208,40 +208,69 @@ export function createApp(deps: Deps) {
       (c) => signedIn(c, (user) => positions.set(deps, user, c.req.valid("param").id, c.req.valid("json"))),
     )
     .get(
-      "/api/me/reading-list",
-      mine(TAGS.reading, "A page of the reading list", "The texts with a status, latest changed first."),
-      validator("query", schemas.ReadingQuery, badRequest()),
-      responds({ 200: json(schemas.page(schemas.ListedReading), "A page of texts"), 401: NOT_SIGNED_IN }),
+      "/api/me/reading-lists",
+      mine(TAGS.reading, "The user's reading lists"),
+      responds({ 200: json(z.object({ lists: z.array(schemas.ReadingList) }), "Reading lists"), 401: NOT_SIGNED_IN }),
+      (c) => signedIn(c, (user) => readingLists.all(deps, user)),
+    )
+    .post(
+      "/api/me/reading-lists",
+      mine(TAGS.reading, "Create a reading list"),
+      validator("json", schemas.ReadingListName, badRequest()),
+      responds({
+        200: json(z.object({ id: schemas.ReadingListId }), "Created list"),
+        401: NOT_SIGNED_IN,
+        409: error("List limit reached"),
+      }),
+      (c) => signedIn(c, (user) => readingLists.create(deps, user, c.req.valid("json").name)),
+    )
+    .patch(
+      "/api/me/reading-lists/:listId",
+      mine(TAGS.reading, "Rename a reading list"),
+      validator("param", z.object({ listId: schemas.ReadingListIdParam }), badRequest()),
+      validator("json", schemas.ReadingListName, badRequest()),
+      responds({ 204: NO_BODY, 401: NOT_SIGNED_IN, 404: error("No such list") }),
+      (c) => signedIn(c, (user) => readingLists.rename(deps, user, c.req.valid("param").listId, c.req.valid("json").name)),
+    )
+    .delete(
+      "/api/me/reading-lists/:listId",
+      mine(TAGS.reading, "Delete a reading list without deleting its documents"),
+      validator("param", z.object({ listId: schemas.ReadingListIdParam }), badRequest()),
+      responds({ 204: NO_BODY, 401: NOT_SIGNED_IN, 404: error("No such list") }),
+      (c) => signedIn(c, (user) => readingLists.remove(deps, user, c.req.valid("param").listId)),
+    )
+    .get(
+      "/api/me/reading-lists/:listId/documents",
+      mine(TAGS.reading, "A page of a reading list's texts"),
+      validator("param", z.object({ listId: schemas.ReadingListIdParam }), badRequest()),
+      validator("query", schemas.ReadingListDocumentsQuery, badRequest()),
+      responds({ 200: json(schemas.page(schemas.ReadingListDocument), "Texts"), 401: NOT_SIGNED_IN, 404: error("No such list") }),
       (c) =>
         signedIn(c, (user) => {
-          const { status, lang, ...page } = c.req.valid("query");
-          return readingList.list(deps, user, { status, lang }, page);
+          const { lang, ...page } = c.req.valid("query");
+          return readingLists.documents(deps, user, c.req.valid("param").listId, lang, page);
         }),
     )
     .get(
-      "/api/me/reading-list/:id",
-      mine(TAGS.reading, "A text's place on the reading list"),
-      validator("param", z.object({ id: schemas.DocumentId }), badRequest(DOCUMENT_ID_MESSAGE)),
-      responds({
-        200: json(z.object({ entry: schemas.ReadingEntry.nullable() }), "Its entry, null if it isn't on the list"),
-        401: NOT_SIGNED_IN,
-      }),
-      (c) => signedIn(c, (user) => readingList.get(deps, user, c.req.valid("param").id)),
+      "/api/me/reading-list-memberships/:id",
+      mine(TAGS.reading, "The lists containing a text"),
+      validator("param", z.object({ id: schemas.DocumentId }), badRequest()),
+      responds({ 200: json(z.object({ lists: z.array(schemas.ReadingListId) }), "Memberships"), 401: NOT_SIGNED_IN }),
+      (c) => signedIn(c, (user) => readingLists.memberships(deps, user, c.req.valid("param").id)),
     )
     .put(
-      "/api/me/reading-list/:id",
-      mine(TAGS.reading, "Put a text on the reading list, or change its status"),
-      validator("param", z.object({ id: schemas.DocumentId }), badRequest(DOCUMENT_ID_MESSAGE)),
-      validator("json", schemas.SetReading, badRequest()),
-      responds({ 200: json(z.object({ entry: schemas.ReadingEntry }), "Its entry"), 401: NOT_SIGNED_IN, 404: error("No such document") }),
-      (c) => signedIn(c, (user) => readingList.set(deps, user, c.req.valid("param").id, c.req.valid("json").status)),
+      "/api/me/reading-lists/:listId/documents/:id",
+      mine(TAGS.reading, "Add a text to a reading list"),
+      validator("param", z.object({ listId: schemas.ReadingListIdParam, id: schemas.DocumentId }), badRequest()),
+      responds({ 204: NO_BODY, 401: NOT_SIGNED_IN, 404: error("No such list or document") }),
+      (c) => signedIn(c, (user) => readingLists.addDocument(deps, user, c.req.valid("param").listId, c.req.valid("param").id)),
     )
     .delete(
-      "/api/me/reading-list/:id",
-      mine(TAGS.reading, "Take a text off the reading list"),
-      validator("param", z.object({ id: schemas.DocumentId }), badRequest(DOCUMENT_ID_MESSAGE)),
-      responds({ 204: NO_BODY, 401: NOT_SIGNED_IN }),
-      (c) => signedIn(c, (user) => readingList.remove(deps, user, c.req.valid("param").id)),
+      "/api/me/reading-lists/:listId/documents/:id",
+      mine(TAGS.reading, "Remove a text from a reading list"),
+      validator("param", z.object({ listId: schemas.ReadingListIdParam, id: schemas.DocumentId }), badRequest()),
+      responds({ 204: NO_BODY, 401: NOT_SIGNED_IN, 404: error("No such list") }),
+      (c) => signedIn(c, (user) => readingLists.removeDocument(deps, user, c.req.valid("param").listId, c.req.valid("param").id)),
     )
     .get(
       "/api/me/documents",

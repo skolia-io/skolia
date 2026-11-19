@@ -1,4 +1,5 @@
 import * as initial from "./0001_initial.ts";
+import * as readingLists from "./0002_reading_lists.ts";
 
 export interface Migration {
   version: number;
@@ -7,4 +8,7 @@ export interface Migration {
   down: string;
 }
 
-export const MIGRATIONS: readonly Migration[] = [{ version: 1, name: "initial", ...initial }];
+export const MIGRATIONS: readonly Migration[] = [
+  { version: 1, name: "initial", ...initial },
+  { version: 2, name: "reading_lists", ...readingLists },
+];

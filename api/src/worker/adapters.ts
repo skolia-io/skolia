@@ -31,10 +31,9 @@ import {
   type Lookup,
   type Timestamp,
   type UserId,
-  type ReadingEntry,
-  type ReadingFilter,
+  type ReadingListId,
+  type ReadingList,
   type ReadingKey,
-  type ReadingStatus,
   type ReviewRequest,
   type Settings,
   type AvailableTag,
@@ -84,7 +83,6 @@ import type {
   StoredBlob,
   StoredDocument,
   StoredPosition,
-  StoredReading,
   UserData,
 } from "../ports.ts";
 import { prepare } from "@skolia/util/d1";
@@ -151,20 +149,35 @@ export class DurableObjectUsers implements UserData {
     await this.users.getByName(userId).setPosition(documentId, position);
   }
 
-  async reading(userId: UserId, documentId: DocumentId): Promise<ReadingEntry | null> {
-    return this.users.getByName(userId).reading(documentId);
+  async readingLists(userId: UserId): Promise<readonly ReadingList[]> {
+    return this.users.getByName(userId).readingLists();
   }
-
-  async setReading(userId: UserId, documentId: DocumentId, lang: Lang, status: ReadingStatus, now: Timestamp): Promise<ReadingEntry> {
-    return this.users.getByName(userId).setReading(documentId, lang, status, now);
+  async createReadingList(userId: UserId, name: string, now: Timestamp): Promise<ReadingListId | null> {
+    return this.users.getByName(userId).createReadingList(name, now);
   }
-
-  async removeReading(userId: UserId, documentId: DocumentId): Promise<void> {
-    await this.users.getByName(userId).removeReading(documentId);
+  async renameReadingList(userId: UserId, id: ReadingListId, name: string): Promise<boolean> {
+    return this.users.getByName(userId).renameReadingList(id, name);
   }
-
-  async readingList(userId: UserId, filter: ReadingFilter, page: PageRequest<ReadingKey>): Promise<Paginated<StoredReading, ReadingKey>> {
-    return this.users.getByName(userId).readingList(filter, page);
+  async deleteReadingList(userId: UserId, id: ReadingListId): Promise<boolean> {
+    return this.users.getByName(userId).deleteReadingList(id);
+  }
+  async readingListMemberships(userId: UserId, documentId: DocumentId): Promise<readonly ReadingListId[]> {
+    return this.users.getByName(userId).readingListMemberships(documentId);
+  }
+  async addDocumentToReadingList(
+    userId: UserId,
+    listId: ReadingListId,
+    documentId: DocumentId,
+    lang: Lang,
+    createdAt: Timestamp,
+  ): Promise<boolean> {
+    return this.users.getByName(userId).addDocumentToReadingList(listId, documentId, lang, createdAt);
+  }
+  async removeDocumentFromReadingList(userId: UserId, listId: ReadingListId, documentId: DocumentId): Promise<boolean> {
+    return this.users.getByName(userId).removeDocumentFromReadingList(listId, documentId);
+  }
+  async readingListDocuments(userId: UserId, id: ReadingListId, lang: Lang | undefined, page: PageRequest<ReadingKey>) {
+    return this.users.getByName(userId).readingListDocuments(id, lang, page);
   }
 }
 

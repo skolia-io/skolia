@@ -7,7 +7,7 @@ import { sql } from "@skolia/util/sql";
 import { startLocal, type Local } from "./testing/harness.ts";
 import { MIGRATIONS } from "./user/migrations/index.ts";
 import { checksum } from "./user/migrator.ts";
-import { BLANK_DOCUMENT, BLANK_START, cardsQuery, readingListQuery } from "./user/queries.ts";
+import { BLANK_DOCUMENT, BLANK_START, cardsQuery, readingListDocumentsQuery } from "./user/queries.ts";
 
 let local: Local;
 
@@ -136,12 +136,13 @@ test("the tables are STRICT, the user's are WITHOUT ROWID, and timestamps must b
   const storage = await storageOf("heidi");
   assert.deepEqual(
     await storage.exec(
-      "select name, strict, wr from pragma_table_list where name in ('card', 'review', 'settings', 'migration_log', 'reading_list', 'row_count') order by name",
+      "select name, strict, wr from pragma_table_list where name in ('card', 'review', 'settings', 'migration_log', 'reading_list', 'reading_list_document', 'row_count') order by name",
     ),
     [
       { name: "card", strict: 1, wr: 1 },
       { name: "migration_log", strict: 1, wr: 0 },
-      { name: "reading_list", strict: 1, wr: 1 },
+      { name: "reading_list", strict: 1, wr: 0 },
+      { name: "reading_list_document", strict: 1, wr: 1 },
       { name: "review", strict: 1, wr: 1 },
       { name: "row_count", strict: 1, wr: 1 },
       { name: "settings", strict: 1, wr: 0 },
@@ -155,10 +156,7 @@ test("the tables are STRICT, the user's are WITHOUT ROWID, and timestamps must b
   await assert.rejects(storage.exec("insert into row_count values ('other', x'00')"), /cannot store BLOB/);
   assert.equal((await heidi.cards({ lang: "pl", limit: 10 })).items.length, 1);
   await assert.rejects(
-    storage.exec(
-      "insert into reading_list values (?, 'pl', 'to-read', '2026-11-07T00:00:00Z', '2026-11-07T00:00:00.000Z')",
-      "0".repeat(64),
-    ),
+    storage.exec("insert into reading_list_document values (1, ?, 'pl', '2026-11-07T00:00:00Z')", "0".repeat(64)),
     /CHECK constraint failed/,
   );
 });
@@ -171,28 +169,70 @@ test("a column is a toISOString() timestamp exactly when its name ends in _at", 
   assert.deepEqual(timestampNames(columns), { unnamed: ["reading_position.at"], unchecked: [] });
 });
 
-test("a page of the reading list seeks to its key in an index, with or without a language, and sorts nothing", async () => {
-  await local.env.USER.getByName("ivan").settings();
-  const storage = await storageOf("ivan");
-  for (const [inLang, after] of [
-    [false, false],
-    [false, true],
-    [true, false],
-    [true, true],
-  ] as const) {
-    const query = readingListQuery(
-      { status: "to-read", lang: inLang ? "pl" : undefined },
-      { after: after ? schemas.ReadingKey.parse(["2026-11-07T00:00:00.000Z", "0".repeat(64)]) : undefined, limit: 3 },
-    );
-    const plan = (await storage.exec<{ detail: string }>(`EXPLAIN QUERY PLAN ${query.sql.text}`, ...query.sql.params)).map(
-      (row) => row.detail,
-    );
-    const index = inLang ? "reading_list_lang" : "reading_list_status";
-    assert.ok(
-      plan.length === 1 && plan[0]!.startsWith(`SEARCH reading_list USING INDEX ${index} `),
-      `${inLang} ${after}: ${plan.join("; ")}`,
-    );
+test("reading lists migrate each status into a list without touching the resume position", async () => {
+  const user = local.env.USER.getByName("reading-lists-migration");
+  await user.migrate(1);
+  const storage = await storageOf("reading-lists-migration");
+  const documents = ["1", "2", "3"].map((digit) => schemas.DocumentId.parse(digit.repeat(64)));
+  for (const [index, status] of ["to-read", "reading", "finished"].entries()) {
+    await storage.exec("INSERT INTO reading_list VALUES (?, 'pl', ?, ?, ?)", documents[index]!, status, AT, AT);
   }
+  await user.setPosition(documents[1]!, { sentence: 9, token: 2, at: AT });
+  await user.migrate(LATEST);
+  const lists = await user.readingLists();
+  assert.equal(lists.length, 3);
+  for (const [index, name] of ["To read", "Reading now", "Finished"].entries()) {
+    const list = lists.find((item) => item.name === name);
+    assert.ok(list);
+    assert.equal(list.documentsCount, 1);
+    const page = await user.readingListDocuments(list.id, "pl", { limit: 10 });
+    assert.deepEqual(
+      page?.items.map((item) => [item.documentId, item.createdAt]),
+      [[documents[index], AT]],
+    );
+    assert.deepEqual(await user.readingListMemberships(documents[index]!), [list.id]);
+  }
+  const position = await user.position(documents[1]!);
+  assert.equal(position?.sentence, 9);
+  assert.equal(position?.token, 2);
+  assert.equal(position?.at, AT);
+  assert.ok(!(await tables("reading-lists-migration")).includes("legacy_reading_list"));
+  const toRead = schemas.ReadingListId.parse(1);
+  const id = await user.createReadingList("Stories", AT);
+  assert.equal(id, 4);
+  assert.ok(id);
+  assert.equal(await user.addDocumentToReadingList(id, documents[0]!, "pl", AT), true);
+  assert.equal(await user.addDocumentToReadingList(id, documents[0]!, "pl", AT), true);
+  assert.equal((await user.readingLists()).find((list) => list.id === id)?.documentsCount, 1);
+  assert.equal(await user.deleteReadingList(id), true);
+  assert.deepEqual(await user.readingListMemberships(documents[0]!), [toRead]);
+  assert.equal(await user.renameReadingList(toRead, "Later"), true);
+  assert.equal((await user.readingLists()).find((list) => list.id === toRead)?.name, "Later");
+  assert.deepEqual(await user.readingListMemberships(documents[0]!), [toRead]);
+  await user.migrate(1);
+  assert.equal((await storage.exec("SELECT document_id FROM reading_list")).length, 3);
+});
+
+test("reading list pages seek an index, with language and cursor, without sorting", async () => {
+  await local.env.USER.getByName("reading-lists-plan").settings();
+  const storage = await storageOf("reading-lists-plan");
+  for (const lang of [undefined, "pl"] as const) {
+    for (const after of [undefined, schemas.ReadingKey.parse([AT, "0".repeat(64)])]) {
+      const query = readingListDocumentsQuery(schemas.ReadingListId.parse(1), lang, { after, limit: 3 }).sql;
+      const plan = (await storage.exec<{ detail: string }>(`EXPLAIN QUERY PLAN ${query.text}`, ...query.params)).map((row) => row.detail);
+      const index = lang ? "reading_list_document_lang" : "reading_list_document_page";
+      assert.ok(plan.length === 1 && plan[0]!.startsWith(`SEARCH reading_list_document USING COVERING INDEX ${index} `), plan.join("; "));
+    }
+  }
+});
+
+test("reading lists are capped, and deleting one releases its slot", async () => {
+  const user = local.env.USER.getByName("reading-lists-limit");
+  for (let id = 4; id <= 200; id++) assert.equal(await user.createReadingList("List", AT), id);
+  assert.equal(await user.createReadingList("Too many", AT), null);
+  assert.equal((await user.readingLists()).length, 200);
+  assert.equal(await user.deleteReadingList(schemas.ReadingListId.parse(200)), true);
+  assert.equal(await user.createReadingList("Room again", AT), 201);
 });
 
 test("a page of cards seeks to its key in an index, in a language, a word or a text, and sorts nothing", async () => {

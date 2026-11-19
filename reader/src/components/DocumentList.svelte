@@ -53,7 +53,13 @@
   {#if documents === undefined}
     <p class="empty">Loading…</p>
   {:else if documents.length === 0}
-    <p class="empty">{@render empty()}</p>
+    <p class="empty"
+      >{#if hasMore}
+        No available texts on this page.
+      {:else}
+        {@render empty()}
+      {/if}</p
+    >
   {:else}
     <ul class="entries">
       {#each documents as doc (`${doc.id}/${doc.importer.id}`)}
@@ -87,11 +93,11 @@
         </li>
       {/each}
     </ul>
-    {#if hasMore}
-      <div class="more">
-        <button type="button" onclick={onmore} disabled={loadingMore}>{loadingMore ? "Loading…" : "More"}</button>
-      </div>
-    {/if}
+  {/if}
+  {#if hasMore}
+    <div class="more">
+      <button type="button" onclick={onmore} disabled={loadingMore}>{loadingMore ? "Loading…" : "More"}</button>
+    </div>
   {/if}
 </section>
 

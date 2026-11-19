@@ -17,7 +17,7 @@ async function open(
 test("explore, signed out", async ({ page }) => {
   await open(page, "#/", { signedIn: false });
   await expect(page.getByText("Lalka")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Reading list for Lalka" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Add Lalka to reading lists" })).toHaveCount(0);
   await expect(page).toHaveScreenshot("explore-signed-out.png", { fullPage: true });
 });
 
@@ -29,37 +29,85 @@ test("explore", async ({ page }) => {
 
 test("my list", async ({ page }) => {
   await open(page, "#/list");
-  await expect(page.getByText("Reading now · 1 text")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Book club" })).toBeVisible();
+  await expect(page.getByRole("link", { name: /^Finished/ })).toBeVisible();
   await expect(page).toHaveScreenshot("my-list.png", { fullPage: true });
+  await page.getByRole("link", { name: /^Reading now/ }).click();
+  await expect(page.getByText("Lalka", { exact: true })).toBeVisible();
 });
 
 test("explore, reading list menu", async ({ page }) => {
   await open(page, "#/");
-  const trigger = page.getByRole("button", { name: "Reading list for The Tale of Peter Rabbit" });
+  const trigger = page.getByRole("button", { name: "Add The Tale of Peter Rabbit to reading lists" });
   const menu = page.locator("[popover]:popover-open");
-  const add = menu.getByRole("button", { name: "Add to reading list" });
-  const toRead = menu.getByRole("button", { name: "To read", exact: true });
+  const toRead = menu.getByRole("checkbox", { name: "To read", exact: true });
+  const bookClub = menu.getByRole("checkbox", { name: "Book club", exact: true });
   await trigger.press("Enter");
-  await expect(add).toBeVisible();
-  await expect(toRead).toBeHidden();
-  await expect(page).toHaveScreenshot("explore-reading-list-menu.png");
-  await add.press("Enter");
   await expect(toRead).toBeVisible();
+  await expect(toRead).not.toBeChecked();
+  await expect(page).toHaveScreenshot("explore-reading-list-menu.png");
+  await toRead.check();
+  await expect(toRead).toBeEnabled();
+  await bookClub.check();
+  await expect(bookClub).toBeEnabled();
+  await expect(toRead).toBeChecked();
+  await expect(bookClub).toBeChecked();
   await expect(page).toHaveScreenshot("explore-reading-list-expanded.png");
   await page.keyboard.press("Escape");
   await expect(trigger).toBeFocused();
   await trigger.click();
-  await expect(toRead).toBeHidden();
-  await add.click();
-  await toRead.click();
+  await expect(toRead).toBeChecked();
+  await expect(bookClub).toBeChecked();
+  await toRead.uncheck();
+  await expect(toRead).toBeEnabled();
+  await expect(bookClub).toBeChecked();
+  await expect(toRead).not.toBeChecked();
+  await menu.getByRole("button", { name: /New list/ }).click();
+  await menu.getByLabel("New list name").fill("Rabbit stories");
+  await menu.getByRole("button", { name: "Create", exact: true }).click();
+  await expect(menu.getByRole("checkbox", { name: "Rabbit stories", exact: true })).toBeChecked();
+});
+
+test("reader, a document can belong to several lists", async ({ page }) => {
+  await open(page, `#/doc/${LALKA}`);
+  await page.getByRole("button", { name: "Add to reading lists", exact: true }).click();
+  const menu = page.locator("[popover]:popover-open");
+  const bookClub = menu.getByRole("checkbox", { name: "Book club", exact: true });
+  const toRead = menu.getByRole("checkbox", { name: "To read", exact: true });
+  await expect(bookClub).toBeChecked();
+  await toRead.check();
+  await expect(toRead).toBeEnabled();
+  await expect(bookClub).toBeChecked();
+  await page.keyboard.press("Escape");
   await expect(menu).toBeHidden();
-  await trigger.click();
-  await expect(page.getByRole("button", { name: "To read", exact: true, pressed: true })).toBeVisible();
-  await page.getByRole("button", { name: "Remove from list" }).click();
-  await expect(menu).toBeHidden();
-  await trigger.click();
-  await expect(add).toBeVisible();
-  await expect(toRead).toBeHidden();
+});
+
+test("reading lists, detail and management", async ({ page }) => {
+  await open(page, "#/list");
+  await page.getByRole("link", { name: "Book club" }).click();
+  await expect(page.getByRole("heading", { name: "Book club", exact: true, level: 2 })).toBeVisible();
+  await expect(page.getByText("Lalka", { exact: true })).toBeVisible();
+  await expect(page).toHaveScreenshot("reading-list-detail.png", { fullPage: true });
+  await page.getByLabel("Language", { exact: true }).selectOption("fr");
+  await expect(page.getByText("Lalka", { exact: true })).toBeHidden();
+  await page.getByRole("button", { name: "Remove", exact: true }).click();
+  await expect(page.getByText("No texts here yet", { exact: false })).toBeVisible();
+  await page.getByRole("button", { name: "Rename", exact: true }).click();
+  await page.getByLabel("List name", { exact: true }).fill("Monthly book club");
+  await page.getByRole("button", { name: "Save name" }).click();
+  await expect(page.getByRole("heading", { name: "Monthly book club", exact: true, level: 2 })).toBeVisible();
+  await page.getByRole("button", { name: "Delete list", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Delete list", exact: true }).click();
+  await expect(page.getByRole("button", { name: "New list", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Monthly book club" })).toBeHidden();
+  await page.getByRole("button", { name: "New list", exact: true }).click();
+  await page.getByLabel("New list name").fill("My new list");
+  await page.getByRole("button", { name: "Create list", exact: true }).click();
+  await expect(page.getByRole("link", { name: "My new list" })).toBeVisible();
+  await page.getByLabel("Find a reading list").fill("new list");
+  await expect(page.getByRole("link", { name: "To read" })).toBeHidden();
+  await page.getByRole("link", { name: "My new list" }).click();
+  await expect(page.getByText("No texts here yet", { exact: false })).toBeVisible();
 });
 
 test("explore, tag filter", async ({ page }) => {

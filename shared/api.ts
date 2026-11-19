@@ -409,20 +409,11 @@ export type CardListing =
   | ({ readonly lemmaId: LemmaId } & PageRequest<NewestCardKey>)
   | ({ readonly documentId: DocumentId } & PageRequest<TextCardKey>);
 
-/** Where a text is on the user's reading list. A text that isn't on it has none. */
-export const READING_STATUSES = ["to-read", "reading", "finished"] as const;
-export type ReadingStatus = (typeof READING_STATUSES)[number];
+export type ReadingListId = z.output<typeof schemas.ReadingListId>;
+export type ReadingList = z.output<typeof schemas.ReadingList>;
+export type ReadingListDocument = z.output<typeof schemas.ReadingListDocument>;
 
-/** A text on the user's reading list: its status, when it went on the list, and when its
- * status last changed. */
-export type ReadingEntry = z.output<typeof schemas.ReadingEntry>;
-
-/** Which texts a page of the reading list keeps: those with the status, and those in the
- * language if one is given. */
-export type ReadingFilter = { readonly status: ReadingStatus; readonly lang: Lang | undefined };
-
-/** Where a text is in the list of one status: by when its status last changed, latest
- * first, then by id. */
+/** A document's place in a reading list: when it was added, newest first, then by id. */
 export type ReadingKey = z.output<typeof schemas.ReadingKey>;
 
 /** Something an entry's user attached to a range of its text, start to end in UTF-16 code
@@ -448,9 +439,6 @@ export type AnnotationKind = AnnotationContent["kind"];
 
 /** Longest text a text annotation holds. */
 export const MAX_ANNOTATION_TEXT = 2000;
-
-/** A text on the reading list, with the entry the user sees for it. */
-export type ListedReading = z.output<typeof schemas.ListedReading>;
 
 /** What's left of today's allowances: words in lemmas, forms in cards. */
 export type NewLeft = Readonly<z.output<typeof schemas.NewLeft>>;

@@ -20,6 +20,8 @@ import {
   type LemmaId as LemmaIdType,
   type LexiconEntry,
   type ScheduledCard,
+  type ReadingList,
+  type ReadingListId as ReadingListIdType,
   type Settings,
   type User,
   type UserId as UserIdType,
@@ -27,12 +29,11 @@ import {
 import { LANGUAGES } from "@skolia/shared/lang";
 import { partKey, statusKey, textKey } from "@skolia/shared/keys";
 import type { Blob, Bundle, Status } from "@skolia/shared/schema";
-import { AnnotationId, CardId, DocumentId, LemmaId, Timestamp, UserId } from "@skolia/shared/schemas";
+import { AnnotationId, CardId, DocumentId, LemmaId, ReadingListId, Timestamp, UserId } from "@skolia/shared/schemas";
 
 type Deps = Parameters<typeof createApp>[0];
 type StoredDocument = Awaited<ReturnType<Deps["documents"]["list"]>>["items"][number];
 type StoredBlob = NonNullable<Awaited<ReturnType<Deps["blobs"]["get"]>>>;
-type StoredReading = Awaited<ReturnType<Deps["users"]["readingList"]>>["items"][number];
 
 const DIST = join(import.meta.dirname, "..", "dist");
 const FIXTURES = join(import.meta.dirname, "fixtures");
@@ -198,22 +199,6 @@ const statuses: readonly (readonly [DocumentIdType, Status])[] = [
   [PETER_RABBIT.id, { state: "failed", updated: "2026-11-08T10:00:00.000Z", error: "The analyser stopped" }],
 ];
 
-/** The user's reading list: Lalka being read, Le Petit Prince to read. */
-const readingList: readonly StoredReading[] = [
-  {
-    documentId: LALKA,
-    status: "reading",
-    addedAt: Timestamp.parse("2026-11-07T10:00:00.000Z"),
-    updatedAt: Timestamp.parse("2026-11-08T18:00:00.000Z"),
-  },
-  {
-    documentId: PETIT_PRINCE.id,
-    status: "to-read",
-    addedAt: Timestamp.parse("2026-11-08T09:00:00.000Z"),
-    updatedAt: Timestamp.parse("2026-11-08T09:00:00.000Z"),
-  },
-];
-
 const JSON_TYPE = "application/json";
 
 /** The blobs as ingest stores them: analyses and bundles Brotli-compressed. */
@@ -323,6 +308,37 @@ function deps(signedIn: boolean, annotations: readonly Annotation[]): Deps {
       .map((d) => ({ ...d, status: statuses.find(([id]) => id === d.id)?.[1] ?? null }));
   let settings: Settings = { newLemmasPerDay: 10, newFormsPerDay: 5, formsWithWords: true };
   let kept = listedCards;
+  let readingLists: readonly ReadingList[] = [
+    "To read",
+    "Reading now",
+    "Finished",
+    "Book club",
+    "French short stories",
+    "Polish classics",
+    "Weekend reading",
+    "Stories with audio",
+    "Travel",
+    "Poetry",
+    "For a rainy day",
+  ].map((name, index) => ({
+    id: ReadingListId.parse(index + 1),
+    name,
+    documentsCount: 0,
+    createdAt: Timestamp.parse(NOW.toISOString()),
+  }));
+  let nextListId = readingLists.length + 1;
+  let memberships: readonly {
+    readonly listId: ReadingListIdType;
+    readonly documentId: DocumentIdType;
+    readonly createdAt: ReturnType<typeof Timestamp.parse>;
+  }[] = [
+    { listId: readingLists[0]!.id, documentId: PETIT_PRINCE.id, createdAt: Timestamp.parse(NOW.toISOString()) },
+    { listId: readingLists[1]!.id, documentId: LALKA, createdAt: Timestamp.parse(NOW.toISOString()) },
+    { listId: readingLists[3]!.id, documentId: PETIT_PRINCE.id, createdAt: Timestamp.parse(NOW.toISOString()) },
+    { listId: readingLists[3]!.id, documentId: LALKA, createdAt: Timestamp.parse(NOW.toISOString()) },
+  ];
+  const withCounts = () =>
+    readingLists.map((list) => ({ ...list, documentsCount: memberships.filter((item) => item.listId === list.id).length }));
   return {
     auth: {
       handle: async () => new Response(null, { status: 404 }),
@@ -361,25 +377,42 @@ function deps(signedIn: boolean, annotations: readonly Annotation[]): Deps {
       setSettings: async (_userId, next) => {
         settings = next;
       },
-      position: async () => null,
-      setPosition: async () => {},
-      reading: async (_userId, id) => {
-        const found = readingList.find((r) => r.documentId === id);
-        return found ? { status: found.status, addedAt: found.addedAt, updatedAt: found.updatedAt } : null;
+      readingLists: async () => withCounts(),
+      createReadingList: async (_userId, name, createdAt) => {
+        const id = ReadingListId.parse(nextListId++);
+        readingLists = [...readingLists, { id, name, createdAt, documentsCount: 0 }];
+        return id;
       },
-      setReading: async (_userId, _id, _lang, status) => ({
-        status,
-        addedAt: Timestamp.parse(NOW.toISOString()),
-        updatedAt: Timestamp.parse(NOW.toISOString()),
-      }),
-      removeReading: async () => {},
-      // One page: there are only a few
-      readingList: async (_userId, { status, lang }) => ({
-        items: readingList.filter(
-          (r) => r.status === status && (lang === undefined || documents.find((d) => d.id === r.documentId)?.lang === lang),
+      renameReadingList: async (_userId, id, name) => {
+        readingLists = readingLists.map((list) => (list.id === id ? { ...list, name } : list));
+        return true;
+      },
+      deleteReadingList: async (_userId, id) => {
+        readingLists = readingLists.filter((list) => list.id !== id);
+        memberships = memberships.filter((item) => item.listId !== id);
+        return true;
+      },
+      readingListMemberships: async (_userId, id) => memberships.filter((item) => item.documentId === id).map((item) => item.listId),
+      addDocumentToReadingList: async (_userId, listId, documentId, _lang, createdAt) => {
+        if (!readingLists.some((list) => list.id === listId)) return false;
+        if (!memberships.some((item) => item.listId === listId && item.documentId === documentId)) {
+          memberships = [...memberships, { listId, documentId, createdAt }];
+        }
+        return true;
+      },
+      removeDocumentFromReadingList: async (_userId, listId, documentId) => {
+        if (!readingLists.some((list) => list.id === listId)) return false;
+        memberships = memberships.filter((item) => item.listId !== listId || item.documentId !== documentId);
+        return true;
+      },
+      readingListDocuments: async (_userId, listId, lang) => ({
+        items: memberships.filter(
+          (item) => item.listId === listId && (lang === undefined || documents.find((doc) => doc.id === item.documentId)?.lang === lang),
         ),
         next: null,
       }),
+      position: async () => null,
+      setPosition: async () => {},
     },
     lexicon: {
       entries: async (ids) => ({ entries: ids.flatMap((id) => entry(id) ?? []), featureSets: { pl: featureSets } }),

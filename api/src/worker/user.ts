@@ -15,10 +15,9 @@ import {
   type CardListing,
   type DocumentId,
   type Paginated,
-  type ReadingEntry,
-  type ReadingFilter,
+  type ReadingListId,
+  type ReadingList,
   type ReadingKey,
-  type ReadingStatus,
   type NewCard,
   type Timestamp,
   type Lang,
@@ -29,30 +28,12 @@ import {
 import { paginate, type PageRequest } from "@skolia/shared/page";
 import * as schemas from "@skolia/shared/schemas";
 import { CardId } from "@skolia/shared/schemas";
-import {
-  and,
-  col,
-  compile,
-  desc,
-  eq,
-  exists,
-  fn,
-  inQuery,
-  insertInto,
-  isNotNull,
-  le,
-  lit,
-  ne,
-  not,
-  or,
-  select,
-  type Query,
-} from "@skolia/util/query";
+import { and, col, compile, desc, eq, exists, fn, inQuery, isNotNull, le, lit, ne, not, or, select, type Query } from "@skolia/util/query";
 import { sql, type Sql } from "@skolia/util/sql";
-import type { CardOutcome, DueCards, ReviewOutcome, StoredPosition, StoredReading } from "../ports.ts";
+import type { CardOutcome, DueCards, ReviewOutcome, StoredPosition } from "../ports.ts";
 import { fromJson, fsrs, newCard, review, toJson } from "./scheduler.ts";
 import { MIGRATIONS } from "../user/migrations/index.ts";
-import { BLANK_DOCUMENT, BLANK_START, READING_ENTRY, cardsQuery, readingListQuery } from "../user/queries.ts";
+import { BLANK_DOCUMENT, BLANK_START, cardsQuery, readingListDocumentsQuery } from "../user/queries.ts";
 import {
   LogEntry,
   MigrationError,
@@ -353,37 +334,65 @@ export class User extends DurableObject<UserEnv> {
     );
   }
 
-  reading(documentId: DocumentId): ReadingEntry | null {
-    const row = this.#exec(select(READING_ENTRY).from("reading_list").where(eq("document_id", documentId))).toArray()[0];
-    return row === undefined ? null : schemas.ReadingEntry.parse(row);
-  }
-
-  setReading(documentId: DocumentId, lang: Lang, status: ReadingStatus, now: Timestamp): ReadingEntry {
-    const row = this.#exec(
-      insertInto("reading_list")
-        .values({ document_id: documentId, lang, status, added_at: now, updated_at: now })
-        .onConflict(["document_id"], {
-          set: {
-            status: col("excluded.status"),
-            updated_at: fn.iif(eq("excluded.status", col("reading_list.status")), "reading_list.updated_at", "excluded.updated_at"),
-          },
-        })
-        .returning(READING_ENTRY),
-    ).one();
-    return schemas.ReadingEntry.parse(row);
-  }
-
-  removeReading(documentId: DocumentId): void {
-    this.#exec(sql`DELETE FROM reading_list WHERE document_id = ${documentId}`);
-  }
-
-  readingList(filter: ReadingFilter, page: PageRequest<ReadingKey>): Paginated<StoredReading, ReadingKey> {
-    const rows = this.#exec(readingListQuery(filter, page))
+  readingLists(): readonly ReadingList[] {
+    return this.#exec(
+      sql`SELECT id, name, documents_count AS documentsCount, created_at AS createdAt FROM reading_list WHERE id > 0 ORDER BY id LIMIT 200`,
+    )
       .toArray()
-      .map((row): StoredReading => ({ documentId: schemas.DocumentId.parse(row["documentId"]), ...schemas.ReadingEntry.parse(row) }));
+      .map((row) => schemas.ReadingList.parse(row));
+  }
+
+  createReadingList(name: string, now: Timestamp): ReadingListId | null {
+    const row = this.#exec(sql`INSERT INTO reading_list (name, created_at)
+      SELECT ${name}, ${now} WHERE (SELECT total FROM reading_list_count WHERE id = 1) < 200
+      RETURNING id`).toArray()[0];
+    return row ? schemas.ReadingListId.parse(row["id"]) : null;
+  }
+
+  renameReadingList(id: ReadingListId, name: string): boolean {
+    return this.#exec(sql`UPDATE reading_list SET name = ${name} WHERE id = ${id} RETURNING id`).toArray().length > 0;
+  }
+
+  deleteReadingList(id: ReadingListId): boolean {
+    return this.#exec(sql`DELETE FROM reading_list WHERE id = ${id} RETURNING id`).toArray().length > 0;
+  }
+
+  readingListMemberships(documentId: DocumentId): readonly ReadingListId[] {
+    return this.#exec(sql`SELECT list_id FROM reading_list_document WHERE document_id = ${documentId} ORDER BY list_id LIMIT 200`)
+      .toArray()
+      .map((row) => schemas.ReadingListId.parse(row["list_id"]));
+  }
+
+  #hasReadingList(listId: ReadingListId): boolean {
+    return this.#exec(sql`SELECT id FROM reading_list WHERE id = ${listId}`).toArray().length > 0;
+  }
+
+  addDocumentToReadingList(listId: ReadingListId, documentId: DocumentId, lang: Lang, createdAt: Timestamp): boolean {
+    if (!this.#hasReadingList(listId)) return false;
+    this.#exec(sql`INSERT INTO reading_list_document (list_id, document_id, lang, created_at)
+      VALUES (${listId}, ${documentId}, ${lang}, ${createdAt}) ON CONFLICT DO NOTHING`);
+    return true;
+  }
+
+  removeDocumentFromReadingList(listId: ReadingListId, documentId: DocumentId): boolean {
+    if (!this.#hasReadingList(listId)) return false;
+    this.#exec(sql`DELETE FROM reading_list_document WHERE list_id = ${listId} AND document_id = ${documentId}`);
+    return true;
+  }
+
+  readingListDocuments(
+    id: ReadingListId,
+    lang: Lang | undefined,
+    page: PageRequest<ReadingKey>,
+  ): Paginated<{ readonly documentId: DocumentId; readonly createdAt: Timestamp }, ReadingKey> | null {
+    if (!this.#hasReadingList(id)) return null;
+    const { limit } = page;
+    const rows = this.#exec(readingListDocumentsQuery(id, lang, page))
+      .toArray()
+      .map((row) => ({ documentId: schemas.DocumentId.parse(row["documentId"]), createdAt: schemas.Timestamp.parse(row["createdAt"]) }));
     return paginate(
-      rows.map((item) => ({ item, key: [item.updatedAt, item.documentId] as const })),
-      page.limit,
+      rows.map((item) => ({ item, key: [item.createdAt, item.documentId] as const })),
+      limit,
     );
   }
 

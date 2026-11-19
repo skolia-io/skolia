@@ -23,8 +23,7 @@
   } from "../../lib/position.ts";
   import type { ReaderMode } from "../../lib/mode.ts";
   import { createClozes } from "../../lib/clozes.ts";
-  import { createReadingEntry } from "../../lib/reading-list.ts";
-  import ReadingStatusMenu from "../../components/ReadingStatusMenu.svelte";
+  import SaveToLists from "../../components/SaveToLists.svelte";
   import { createQuery } from "@tanstack/svelte-query";
   import { audioQuery, userQuery } from "../../lib/queries.ts";
   import { type AudioAnnotation, inRange, placeAudio } from "../../lib/annotations.ts";
@@ -71,7 +70,6 @@
   }
 
   const signedIn = createQuery(() => userQuery);
-  const readingEntry = createReadingEntry(() => id);
   // The cloze cards from this text, loaded with it, for the word sheet
   createClozes(() => id);
   const audioAnnotations = createQuery(() => audioQuery(id));
@@ -365,10 +363,8 @@
       <div class="title-row">
         <h1>{summary.title}</h1>
         <div class="title-actions">
-          {#if readingEntry.data !== undefined}
-            <ReadingStatusMenu {id} status={readingEntry.data?.status ?? null} />
-          {/if}
           {#if signedIn.data}
+            <SaveToLists {id} />
             <div class="mode">
               <Button
                 variant="quiet"

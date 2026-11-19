@@ -83,12 +83,12 @@ test("listings keep the published status, versions and error without status blob
       bundle: `doc/${id}/bundle/b1-a1-l1.json.br`,
     },
   });
-  await body("save", api.me["reading-list"][":id"].$put({ param: { id }, json: { status: "to-read" } }));
+  await expectStatus("save", api.me["reading-lists"][":listId"].documents[":id"].$put({ param: { listId: "1", id } }), 204);
   await local.env.BLOBS.delete(statusKey(id));
   const expected = { ...ready, state: "failed", error: "ingest failed" };
   assert.deepEqual((await body("mine", api.documents.$get({ query: { mine: "true" } }))).items, [expected]);
   assert.deepEqual((await body("public", client(app).documents.$get({ query: {} }))).items, [{ ...expected, mine: false }]);
-  const reading = await body("reading list", api.me["reading-list"].$get({ query: { status: "to-read" } }));
+  const reading = await body("reading list", api.me["reading-lists"][":listId"].documents.$get({ param: { listId: "1" }, query: {} }));
   assert.deepEqual(
     reading.items.map((entry) => entry.document),
     [expected],

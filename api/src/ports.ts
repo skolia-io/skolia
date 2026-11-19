@@ -28,11 +28,10 @@ import type {
   Licence,
   NewCard,
   NewLeft,
-  ReadingEntry,
-  ReadingFilter,
+  ReadingListId,
+  ReadingList,
   ReadingKey,
   ReadingPosition,
-  ReadingStatus,
   Reviewed,
   ReviewRequest,
   ScheduledCard,
@@ -189,19 +188,28 @@ export interface UserData {
   position(userId: UserId, documentId: DocumentId): Promise<StoredPosition | null>;
   /** Keeps the stored position if it's as new as this one or newer. */
   setPosition(userId: UserId, documentId: DocumentId, position: StoredPosition): Promise<void>;
-  /** The text's entry on the reading list, null if it isn't on it. */
-  reading(userId: UserId, documentId: DocumentId): Promise<ReadingEntry | null>;
-  /** Puts the text on the list with the status, or gives it the status. updatedAt changes
-   * only with the status. lang: the text's. */
-  setReading(userId: UserId, documentId: DocumentId, lang: Lang, status: ReadingStatus, now: Timestamp): Promise<ReadingEntry>;
-  removeReading(userId: UserId, documentId: DocumentId): Promise<void>;
-  /** A page of the texts on the list that the filter keeps. */
-  readingList(userId: UserId, filter: ReadingFilter, page: PageRequest<ReadingKey>): Promise<Paginated<StoredReading, ReadingKey>>;
+  readingLists(userId: UserId): Promise<readonly ReadingList[]>;
+  createReadingList(userId: UserId, name: string, now: Timestamp): Promise<ReadingListId | null>;
+  renameReadingList(userId: UserId, id: ReadingListId, name: string): Promise<boolean>;
+  deleteReadingList(userId: UserId, id: ReadingListId): Promise<boolean>;
+  readingListMemberships(userId: UserId, documentId: DocumentId): Promise<readonly ReadingListId[]>;
+  addDocumentToReadingList(
+    userId: UserId,
+    listId: ReadingListId,
+    documentId: DocumentId,
+    lang: Lang,
+    createdAt: Timestamp,
+  ): Promise<boolean>;
+  removeDocumentFromReadingList(userId: UserId, listId: ReadingListId, documentId: DocumentId): Promise<boolean>;
+  readingListDocuments(
+    userId: UserId,
+    id: ReadingListId,
+    lang: Lang | undefined,
+    page: PageRequest<ReadingKey>,
+  ): Promise<Paginated<{ readonly documentId: DocumentId; readonly createdAt: Timestamp }, ReadingKey> | null>;
 }
 
 export type StoredPosition = z.output<typeof schemas.StoredPosition>;
-
-export type StoredReading = ReadingEntry & { readonly documentId: DocumentId };
 
 /** The lexicon, with the feature sets its entries' paradigms use. Ids it doesn't have are left out. */
 export interface Lexicon {

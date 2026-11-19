@@ -1300,13 +1300,10 @@
           "known"
         ]
       },
-      "ReadingStatus": {
-        "type": "string",
-        "enum": [
-          "to-read",
-          "reading",
-          "finished"
-        ]
+      "ReadingListId": {
+        "type": "integer",
+        "exclusiveMinimum": 0,
+        "maximum": 9007199254740991
       },
       "DocumentSummary": {
         "type": "object",
@@ -1460,26 +1457,6 @@
         "required": [
           "analysis",
           "bundle"
-        ],
-        "additionalProperties": false
-      },
-      "ReadingEntry": {
-        "type": "object",
-        "properties": {
-          "status": {
-            "$ref": "#/components/schemas/ReadingStatus"
-          },
-          "addedAt": {
-            "$ref": "#/components/schemas/Timestamp"
-          },
-          "updatedAt": {
-            "$ref": "#/components/schemas/Timestamp"
-          }
-        },
-        "required": [
-          "status",
-          "addedAt",
-          "updatedAt"
         ],
         "additionalProperties": false
       },
@@ -2910,14 +2887,13 @@
         }
       }
     },
-    "/api/me/reading-list": {
+    "/api/me/reading-lists": {
       "get": {
-        "operationId": "getApiMeReadingList",
+        "operationId": "getApiMeReadingLists",
         "tags": [
           "Reading"
         ],
-        "summary": "A page of the reading list",
-        "description": "The texts with a status, latest changed first.",
+        "summary": "The user's reading lists",
         "security": [
           {
             "session": []
@@ -2928,7 +2904,313 @@
         ],
         "responses": {
           "200": {
-            "description": "A page of texts",
+            "description": "Reading lists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "lists": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 100
+                          },
+                          "id": {
+                            "$ref": "#/components/schemas/ReadingListId"
+                          },
+                          "documentsCount": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "createdAt": {
+                            "$ref": "#/components/schemas/Timestamp"
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "id",
+                          "documentsCount",
+                          "createdAt"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "lists"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "postApiMeReadingLists",
+        "tags": [
+          "Reading"
+        ],
+        "summary": "Create a reading list",
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Created list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "$ref": "#/components/schemas/ReadingListId"
+                    }
+                  },
+                  "required": [
+                    "id"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request doesn't fit its schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "List limit reached",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  }
+                },
+                "required": [
+                  "name"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me/reading-lists/{listId}": {
+      "patch": {
+        "operationId": "patchApiMeReadingListsByListId",
+        "tags": [
+          "Reading"
+        ],
+        "summary": "Rename a reading list",
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Done; no body"
+          },
+          "400": {
+            "description": "The request doesn't fit its schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "listId",
+            "schema": {
+              "type": "string",
+              "pattern": "^[1-9][0-9]*$"
+            },
+            "required": true
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  }
+                },
+                "required": [
+                  "name"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteApiMeReadingListsByListId",
+        "tags": [
+          "Reading"
+        ],
+        "summary": "Delete a reading list without deleting its documents",
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Done; no body"
+          },
+          "400": {
+            "description": "The request doesn't fit its schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "listId",
+            "schema": {
+              "type": "string",
+              "pattern": "^[1-9][0-9]*$"
+            },
+            "required": true
+          }
+        ]
+      }
+    },
+    "/api/me/reading-lists/{listId}/documents": {
+      "get": {
+        "operationId": "getApiMeReadingListsByListIdDocuments",
+        "tags": [
+          "Reading"
+        ],
+        "summary": "A page of a reading list's texts",
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Texts",
             "content": {
               "application/json": {
                 "schema": {
@@ -2939,24 +3221,16 @@
                       "items": {
                         "type": "object",
                         "properties": {
-                          "status": {
-                            "$ref": "#/components/schemas/ReadingStatus"
-                          },
-                          "addedAt": {
-                            "$ref": "#/components/schemas/Timestamp"
-                          },
-                          "updatedAt": {
-                            "$ref": "#/components/schemas/Timestamp"
-                          },
                           "document": {
                             "$ref": "#/components/schemas/DocumentSummary"
+                          },
+                          "createdAt": {
+                            "$ref": "#/components/schemas/Timestamp"
                           }
                         },
                         "required": [
-                          "status",
-                          "addedAt",
-                          "updatedAt",
-                          "document"
+                          "document",
+                          "createdAt"
                         ],
                         "additionalProperties": false
                       }
@@ -2996,9 +3270,28 @@
                 }
               }
             }
+          },
+          "404": {
+            "description": "No such list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
           }
         },
         "parameters": [
+          {
+            "in": "path",
+            "name": "listId",
+            "schema": {
+              "type": "string",
+              "pattern": "^[1-9][0-9]*$"
+            },
+            "required": true
+          },
           {
             "in": "query",
             "name": "after",
@@ -3016,14 +3309,6 @@
           },
           {
             "in": "query",
-            "name": "status",
-            "schema": {
-              "$ref": "#/components/schemas/ReadingStatus"
-            },
-            "required": true
-          },
-          {
-            "in": "query",
             "name": "lang",
             "schema": {
               "$ref": "#/components/schemas/Lang"
@@ -3032,13 +3317,13 @@
         ]
       }
     },
-    "/api/me/reading-list/{id}": {
+    "/api/me/reading-list-memberships/{id}": {
       "get": {
-        "operationId": "getApiMeReadingListById",
+        "operationId": "getApiMeReadingListMembershipsById",
         "tags": [
           "Reading"
         ],
-        "summary": "A text's place on the reading list",
+        "summary": "The lists containing a text",
         "security": [
           {
             "session": []
@@ -3049,25 +3334,21 @@
         ],
         "responses": {
           "200": {
-            "description": "Its entry, null if it isn't on the list",
+            "description": "Memberships",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "entry": {
-                      "anyOf": [
-                        {
-                          "$ref": "#/components/schemas/ReadingEntry"
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
+                    "lists": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ReadingListId"
+                      }
                     }
                   },
                   "required": [
-                    "entry"
+                    "lists"
                   ],
                   "additionalProperties": false
                 }
@@ -3105,107 +3386,15 @@
             "required": true
           }
         ]
-      },
+      }
+    },
+    "/api/me/reading-lists/{listId}/documents/{id}": {
       "put": {
-        "operationId": "putApiMeReadingListById",
+        "operationId": "putApiMeReadingListsByListIdDocumentsById",
         "tags": [
           "Reading"
         ],
-        "summary": "Put a text on the reading list, or change its status",
-        "security": [
-          {
-            "session": []
-          },
-          {
-            "apiKey": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Its entry",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "entry": {
-                      "$ref": "#/components/schemas/ReadingEntry"
-                    }
-                  },
-                  "required": [
-                    "entry"
-                  ],
-                  "additionalProperties": false
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "The request doesn't fit its schema",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Not signed in",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No such document",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        },
-        "parameters": [
-          {
-            "in": "path",
-            "name": "id",
-            "schema": {
-              "$ref": "#/components/schemas/DocumentId"
-            },
-            "required": true
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "status": {
-                    "$ref": "#/components/schemas/ReadingStatus"
-                  }
-                },
-                "required": [
-                  "status"
-                ]
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "operationId": "deleteApiMeReadingListById",
-        "tags": [
-          "Reading"
-        ],
-        "summary": "Take a text off the reading list",
+        "summary": "Add a text to a reading list",
         "security": [
           {
             "session": []
@@ -3237,9 +3426,97 @@
                 }
               }
             }
+          },
+          "404": {
+            "description": "No such list or document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
           }
         },
         "parameters": [
+          {
+            "in": "path",
+            "name": "listId",
+            "schema": {
+              "type": "string",
+              "pattern": "^[1-9][0-9]*$"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "$ref": "#/components/schemas/DocumentId"
+            },
+            "required": true
+          }
+        ]
+      },
+      "delete": {
+        "operationId": "deleteApiMeReadingListsByListIdDocumentsById",
+        "tags": [
+          "Reading"
+        ],
+        "summary": "Remove a text from a reading list",
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Done; no body"
+          },
+          "400": {
+            "description": "The request doesn't fit its schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "listId",
+            "schema": {
+              "type": "string",
+              "pattern": "^[1-9][0-9]*$"
+            },
+            "required": true
+          },
           {
             "in": "path",
             "name": "id",

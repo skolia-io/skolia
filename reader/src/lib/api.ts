@@ -33,12 +33,12 @@ import {
   type Lookup,
   type NewCardInput,
   type Rating,
-  type ListedReading,
-  type ReadingEntry,
+  type ReadingListId,
+  type ReadingList,
+  type ReadingListDocument,
   type ReadingKey,
   type ReadingPosition,
   type ReadingNames,
-  type ReadingStatus,
   type Reviewed,
   type Settings,
   type User,
@@ -305,32 +305,46 @@ export async function getPosition(id: DocumentId): Promise<ReadingPosition | nul
   return (await response.json()).position;
 }
 
-/** The text's entry on the reading list, null if it isn't on it, or undefined when signed out. */
-export async function getReadingEntry(id: DocumentId): Promise<ReadingEntry | null | undefined> {
-  const response = await api.me["reading-list"][":id"].$get({ param: { id } });
-  if (response.status === 401) return undefined;
+export async function readingLists(): Promise<readonly ReadingList[]> {
+  const response = await api.me["reading-lists"].$get();
   if (!response.ok) throw await failure(response);
-  return (await response.json()).entry;
+  return (await response.json()).lists;
 }
-
-export async function setReadingStatus(id: DocumentId, status: ReadingStatus): Promise<ReadingEntry> {
-  const response = await api.me["reading-list"][":id"].$put({ param: { id }, json: { status } });
+export async function createReadingList(name: string): Promise<ReadingListId> {
+  const response = await api.me["reading-lists"].$post({ json: { name } });
   if (!response.ok) throw await failure(response);
-  return (await response.json()).entry;
+  return (await response.json()).id;
 }
-
-export async function removeFromReadingList(id: DocumentId): Promise<void> {
-  const response = await api.me["reading-list"][":id"].$delete({ param: { id } });
+export async function renameReadingList(listId: ReadingListId, name: string): Promise<void> {
+  const response = await api.me["reading-lists"][":listId"].$patch({ param: { listId: String(listId) }, json: { name } });
   if (!response.ok) throw await failure(response);
 }
-
-/** A page of the texts on the reading list with the status, in the language if one is given. */
-export async function listReading(
-  status: ReadingStatus,
+export async function deleteReadingList(listId: ReadingListId): Promise<void> {
+  const response = await api.me["reading-lists"][":listId"].$delete({ param: { listId: String(listId) } });
+  if (!response.ok) throw await failure(response);
+}
+export async function readingListMemberships(id: DocumentId): Promise<readonly ReadingListId[]> {
+  const response = await api.me["reading-list-memberships"][":id"].$get({ param: { id } });
+  if (!response.ok) throw await failure(response);
+  return (await response.json()).lists;
+}
+export async function addDocumentToReadingList(listId: ReadingListId, id: DocumentId): Promise<void> {
+  const response = await api.me["reading-lists"][":listId"].documents[":id"].$put({ param: { listId: String(listId), id } });
+  if (!response.ok) throw await failure(response);
+}
+export async function removeDocumentFromReadingList(listId: ReadingListId, id: DocumentId): Promise<void> {
+  const response = await api.me["reading-lists"][":listId"].documents[":id"].$delete({ param: { listId: String(listId), id } });
+  if (!response.ok) throw await failure(response);
+}
+export async function readingListDocuments(
+  listId: ReadingListId,
   lang: Lang | undefined,
   after?: Cursor<ReadingKey>,
-): Promise<Paginated<ListedReading, ReadingKey>> {
-  const response = await api.me["reading-list"].$get({ query: { status, after, ...(lang ? { lang } : {}) } });
+): Promise<Paginated<ReadingListDocument, ReadingKey>> {
+  const response = await api.me["reading-lists"][":listId"].documents.$get({
+    param: { listId: String(listId) },
+    query: { after, ...(lang ? { lang } : {}) },
+  });
   if (!response.ok) throw await failure(response);
   return response.json();
 }
