@@ -71,9 +71,13 @@ import type {
   AnnotateResult,
   BlobStore,
   CardOutcome,
+  DocumentAnnotations,
   DocumentContent,
   DocumentEntry,
-  DocumentStore,
+  DocumentEntries,
+  DocumentLookup,
+  DocumentStatusStore,
+  DocumentTags,
   DueCards,
   EntryFields,
   IngestJobs,
@@ -83,7 +87,10 @@ import type {
   StoredBlob,
   StoredDocument,
   StoredPosition,
-  UserData,
+  ReadingLists,
+  ReadingPositions,
+  UserCards,
+  UserSettings,
 } from "../ports.ts";
 import { prepare } from "@skolia/util/d1";
 import { log } from "@skolia/util/log";
@@ -91,7 +98,7 @@ import type { User } from "./user.ts";
 
 const logger = log("adapters");
 
-export class DurableObjectUsers implements UserData {
+export class DurableObjectUsers implements UserCards, UserSettings, ReadingPositions, ReadingLists {
   private readonly users: DurableObjectNamespace<User>;
 
   constructor(users: DurableObjectNamespace<User>) {
@@ -576,7 +583,7 @@ function statusProjectionQuery(id: DocumentId, { state, updated, ...data }: z.ou
     ON CONFLICT (document_id) DO UPDATE SET state = excluded.state, updated_at = excluded.updated_at, data = excluded.data`;
 }
 
-export class D1Documents implements DocumentStore {
+export class D1Documents implements DocumentLookup, DocumentTags, DocumentStatusStore, DocumentEntries, DocumentAnnotations {
   private readonly db: D1DatabaseSession;
 
   constructor(db: D1DatabaseSession) {

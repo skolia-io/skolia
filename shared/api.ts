@@ -226,6 +226,11 @@ export type IngestResult = z.output<typeof schemas.IngestResult>;
 export type IngestRunId = z.output<typeof schemas.IngestRunId>;
 /** A job as stored, its result null until it's finished */
 export type IngestJobRecord = z.output<typeof schemas.IngestJobRow>;
+
+export interface IngestHistory {
+  /** The ingest jobs started most recently, newest first. */
+  recent(limit: number): Promise<readonly IngestJobRecord[]>;
+}
 export type IngestedDocument = z.output<typeof schemas.IngestedDocument>;
 export type LiveIngestJob = z.output<typeof schemas.LiveIngestJob>;
 export type PastIngestJob = z.output<typeof schemas.PastIngestJob>;

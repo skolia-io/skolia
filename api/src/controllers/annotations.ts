@@ -17,14 +17,16 @@ import { annotationId } from "@skolia/shared/annotations";
 import { textKey } from "@skolia/shared/keys";
 import type { PageRequest } from "@skolia/shared/page";
 import type * as schemas from "@skolia/shared/schemas";
-import type { Deps, StoredDocument } from "../ports.ts";
+import type { Deps, DocumentAnnotations, DocumentLookup, StoredDocument } from "../ports.ts";
 import { findDocument, noSuchDocument } from "./documents.ts";
 import { NO_CONTENT, fail, ok, type Failed, type Json, type NoContent, type Ok } from "./result.ts";
+
+type AnnotationDeps = { documents: DocumentAnnotations & DocumentLookup };
 
 /** A page of the annotations of the entry the viewer sees for the text, so they go with the
  * title and credit shown, that the filter keeps. */
 export async function list(
-  deps: Deps,
+  deps: AnnotationDeps,
   id: string,
   viewer: User | null,
   filter: AnnotationFilter,
@@ -37,7 +39,7 @@ export async function list(
 
 /** The annotations on the user's own entry, those it hasn't already added, in one go. */
 export async function add(
-  deps: Deps,
+  deps: AnnotationDeps & Pick<Deps, "blobs" | "now">,
   user: User,
   id: string,
   body: z.output<typeof schemas.NewAnnotations>,
@@ -61,21 +63,21 @@ export async function add(
   }
 }
 
-export async function remove(deps: Deps, user: User, id: string, annotation: AnnotationId): Promise<NoContent | Failed<404>> {
+export async function remove(deps: AnnotationDeps, user: User, id: string, annotation: AnnotationId): Promise<NoContent | Failed<404>> {
   const record = await ownEntry(deps, id, user);
   if (!record) return noEntry();
   return (await deps.documents.unannotate(record.id, user.id, annotation)) ? NO_CONTENT : fail(404, "no such annotation");
 }
 
 /** The text's length in UTF-16 code units, where its annotations end at most. */
-async function textLength(deps: Deps, id: DocumentId): Promise<number> {
+async function textLength(deps: Pick<Deps, "blobs">, id: DocumentId): Promise<number> {
   const text = await deps.blobs.get(textKey(id));
   if (!text) throw new Error(`document ${id} has no text`);
   return new TextDecoder().decode(text.body).length;
 }
 
 /** The user's own entry for the text: the entry they see, if it's theirs. */
-async function ownEntry(deps: Deps, id: string, user: User): Promise<StoredDocument | null> {
+async function ownEntry(deps: { documents: DocumentLookup }, id: string, user: User): Promise<StoredDocument | null> {
   const record = await findDocument(deps, id, user);
   return record?.user === user.id ? record : null;
 }

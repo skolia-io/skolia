@@ -4,6 +4,7 @@ import { createApp } from "../app.ts";
 import { BACKGROUND_MIGRATIONS } from "./background-migrations/index.ts";
 import { runBackgroundMigrations } from "./background-migrations/runner.ts";
 import { NO_AUTH, createAuth } from "../auth.ts";
+import type { IngestHistory, IngestJobRecord } from "@skolia/shared/api";
 import type { IngesterRpc, IngestParams } from "@skolia/ingest/rpc";
 import { log } from "@skolia/util/log";
 import type { Auth } from "../ports.ts";
@@ -58,6 +59,18 @@ function authFor(env: Env): Auth {
   return createAuth({ database: env.DB, baseURL: BASE_URL, secret: BETTER_AUTH_SECRET, google, oauthProxy });
 }
 
+class RpcIngestHistory implements IngestHistory {
+  private readonly ingester: DurableObjectNamespace<IngesterRpc>;
+
+  constructor(ingester: DurableObjectNamespace<IngesterRpc>) {
+    this.ingester = ingester;
+  }
+
+  recent(limit: number): Promise<readonly IngestJobRecord[]> {
+    return this.ingester.getByName("history").recent(limit);
+  }
+}
+
 export default {
   async scheduled(_event, env) {
     await runBackgroundMigrations({ db: env.DB.withSession("first-primary"), blobs: new R2Blobs(env.BLOBS) }, BACKGROUND_MIGRATIONS);
@@ -71,7 +84,7 @@ export default {
       documents: new D1Documents(env.DB.withSession("first-primary")),
       blobs: new R2Blobs(env.BLOBS),
       queue: new IngestRuns(env.INGEST_WORKFLOW, (lang) => env.INGESTER.getByName(lang).jobs(lang)),
-      ingestHistory: { recent: (limit) => env.INGESTER.getByName("history").recent(limit) },
+      ingestHistory: new RpcIngestHistory(env.INGESTER),
       now: () => new Date(),
     });
     return app.fetch(request, env, ctx);

@@ -31,7 +31,6 @@ import type {
   ReadingListId,
   ReadingList,
   ReadingKey,
-  ReadingPosition,
   Reviewed,
   ReviewRequest,
   ScheduledCard,
@@ -41,7 +40,7 @@ import type {
   Tags,
   CardState,
   ContainerJobs,
-  IngestJobRecord,
+  IngestHistory,
 } from "@skolia/shared/api";
 import type { PageRequest } from "@skolia/shared/page";
 import type { Versions } from "@skolia/shared/schema";
@@ -81,21 +80,30 @@ export interface StoredDocument extends DocumentEntry {
   readonly status: Status | null;
 }
 
-export interface DocumentStore {
+export interface DocumentLookup {
   /** A page of the public entries and the viewer's private ones, by user then text, that the
    * filter keeps (with mine, the viewer's alone). */
   list(viewer: UserId | null, filter: DocumentFilter, page: PageRequest<DocumentKey>): Promise<Paginated<StoredDocument, DocumentKey>>;
-  /** A page of the tags that can be given, by kind, then in each kind's order. */
-  tags(page: PageRequest<TagKey>): Promise<Paginated<AvailableTag, TagKey>>;
-  /** Those of the tags that can be given. */
-  known(tags: readonly Tag[]): Promise<readonly Tag[]>;
   /** The entry the viewer sees for a text: their own, else its earliest public one. Null
    * for a text that's unknown or private to others. */
   visible(id: DocumentId, viewer: UserId | null): Promise<StoredDocument | null>;
   /** visible's entry for each of the texts that has one. */
   visibleAll(ids: readonly DocumentId[], viewer: UserId | null): Promise<ReadonlyMap<DocumentId, StoredDocument>>;
+}
+
+export interface DocumentTags {
+  /** A page of the tags that can be given, by kind, then in each kind's order. */
+  tags(page: PageRequest<TagKey>): Promise<Paginated<AvailableTag, TagKey>>;
+  /** Those of the tags that can be given. */
+  known(tags: readonly Tag[]): Promise<readonly Tag[]>;
+}
+
+export interface DocumentStatusStore {
   /** Update the list projection when the status blob is published. */
   setStatus(id: DocumentId, status: Status): Promise<void>;
+}
+
+export interface DocumentEntries {
   /** Whether the text is stored, whoever imported it. */
   has(id: DocumentId): Promise<boolean>;
   /** Insert the entry, and the content unless it's already there. An existing entry is kept. */
@@ -104,6 +112,9 @@ export interface DocumentStore {
   update(id: DocumentId, user: UserId, fields: EntryFields): Promise<void>;
   /** Delete the user's entry. The text stays, for anyone who imports it again. */
   remove(id: DocumentId, user: UserId): Promise<void>;
+}
+
+export interface DocumentAnnotations {
   /** A page of the user's entry's annotations that the filter keeps, by where they start. */
   annotations(
     id: DocumentId,
@@ -117,6 +128,8 @@ export interface DocumentStore {
   /** False if the user's entry has no annotation with the id. */
   unannotate(id: DocumentId, user: UserId, annotationId: AnnotationId): Promise<boolean>;
 }
+
+export interface DocumentStore extends DocumentLookup, DocumentTags, DocumentStatusStore, DocumentEntries, DocumentAnnotations {}
 
 /** added: the entry has them all, as they're given here, added of them new. full: it filled
  * up before it had them all; those before stay. */
@@ -147,12 +160,6 @@ export interface JobQueue {
   jobs(lang: Lang): Promise<IngestJobs | null>;
 }
 
-/** The jobs the ingest containers ran, as each run recorded its attempts (ingest/src/history.ts) */
-export interface IngestHistory {
-  /** Those started most recently, newest first */
-  recent(limit: number): Promise<readonly IngestJobRecord[]>;
-}
-
 export interface DueCards {
   readonly cards: ScheduledCard[];
   readonly newLeft: NewLeft;
@@ -166,10 +173,10 @@ export type ReviewOutcome = ({ kind: "reviewed" } & Reviewed) | { kind: "no-card
  * blank. full: the user has MAX_CARDS. */
 export type CardOutcome = { readonly kind: "made" | "had"; readonly cardId: CardId } | { readonly kind: "full" };
 
-/** A user's cards and settings, in their own Durable Object. now: the request's
+/** now: the request's
  * time by the API's clock (Deps.now), which the tests set. dayStart: when the user's
  * day started in their time zone; today's new cards count from it. */
-export interface UserData {
+export interface UserCards {
   /** group: only its cards; undefined, both groups'. */
   due(userId: UserId, lang: Lang, now: Timestamp, dayStart: Timestamp, limit: number, group: CardGroup | undefined): Promise<DueCards>;
   counts(userId: UserId, now: Timestamp, dayStart: Timestamp): Promise<CardCounts[]>;
@@ -183,11 +190,20 @@ export interface UserData {
   setCardState(userId: UserId, cardId: CardId, state: CardState): Promise<boolean>;
   /** Deletes the card and its reviews. False if the user has no such card. */
   deleteCard(userId: UserId, cardId: CardId): Promise<boolean>;
+}
+
+export interface UserSettings {
   settings(userId: UserId): Promise<Settings>;
   setSettings(userId: UserId, settings: Settings): Promise<void>;
+}
+
+export interface ReadingPositions {
   position(userId: UserId, documentId: DocumentId): Promise<StoredPosition | null>;
   /** Keeps the stored position if it's as new as this one or newer. */
   setPosition(userId: UserId, documentId: DocumentId, position: StoredPosition): Promise<void>;
+}
+
+export interface ReadingLists {
   readingLists(userId: UserId): Promise<readonly ReadingList[]>;
   createReadingList(userId: UserId, name: string, now: Timestamp): Promise<ReadingListId | null>;
   renameReadingList(userId: UserId, id: ReadingListId, name: string): Promise<boolean>;
@@ -208,6 +224,9 @@ export interface UserData {
     page: PageRequest<ReadingKey>,
   ): Promise<Paginated<{ readonly documentId: DocumentId; readonly createdAt: Timestamp }, ReadingKey> | null>;
 }
+
+/** Data stored in a Durable Object per user. */
+export interface UserData extends UserCards, UserSettings, ReadingPositions, ReadingLists {}
 
 export type StoredPosition = z.output<typeof schemas.StoredPosition>;
 

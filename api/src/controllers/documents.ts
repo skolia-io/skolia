@@ -24,17 +24,31 @@ import { PART_ENCODING, docId, partKey, statusKey, textKey, versionsKey } from "
 import type { Status, Versions } from "@skolia/shared/schema";
 import * as schemas from "@skolia/shared/schemas";
 import { log } from "@skolia/util/log";
-import type { BlobStore, Deps, EntryFields, IngestJobs, StoredDocument } from "../ports.ts";
+import type {
+  BlobStore,
+  Deps,
+  DocumentEntries,
+  DocumentLookup,
+  DocumentStatusStore,
+  DocumentTags,
+  EntryFields,
+  IngestJobs,
+  StoredDocument,
+} from "../ports.ts";
 import { NO_CONTENT, fail, ok, type BlobResult, type Failed, type Json, type NoContent, type NotModified, type Ok } from "./result.ts";
 
 const logger = log("documents");
 
 const NAME = /^[a-z0-9-]{1,64}$/;
 
+type RequeueDeps = { documents: DocumentStatusStore } & Pick<Deps, "blobs" | "queue">;
+type DocumentDetailDeps = { documents: DocumentLookup & DocumentStatusStore } & Pick<Deps, "blobs" | "now" | "queue">;
+type DocumentEditDeps = DocumentDetailDeps & { documents: DocumentEntries & DocumentTags };
+
 /** A page of the entries the viewer can see that the filter keeps. Listing only reads
  * the stored status projection; opening one (get) queues it again if it needs it. */
 export async function list(
-  deps: Deps,
+  deps: { documents: DocumentLookup },
   viewer: User | null,
   filter: DocumentFilter,
   page: PageRequest<DocumentKey>,
@@ -50,7 +64,7 @@ export function listed(record: StoredDocument, viewer: User | null): DocumentSum
 
 /** A page of the documents the user imported, public or private. */
 export async function mine(
-  deps: Deps,
+  deps: { documents: DocumentLookup },
   user: User,
   page: PageRequest<DocumentKey>,
 ): Promise<Ok<Paginated<DocumentSummary, DocumentKey>> | Failed<401>> {
@@ -58,12 +72,12 @@ export async function mine(
 }
 
 /** A page of the tags that can be given. */
-export async function tags(deps: Deps, page: PageRequest<TagKey>): Promise<Ok<Paginated<AvailableTag, TagKey>>> {
+export async function tags(deps: { documents: DocumentTags }, page: PageRequest<TagKey>): Promise<Ok<Paginated<AvailableTag, TagKey>>> {
   return ok(await deps.documents.tags(page));
 }
 
 /** A 400 naming the first of the tags skolia doesn't have, or null if it has them all. */
-async function unknownTag(deps: Deps, tags: Tags): Promise<Failed<400> | null> {
+async function unknownTag(deps: { documents: DocumentTags }, tags: Tags): Promise<Failed<400> | null> {
   const given = Object.entries(tags).map(([kind, value]) => ({ kind, value }));
   if (given.length === 0) return null;
   const known = new Set((await deps.documents.known(given)).map(formatTag));
@@ -75,7 +89,7 @@ async function unknownTag(deps: Deps, tags: Tags): Promise<Failed<400> | null> {
  * retried by importing the same text again). A text someone else imported gets the user's
  * own entry, with their title, visibility and licence. */
 export async function importText(
-  deps: Deps,
+  deps: DocumentEditDeps,
   user: User,
   body: z.output<typeof schemas.ImportRequest>,
 ): Promise<Json<DocumentSummary, 200> | Json<DocumentSummary, 202> | Failed<400>> {
@@ -120,7 +134,7 @@ export async function importText(
 
 /** A user changes the title, licence, author, source, visibility or tags of their own entry. */
 export async function update(
-  deps: Deps,
+  deps: DocumentEditDeps,
   user: User,
   id: string,
   body: z.output<typeof schemas.DocumentUpdate>,
@@ -147,7 +161,11 @@ export async function update(
 
 /** A user deletes their entry. The text, its analyses and bundles stay, so importing it
  * again needn't analyse it again. */
-export async function remove(deps: Deps, user: User, id: string): Promise<NoContent | Failed<403 | 404>> {
+export async function remove(
+  deps: { documents: DocumentEntries & DocumentLookup },
+  user: User,
+  id: string,
+): Promise<NoContent | Failed<403 | 404>> {
   const record = await findDocument(deps, id, user);
   if (!record) return noSuchDocument();
   if (record.user !== user.id) return fail(403, "only the document's importer can delete it");
@@ -155,7 +173,7 @@ export async function remove(deps: Deps, user: User, id: string): Promise<NoCont
   return NO_CONTENT;
 }
 
-export async function get(deps: Deps, id: string, viewer: User | null): Promise<Ok<DocumentSummary> | Failed<404>> {
+export async function get(deps: DocumentDetailDeps, id: string, viewer: User | null): Promise<Ok<DocumentSummary> | Failed<404>> {
   const record = await findDocument(deps, id, viewer);
   if (!record) return noSuchDocument();
   const summary = await current(deps, record, versionsOf(deps.blobs), viewer);
@@ -177,7 +195,7 @@ export function placeIn(jobs: Pick<IngestJobs, "loading" | "running" | "waiting"
 
 /** The id is the text's hash, so the text at this URL never changes. */
 export async function text(
-  deps: Deps,
+  deps: { documents: DocumentLookup } & Pick<Deps, "blobs">,
   id: string,
   viewer: User | null,
   ifNoneMatch: string | undefined,
@@ -191,7 +209,7 @@ export async function text(
  * what's at the URL never changes, and the reader gets an analysis and bundle that
  * belong together. */
 export async function part(
-  deps: Deps,
+  deps: { documents: DocumentLookup } & Pick<Deps, "blobs">,
   id: string,
   viewer: User | null,
   which: "analysis" | "bundle",
@@ -205,7 +223,7 @@ export async function part(
 
 /** The blob at a key that never changes, or 304 without reading it when the client has it. */
 async function stored<S extends ContentfulStatusCode>(
-  deps: Deps,
+  deps: Pick<Deps, "blobs">,
   key: string,
   encoding: typeof PART_ENCODING | undefined,
   ifNoneMatch: string | undefined,
@@ -223,19 +241,24 @@ export function noSuchDocument(): Failed<404> {
 
 /** The entry the viewer sees: theirs, else a public one. A text private to others is
  * unknown to them. */
-export async function findDocument(deps: Deps, id: string, viewer: User | null): Promise<StoredDocument | null> {
+export async function findDocument(deps: { documents: DocumentLookup }, id: string, viewer: User | null): Promise<StoredDocument | null> {
   const parsed = schemas.DocumentId.safeParse(id);
   return parsed.success ? deps.documents.visible(parsed.data, viewer?.id ?? null) : null;
 }
 
-async function ownEntry(deps: Deps, id: DocumentId, user: User): Promise<StoredDocument | null> {
+async function ownEntry(deps: { documents: DocumentLookup }, id: DocumentId, user: User): Promise<StoredDocument | null> {
   const entry = await deps.documents.visible(id, user.id);
   return entry?.user === user.id ? entry : null;
 }
 
 /** The summary, after queueing the document again if ingest now produces other
  * versions, or if its run seems lost. */
-async function current(deps: Deps, record: StoredDocument, versions: VersionsOf, viewer: User | null): Promise<DocumentSummary> {
+async function current(
+  deps: RequeueDeps & Pick<Deps, "now">,
+  record: StoredDocument,
+  versions: VersionsOf,
+  viewer: User | null,
+): Promise<DocumentSummary> {
   const status = await readStatus(deps.blobs, record.id);
   const now = deps.now();
   if (status !== null) {
@@ -251,7 +274,7 @@ type RequeueReason = "imported" | "reimported" | "stuck" | "outdated";
  * until the new one is ready. The queued status is written before the run exists, which
  * writes the status from then on. */
 async function requeue(
-  deps: Deps,
+  deps: RequeueDeps,
   record: Pick<StoredDocument, "id" | "lang">,
   versions: VersionsOf,
   status: Status | null,
@@ -352,7 +375,11 @@ function summarize(
 }
 
 /** Publish the detail blob and its list projection together. Callers retry on failure. */
-export async function publishStatus(deps: Pick<Deps, "blobs" | "documents">, id: DocumentId, status: Status): Promise<void> {
+export async function publishStatus(
+  deps: { blobs: BlobStore; documents: DocumentStatusStore },
+  id: DocumentId,
+  status: Status,
+): Promise<void> {
   await deps.blobs.put(statusKey(id), JSON.stringify(status), "application/json");
   await deps.documents.setStatus(id, status);
 }

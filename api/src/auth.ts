@@ -50,26 +50,44 @@ export function createAuth(config: AuthConfig): Auth {
 }
 
 export function toAuth(auth: Pick<ReturnType<typeof betterAuth>, "handler" | "api">): Auth {
-  return {
-    handle: (request) => auth.handler(request),
-    async user(headers) {
-      let session;
-      try {
-        session = await auth.api.getSession({ headers });
-      } catch (error: unknown) {
-        // An unknown or disabled API key
-        if (error instanceof APIError) return null;
-        throw error;
-      }
-      if (!session) return null;
-      const { id, name, email, image } = session.user;
-      const { role } = z.object({ role: RoleName }).parse(session.user);
-      return { id: UserId.parse(id), name, email, image: image ?? null, type: role } satisfies User;
-    },
-  };
+  return new BetterAuthAdapter(auth);
 }
 
-export const NO_AUTH: Auth = {
-  handle: async () => Response.json({ error: "sign-in isn't configured" }, { status: 503 }),
-  user: async () => null,
-};
+class BetterAuthAdapter implements Auth {
+  private readonly auth: Pick<ReturnType<typeof betterAuth>, "handler" | "api">;
+
+  constructor(auth: Pick<ReturnType<typeof betterAuth>, "handler" | "api">) {
+    this.auth = auth;
+  }
+
+  handle(request: Request): Promise<Response> {
+    return this.auth.handler(request);
+  }
+
+  async user(headers: Headers): Promise<User | null> {
+    let session;
+    try {
+      session = await this.auth.api.getSession({ headers });
+    } catch (error: unknown) {
+      // An unknown or disabled API key
+      if (error instanceof APIError) return null;
+      throw error;
+    }
+    if (!session) return null;
+    const { id, name, email, image } = session.user;
+    const { role } = z.object({ role: RoleName }).parse(session.user);
+    return { id: UserId.parse(id), name, email, image: image ?? null, type: role };
+  }
+}
+
+class NoAuth implements Auth {
+  async handle(): Promise<Response> {
+    return Response.json({ error: "sign-in isn't configured" }, { status: 503 });
+  }
+
+  async user(): Promise<null> {
+    return null;
+  }
+}
+
+export const NO_AUTH: Auth = new NoAuth();

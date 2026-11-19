@@ -1,5 +1,5 @@
 import { LANGS, type DocumentId, type IngestedDocument, type IngestOverview, type PastIngestJob, type User } from "@skolia/shared/api";
-import type { Deps, StoredDocument } from "../ports.ts";
+import type { Deps, DocumentLookup, StoredDocument } from "../ports.ts";
 import { fail, ok, type Failed, type Json, type Ok } from "./result.ts";
 
 /** How many of the jobs started most recently the overview lists */
@@ -7,7 +7,10 @@ export const RECENT_JOBS = 50;
 
 /** What each language's ingest container is doing, and the jobs started most recently,
  * for anyone: a text the viewer can't see is only its language, size and timings. */
-export async function overview(deps: Deps, viewer: User | null): Promise<Ok<IngestOverview>> {
+export async function overview(
+  deps: { documents: DocumentLookup } & Pick<Deps, "queue" | "ingestHistory">,
+  viewer: User | null,
+): Promise<Ok<IngestOverview>> {
   const [live, stored] = await Promise.all([
     Promise.all(LANGS.map((lang) => deps.queue.jobs(lang))),
     deps.ingestHistory.recent(RECENT_JOBS),
