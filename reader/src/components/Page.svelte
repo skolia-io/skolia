@@ -3,11 +3,19 @@
 
   /** A page's column. Its title is for screen readers, since the nav already says where you are;
    * actions sit at the column's top end, wrapping on a phone. */
-  let { title, wide = false, actions, children }: { title: string; wide?: boolean; actions?: Snippet; children: Snippet } = $props();
+  let {
+    title,
+    wide = false,
+    ownHeading = false,
+    actions,
+    children,
+  }: { title: string; wide?: boolean; ownHeading?: boolean; actions?: Snippet; children: Snippet } = $props();
 </script>
 
 <main class={{ wide }}>
-  <h1>{title}</h1>
+  {#if !ownHeading}
+    <h1>{title}</h1>
+  {/if}
   {#if actions}
     <div class="actions"> {@render actions()} </div>
   {/if}

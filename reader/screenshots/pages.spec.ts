@@ -60,6 +60,10 @@ test("explore, reading list menu", async ({ page }) => {
   await expect(toRead).toBeEnabled();
   await expect(bookClub).toBeChecked();
   await expect(toRead).not.toBeChecked();
+  await menu.getByRole("button", { name: /New list/ }).click();
+  await menu.getByLabel("New list name").fill("Rabbit stories");
+  await menu.getByRole("button", { name: "Create", exact: true }).click();
+  await expect(menu.getByRole("checkbox", { name: "Rabbit stories", exact: true })).toBeChecked();
 });
 
 test("reader, memberships and progress are separate", async ({ page }) => {
@@ -92,9 +96,10 @@ test("reading lists, detail and management", async ({ page }) => {
   await page.getByRole("button", { name: "Save name" }).click();
   await expect(page.getByRole("heading", { name: "Monthly book club", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Delete list", exact: true }).click();
-  await page.locator(".confirmation").getByRole("button", { name: "Delete list", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Delete list", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Reading lists", exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "Monthly book club" })).toBeHidden();
+  await page.getByRole("button", { name: "New list", exact: true }).click();
   await page.getByLabel("New list name").fill("My new list");
   await page.getByRole("button", { name: "Create list", exact: true }).click();
   await expect(page.getByRole("link", { name: "My new list" })).toBeVisible();

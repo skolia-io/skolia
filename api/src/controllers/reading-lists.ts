@@ -60,8 +60,8 @@ export async function texts(deps: Deps, user: User, id: ReadingListId, lang: Lan
     user.id,
   );
   const items = found.items.flatMap(({ documentId, addedAt }) => {
-      const record = documents.get(documentId);
-      return record === undefined ? [] : [{ document: listed(record, user), addedAt } satisfies ReadingListText];
-    });
+    const record = documents.get(documentId);
+    return record === undefined ? [] : [{ document: listed(record, user), addedAt } satisfies ReadingListText];
+  });
   return ok({ items, next: found.next });
 }

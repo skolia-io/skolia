@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { DocumentId } from "@skolia/shared/api";
+  import Button from "./Button.svelte";
   import {
     queryReadingLists,
     createMemberships,
@@ -14,6 +15,8 @@
   let opened = $state(false);
   let search = $state("");
   let name = $state("");
+  let creating = $state(false);
+  let menu: HTMLDivElement;
   const lists = queryReadingLists(() => opened);
   const memberships = createMemberships(
     () => id,
@@ -39,11 +42,29 @@
       <circle cx="19" cy="12" r="1.75" />
     </svg>
   {:else}
-    Add to reading list
+    <svg class="bookmark" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4h12v16l-6-4-6 4z" /></svg>
+    Save
   {/if}
 </button>
-<div id={menuId} class="dropdown" style:position-anchor={anchorName} popover ontoggle={(event) => (opened = event.newState === "open")}>
-  <h3>Save to reading lists</h3>
+<div
+  id={menuId}
+  class="dropdown"
+  style:position-anchor={anchorName}
+  popover
+  bind:this={menu}
+  aria-labelledby={`${menuId}-title`}
+  ontoggle={(event) => {
+    opened = event.newState === "open";
+    if (!opened) {
+      search = "";
+      creating = false;
+    }
+  }}
+>
+  <header>
+    <h3 id={`${menuId}-title`}>Save to reading lists</h3>
+    <Button variant="icon" small aria-label="Close" onclick={() => menu.hidePopover()}><span aria-hidden="true">×</span></Button>
+  </header>
   {#if lists.error || memberships.error}
     <p class="error" role="alert">{lists.error?.message ?? memberships.error?.message}</p>
     <button
@@ -79,16 +100,34 @@
         <p class="muted">No matching lists.</p>
       {/each}
     </div>
-    <form
-      onsubmit={(event) => {
-        event.preventDefault();
-        edit.mutate({ action: "create", name }, { onSuccess: () => (name = "") });
-      }}
-    >
-      <input aria-label="New list name" placeholder="New list name" maxlength="100" required bind:value={name}>
-      <button disabled={edit.isPending || !name.trim() || lists.data.length >= 200}>Create</button>
-    </form>
-    <a href="#/list">Manage reading lists</a>
+    <footer>
+      {#if creating}
+        <form
+          onsubmit={(event) => {
+            event.preventDefault();
+            edit.mutate(
+              { action: "create", name },
+              {
+                onSuccess: (listId) => {
+                  if (listId) change.mutate({ listId, id, saved: true });
+                  creating = false;
+                  name = "";
+                  search = "";
+                },
+              },
+            );
+          }}
+        >
+          <input aria-label="New list name" placeholder="New list name" maxlength="100" required bind:value={name}>
+          <Button small variant="primary" type="submit" disabled={edit.isPending || !name.trim()}>Create</Button>
+        </form>
+      {:else}
+        <Button small variant="quiet" disabled={lists.data.length >= 200 || change.isPending} onclick={() => (creating = true)}
+          >＋ New list</Button
+        >
+        <a href="#/list" onclick={() => menu.hidePopover()}>Manage lists</a>
+      {/if}
+    </footer>
     {#if change.error || edit.error}
       <p class="error" role="alert">{change.error?.message ?? edit.error?.message}</p>
     {/if}
@@ -97,6 +136,14 @@
 
 <style>
   .trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.35rem 0.65rem;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: var(--surface);
+    color: var(--text);
     font-size: 0.85rem;
     flex: none;
   }
@@ -123,6 +170,16 @@
     width: 1.25rem;
     fill: currentColor;
   }
+  .trigger:hover {
+    border-color: var(--accent);
+  }
+  .bookmark {
+    width: 1rem;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.6;
+    stroke-linejoin: round;
+  }
   .dropdown {
     position: fixed;
     inset: auto;
@@ -142,16 +199,34 @@
     background: var(--surface);
     color: var(--text);
     border: 1px solid var(--line);
-    border-radius: 10px;
-    box-shadow: 0 6px 24px rgb(0 0 0 / 0.15);
+    border-radius: 16px;
+    box-shadow: 0 12px 36px rgb(0 0 0 / 0.18);
   }
   @position-try --centered {
     inset: 0;
     margin: auto;
   }
+  header,
+  footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+  header {
+    margin-bottom: 0.55rem;
+  }
+  header span {
+    font-size: 1.25rem;
+    line-height: 1;
+  }
+  footer {
+    padding-top: 0.7rem;
+    border-top: 1px solid var(--line);
+  }
   h3 {
     font-size: 1rem;
-    margin: 0 0 0.75rem;
+    margin: 0;
   }
   .choices {
     max-height: 16rem;
@@ -162,17 +237,23 @@
     display: flex;
     align-items: center;
     gap: 0.65rem;
-    padding: 0.5rem 0;
+    padding: 0.45rem 0.4rem;
+    border-radius: 6px;
     cursor: pointer;
     overflow-wrap: anywhere;
   }
+  label:hover,
+  label:focus-within {
+    background: var(--bg);
+  }
   input[type="checkbox"] {
     flex: none;
+    accent-color: var(--accent);
   }
   form {
     display: flex;
     gap: 0.4rem;
-    margin-block: 0.75rem;
+    width: 100%;
   }
   input:not([type="checkbox"]) {
     width: 100%;
