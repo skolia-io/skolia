@@ -15,19 +15,18 @@ name: CI
 # (justfile) and infra/deploy-ingest.sh, so a deploy by hand runs the same commands.
 
 on:
-  push:
-    branches: [main]
-    tags: ["v*"]
   pull_request:
     types: [opened, synchronize, reopened, closed]
   merge_group:
-  workflow_dispatch:
+  workflow_call:
+    inputs:
+      command:
+        type: string
+        default: ""
 
-# Serialize pushes, closes and authorized /preview commands for the same PR, from plan
-# through deploy. Queue instead of cancelling: a close or a reset must not be dropped
-# when another run arrives. A tag's staging deploy also waits for main's (deploy-staging).
+# Serialize PR pushes, closes and authorized commands. Release CI has its own queue.
 concurrency:
-  group: ci-${{ github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || github.ref }}
+  group: ci-${{ (github.event.pull_request.number || github.event.issue.number) && format('pr-{0}', github.event.pull_request.number || github.event.issue.number) || (github.event_name == 'merge_group' && github.ref) || format('run-{0}', github.run_id) }}
   queue: max
 
 # actions: read is for actions-timeline (deploy.yml), which lists the run's jobs
@@ -37,43 +36,92 @@ permissions:
 
 env:
   CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+  PR: ${{ github.event.pull_request.number || github.event.issue.number }}
 
 jobs:
+  # Read the live PR after acquiring the lock: queued events can arrive out of order.
+  preview:
+    if: inputs.command != '' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-24.04
+    permissions:
+      pull-requests: read
+    outputs:
+      env: ${{ steps.pr.outputs.env }}
+      head: ${{ steps.pr.outputs.head }}
+      ref: ${{ steps.pr.outputs.ref }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      ACTION: ${{ github.event.action }}
+      COMMAND: ${{ inputs.command }}
+      EVENT_HEAD: ${{ github.event.pull_request.head.sha }}
+      EVENT_BASE: ${{ github.event.pull_request.base.sha }}
+    steps:
+      - id: pr
+        shell: bash
+        run: |
+          pr=$(gh api "repos/{owner}/{repo}/pulls/$PR")
+          state=$(jq -r '.state' <<<"$pr")
+          head=$(jq -r '.head.sha' <<<"$pr")
+          case "$ACTION:$COMMAND" in
+            closed:) [[ "$state" == closed ]] || exit 0 ;;
+            created:teardown|created:reset)
+              if ! jq -e --arg repo "$GH_REPO" '.state == "open" and .head.repo.full_name == $repo' <<<"$pr" >/dev/null; then
+                echo 'Preview commands require an open PR from this repository.' >&2
+                exit 1
+              fi ;;
+            *:) [[ "$state" == open && "$head" == "$EVENT_HEAD" ]] || exit 0 ;;
+            *) exit 1 ;;
+          esac
+          if [[ "$COMMAND" == reset || ( "$COMMAND" == '' && "$state" == open ) ]]; then
+            ref=$(jq -r 'select(.mergeable == true) | .merge_commit_sha // empty' <<<"$pr")
+            if [[ -z "$ref" && "$COMMAND" == '' && $(jq -r '.base.sha' <<<"$pr") == "$EVENT_BASE" ]]; then
+              ref=$GITHUB_SHA
+            fi
+            [[ "$ref" =~ ^[0-9a-f]{40}$ ]] || { echo 'No current test merge revision; try again shortly.' >&2; exit 1; }
+            echo "ref=$ref" >> "$GITHUB_OUTPUT"
+          fi
+          printf 'env=pr-%s\nhead=%s\n' "$PR" "$head" >> "$GITHUB_OUTPUT"
+
   # The checks whose keys haven't passed, and the deploys of the environments this run
   # deploys whose keys they don't have (infra/plan.py plan). A fork's pull request has no
   # token, so it runs every check and deploys nothing.
   plan:
-    if: github.event.action != 'closed'
+    needs: preview
+    if: ${{ !cancelled() && !failure() && github.event.action != 'closed' && (inputs.command == '' || inputs.command == 'reset') }}
     runs-on: ubuntu-24.04
     outputs:
       plan: ${{ steps.plan.outputs.plan }}
       url: ${{ steps.url.outputs.url }}
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      PREVIEW: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && format('pr-{0}', github.event.number) || '' }}
+      PREVIEW: ${{ needs.preview.outputs.env }}
     steps:
       # The tags and history, for the version
       - uses: actions/checkout@v7
         with:
+          ref: ${{ needs.preview.outputs.ref }}
           fetch-depth: 0
       - uses: ./.github/actions/setup
       - id: plan
+        shell: bash
         run: |
           case "$GITHUB_EVENT_NAME $GITHUB_REF" in
-            pull_request*) envs=$PREVIEW ;;
-            "push refs/heads/main" | "workflow_dispatch refs/heads/main") envs="staging shared" ;;
-            "push refs/tags/v"*) envs="staging production" ;;
-            *) envs="" ;;
+            issue_comment*) args=(--fresh-preview "$PREVIEW") ;;
+            pull_request*) args=(); [[ -z "$PREVIEW" ]] || args=("$PREVIEW") ;;
+            "push refs/heads/main" | "workflow_dispatch refs/heads/main") args=(staging shared) ;;
+            "push refs/tags/v"*) args=(staging production) ;;
+            *) args=() ;;
           esac
-          # shellcheck disable=SC2086
-          echo "plan=$(infra/plan.py plan $envs)" >> "$GITHUB_OUTPUT"
+          plan=$(infra/plan.py plan "${args[@]}")
+          echo "plan=$plan" >> "$GITHUB_OUTPUT"
       - id: url
         if: env.PREVIEW != ''
         run: echo "url=$(just url "$PREVIEW")" >> "$GITHUB_OUTPUT"
 
   mirror-providers:
-    if: needs.plan.result == 'success' && fromJSON(needs.plan.outputs.plan).terraform
-    needs: plan
+    if: ${{ !cancelled() && !failure() && needs.plan.result == 'success' && fromJSON(needs.plan.outputs.plan).terraform }}
+    needs: [preview, plan]
     runs-on: ubuntu-24.04
     concurrency:
       group: mirror-providers
@@ -83,14 +131,16 @@ jobs:
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.preview.outputs.ref }}
       - uses: astral-sh/setup-uv@v10.3.3
       - run: infra/mirror-providers.py
         timeout-minutes: 10
 
   # The jobs after mirror-providers, which may be skipped, run if it didn't fail
   check:
-    if: ${{ !cancelled() && !failure() && needs.plan.result == 'success' && toJSON(fromJSON(needs.plan.outputs.plan).check) != '[]' }}
-    needs: [plan, mirror-providers]
+    if: ${{ !cancelled() && !failure() && inputs.command == '' && needs.plan.result == 'success' && toJSON(fromJSON(needs.plan.outputs.plan).check) != '[]' }}
+    needs: [preview, plan, mirror-providers]
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -98,6 +148,8 @@ jobs:
         project: ${{ fromJSON(needs.plan.outputs.plan).check }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.preview.outputs.ref }}
       - uses: ./.github/actions/setup
       - if: matrix.project != 'analysis'
         uses: ./.github/actions/pnpm
@@ -112,12 +164,13 @@ jobs:
   # Docker image on a Mac that takes them. A failure's expected, actual and diff images
   # are in its screenshots artifact.
   screenshots:
-    if: needs.plan.result == 'success' && fromJSON(needs.plan.outputs.plan).screenshots
-    needs: plan
+    if: ${{ !cancelled() && !failure() && inputs.command == '' && needs.plan.result == 'success' && fromJSON(needs.plan.outputs.plan).screenshots }}
+    needs: [preview, plan]
     runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ needs.preview.outputs.ref }}
           lfs: true
       - uses: ./.github/actions/setup
       - uses: ./.github/actions/pnpm
@@ -136,7 +189,7 @@ jobs:
   # Pull requests from forks get neither the plans nor a preview: they'd need the secrets
   plan-infra:
     if: ${{ !cancelled() && !failure() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && needs.plan.result == 'success' && toJSON(fromJSON(needs.plan.outputs.plan).plan_infra) != '[]' }}
-    needs: [plan, mirror-providers]
+    needs: [preview, plan, mirror-providers]
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -149,24 +202,26 @@ jobs:
       TF_CLI_ARGS_plan: -lock=false
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.preview.outputs.ref }}
       - uses: ./.github/actions/setup
       - run: just plan ${{ matrix.env }}
       - run: python3 -I infra/plan.py passed plan-infra-${{ matrix.env }}
 
   deploy-preview:
-    if: ${{ !cancelled() && !failure() && github.event_name == 'pull_request' && needs.plan.result == 'success' && fromJSON(needs.plan.outputs.plan).deploys[format('pr-{0}', github.event.number)] }}
-    needs: [plan, mirror-providers]
+    if: ${{ !cancelled() && !failure() && needs.preview.outputs.env != '' && needs.plan.result == 'success' && fromJSON(needs.plan.outputs.plan).deploys[needs.preview.outputs.env] && (inputs.command != 'reset' || needs.teardown-preview.result == 'success') }}
+    needs: [preview, plan, mirror-providers, teardown-preview]
     uses: ./.github/workflows/deploy.yml
     with:
-      env: pr-${{ github.event.number }}
-      plan: ${{ toJSON(fromJSON(needs.plan.outputs.plan).deploys[format('pr-{0}', github.event.number)]) }}
+      env: ${{ needs.preview.outputs.env }}
+      ref: ${{ needs.preview.outputs.ref }}
+      plan: ${{ toJSON(fromJSON(needs.plan.outputs.plan).deploys[needs.preview.outputs.env]) }}
     secrets: inherit
 
-  # Once the preview's Worker is deployed, even if its end-to-end tests then fail: links to it
-  # for a tester, with the commit it runs. One comment, edited by each deploy.
+  # One status comment for deploys and teardowns. Keep the link if only the tests failed.
   comment-preview:
-    if: always() && needs.deploy-preview.outputs.serving == 'true'
-    needs: [plan, deploy-preview]
+    if: ${{ !cancelled() && (needs.deploy-preview.outputs.serving == 'true' || needs.teardown-preview.result == 'success') }}
+    needs: [preview, plan, deploy-preview, teardown-preview]
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -175,22 +230,34 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
       URL: ${{ needs.plan.outputs.url }}
-      SHA: ${{ github.event.pull_request.head.sha }}
+      SHA: ${{ needs.preview.outputs.head }}
+      ACTION: ${{ github.event.action }}
+      SERVING: ${{ needs.deploy-preview.outputs.serving }}
       RESULT: ${{ needs.deploy-preview.outputs.e2e }}
       RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
       - uses: actions/checkout@v7
       - run: |
-          case $RESULT in
-            success) tests="passed" ;;
-            current) tests="passed on an earlier deploy of the same code" ;;
-            "") tests="didn't run" ;;
-            *) tests="didn't pass ($RESULT)" ;;
-          esac
-          .github/preview-comment.sh ${{ github.event.number }} <<EOF
-          **Preview:** $URL
+          if [[ "$ACTION" == closed ]]; then
+            echo '**Preview:** torn down when this pull request closed.' | .github/preview-comment.sh "$PR" --if-exists
+            exit
+          elif [[ -z "$URL" ]]; then
+            status="**Preview:** torn down on request ([run]($RUN))."
+          elif [[ "$SERVING" != true ]]; then
+            status="**Preview:** torn down, but redeploy failed ([run]($RUN))."
+          else
+            case $RESULT in
+              success) tests="passed" ;;
+              current) tests="passed on an earlier deploy of the same code" ;;
+              "") tests="didn't run" ;;
+              *) tests="didn't pass ($RESULT)" ;;
+            esac
+            status="**Preview:** $URL
 
-          Deployed from $SHA; its end-to-end tests $tests ([run]($RUN)). It's torn down when this pull request closes.
+          Deployed from $SHA; its end-to-end tests $tests ([run]($RUN)). It's torn down when this pull request closes."
+          fi
+          .github/preview-comment.sh "$PR" <<EOF
+          $status
 
           Repo writers: post \`/preview teardown\` to delete this preview and its data, or \`/preview reset\` to delete and rebuild it.
           EOF
@@ -230,28 +297,21 @@ jobs:
           exit 1
 
   teardown-preview:
-    if: github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.head.repo.full_name == github.repository
+    needs: [preview, plan, mirror-providers]
+    if: ${{ !cancelled() && needs.preview.outputs.env != '' && (github.event.action == 'closed' || inputs.command == 'teardown' || (inputs.command == 'reset' && needs.mirror-providers.result == 'success')) }}
     runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-      pull-requests: write
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       TF_IN_AUTOMATION: "1"
+      PREVIEW: ${{ needs.preview.outputs.env }}
     steps:
-      # The base branch: the pull request's may be deleted already
+      # The base branch on close, or the comment event's default-branch revision.
       - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.base.ref }}
       - uses: ./.github/actions/setup
       - uses: ./.github/actions/pnpm
-      - run: .github/uninterruptible.sh just teardown pr-${{ github.event.number }}
-      # Only edits a comment a deploy left: one that didn't deploy has nothing to say
-      - run: |
-          echo "**Preview:** torn down when this pull request closed." | .github/preview-comment.sh ${{ github.event.number }} --if-exists
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
+      - run: .github/uninterruptible.sh just teardown "$PREVIEW"
 
   # The account's resources that aren't any environment's (infra/shared/) and skolia-ci's
   # tables, from main

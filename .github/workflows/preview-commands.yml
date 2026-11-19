@@ -34,15 +34,12 @@ jobs:
   preview:
     needs: authorize
     if: needs.authorize.outputs.command != ''
-    # Only authorized commands enter the same queue as PR pushes and closes.
-    concurrency:
-      group: ci-pr-${{ github.event.issue.number }}
-      queue: max
+    # Only authorized commands enter CI's per-PR queue.
     permissions:
       actions: read
       contents: read
       pull-requests: write
-    uses: ./.github/workflows/preview-command.yml
+    uses: ./.github/workflows/ci.yml
     with:
       command: ${{ needs.authorize.outputs.command }}
     secrets: inherit
