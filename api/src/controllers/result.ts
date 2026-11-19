@@ -1,7 +1,7 @@
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import type { ApiError } from "@skolia/shared/api";
 import type { PART_ENCODING } from "@skolia/shared/keys";
-import type { StoredBlob } from "../ports.ts";
+import type { StoredBlob } from "../ports/blobs.ts";
 
 /** What a controller returns and the app sends: JSON with its status, no content, or a
  * stored blob or that the client's copy of it is current. */

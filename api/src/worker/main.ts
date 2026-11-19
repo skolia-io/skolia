@@ -4,11 +4,14 @@ import { createApp } from "../app.ts";
 import { BACKGROUND_MIGRATIONS } from "./background-migrations/index.ts";
 import { runBackgroundMigrations } from "./background-migrations/runner.ts";
 import { NO_AUTH, createAuth } from "../auth.ts";
-import type { IngestHistory, IngestJobRecord } from "@skolia/shared/api";
 import type { IngesterRpc, IngestParams } from "@skolia/ingest/rpc";
 import { log } from "@skolia/util/log";
-import type { Auth } from "../ports.ts";
-import { IngestRuns, D1Documents, D1Lexicon, DurableObjectUsers, R2Blobs, lexiconsOf, type LexiconBindings } from "./adapters.ts";
+import type { Auth } from "../ports/auth.ts";
+import { RpcIngestHistory, IngestRuns } from "./adapters/ingest.ts";
+import { D1Documents } from "./adapters/documents.ts";
+import { D1Lexicon, lexiconsOf, type LexiconBindings } from "./adapters/lexicon.ts";
+import { DurableObjectUsers } from "./adapters/users.ts";
+import { R2Blobs } from "./adapters/blobs.ts";
 import type { User } from "./user.ts";
 
 export { User } from "./user.ts";
@@ -57,18 +60,6 @@ function authFor(env: Env): Auth {
   if (!google) warnOnce("GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET isn't set; only API keys sign in");
   const oauthProxy = OAUTH_PROXY_URL && OAUTH_PROXY_SECRET ? { url: OAUTH_PROXY_URL, secret: OAUTH_PROXY_SECRET } : undefined;
   return createAuth({ database: env.DB, baseURL: BASE_URL, secret: BETTER_AUTH_SECRET, google, oauthProxy });
-}
-
-class RpcIngestHistory implements IngestHistory {
-  private readonly ingester: DurableObjectNamespace<IngesterRpc>;
-
-  constructor(ingester: DurableObjectNamespace<IngesterRpc>) {
-    this.ingester = ingester;
-  }
-
-  recent(limit: number): Promise<readonly IngestJobRecord[]> {
-    return this.ingester.getByName("history").recent(limit);
-  }
 }
 
 export default {

@@ -8,7 +8,9 @@ import {
   type ReadingListDocument,
 } from "@skolia/shared/api";
 import type { PageRequest } from "@skolia/shared/page";
-import type { Clock, DocumentLookup, ReadingLists } from "../ports.ts";
+import type { Clock } from "../ports/index.ts";
+import type { DocumentLookup } from "../ports/documents.ts";
+import type { ReadingLists } from "../ports/users.ts";
 import { listed } from "./documents.ts";
 import { ok, fail, NO_CONTENT } from "./result.ts";
 

@@ -5,7 +5,7 @@ import { oAuthProxy } from "better-auth/plugins/oauth-proxy";
 import { ROLE_NAMES, type User } from "@skolia/shared/api";
 import { RoleName, UserId } from "@skolia/shared/schemas";
 import * as z from "zod";
-import type { Auth } from "./ports.ts";
+import type { Auth } from "./ports/auth.ts";
 
 export interface AuthConfig {
   database: BetterAuthOptions["database"];

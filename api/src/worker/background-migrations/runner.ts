@@ -1,8 +1,8 @@
 import * as z from "zod";
 import { sql } from "@skolia/util/sql";
 import { log } from "@skolia/util/log";
-import type { BlobStore } from "../../ports.ts";
-import { prepare } from "../adapters.ts";
+import type { BlobStore } from "../../ports/blobs.ts";
+import { prepare } from "@skolia/util/d1";
 
 const logger = log("background-migrations");
 const LEASE_MS = 5 * 60 * 1000;

@@ -5,7 +5,7 @@ import { getMigrations } from "better-auth/db/migration";
 import { authOptions } from "./auth.ts";
 import { ALICE, local, useLocal } from "./testing/app.ts";
 import { authConfig } from "./testing/harness.ts";
-import { DOCUMENT_QUERIES } from "./worker/adapters.ts";
+import { DOCUMENT_QUERIES } from "./worker/adapters/document-queries.ts";
 import { INGEST_QUERIES } from "@skolia/ingest/history";
 
 useLocal();

@@ -7,7 +7,7 @@
     ".",
     "../app.ts",
     "../auth.ts",
-    "../ports.ts",
+    "../ports",
     "../user/migrator.ts",
     "../user/migrations/0*.ts",
     "../user/migrations/index.ts",

@@ -30,7 +30,7 @@ import * as schemas from "@skolia/shared/schemas";
 import { CardId } from "@skolia/shared/schemas";
 import { and, col, compile, desc, eq, exists, fn, inQuery, isNotNull, le, lit, ne, not, or, select, type Query } from "@skolia/util/query";
 import { sql, type Sql } from "@skolia/util/sql";
-import type { CardOutcome, DueCards, ReviewOutcome, StoredPosition } from "../ports.ts";
+import type { CardOutcome, DueCards, ReviewOutcome, StoredPosition } from "../ports/users.ts";
 import { fromJson, fsrs, newCard, review, toJson } from "./scheduler.ts";
 import { MIGRATIONS } from "../user/migrations/index.ts";
 import { BLANK_DOCUMENT, BLANK_START, cardsQuery, readingListDocumentsQuery } from "../user/queries.ts";

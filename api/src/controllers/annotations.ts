@@ -17,7 +17,9 @@ import { annotationId } from "@skolia/shared/annotations";
 import { textKey } from "@skolia/shared/keys";
 import type { PageRequest } from "@skolia/shared/page";
 import type * as schemas from "@skolia/shared/schemas";
-import type { BlobStore, Clock, DocumentAnnotations, DocumentLookup, StoredDocument } from "../ports.ts";
+import type { BlobStore } from "../ports/blobs.ts";
+import type { Clock } from "../ports/index.ts";
+import type { DocumentAnnotations, DocumentLookup, StoredDocument } from "../ports/documents.ts";
 import { findDocument, noSuchDocument } from "./documents.ts";
 import { NO_CONTENT, fail, ok, type Failed, type Json, type NoContent, type Ok } from "./result.ts";
 

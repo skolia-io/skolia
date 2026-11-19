@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { runBackgroundMigrations, type BackgroundMigration, type Context } from "./worker/background-migrations/runner.ts";
-import { R2Blobs } from "./worker/adapters.ts";
+import { R2Blobs } from "./worker/adapters/blobs.ts";
 import { local, setup, useLocal } from "./testing/app.ts";
 
 useLocal();

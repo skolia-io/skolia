@@ -1,6 +1,8 @@
 // Where each user was in each text they've read, in their own Durable Object.
 import { timestamp, type DocumentId, type ReadingPosition, type User } from "@skolia/shared/api";
-import type { Clock, DocumentLookup, ReadingPositions, StoredPosition } from "../ports.ts";
+import type { Clock } from "../ports/index.ts";
+import type { DocumentLookup } from "../ports/documents.ts";
+import type { ReadingPositions, StoredPosition } from "../ports/users.ts";
 import { MAX_CLOCK_SKEW_MS } from "./cards.ts";
 import { NO_CONTENT, fail, ok, type Failed, type NoContent, type Ok } from "./result.ts";
 

@@ -27,7 +27,10 @@ import {
   type Timestamp,
   type User,
 } from "@skolia/shared/api";
-import type { Clock, DocumentLookup, Lexicon, UserCards, UserSettings } from "../ports.ts";
+import type { Clock } from "../ports/index.ts";
+import type { DocumentLookup } from "../ports/documents.ts";
+import type { Lexicon } from "../ports/lexicon.ts";
+import type { UserCards, UserSettings } from "../ports/users.ts";
 import { noSuchDocument } from "./documents.ts";
 import { NO_CONTENT, fail, ok, type Failed, type Json, type NoContent, type Ok } from "./result.ts";
 

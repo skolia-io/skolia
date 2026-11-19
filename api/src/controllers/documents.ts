@@ -24,18 +24,17 @@ import { PART_ENCODING, docId, partKey, statusKey, textKey, versionsKey } from "
 import type { Status, Versions } from "@skolia/shared/schema";
 import * as schemas from "@skolia/shared/schemas";
 import { log } from "@skolia/util/log";
+import type { BlobStore } from "../ports/blobs.ts";
+import type { Clock } from "../ports/index.ts";
 import type {
-  BlobStore,
-  Clock,
   DocumentEntries,
   DocumentLookup,
   DocumentStatusStore,
   DocumentTags,
   EntryFields,
-  IngestJobs,
-  JobQueue,
   StoredDocument,
-} from "../ports.ts";
+} from "../ports/documents.ts";
+import type { IngestJobs, JobQueue } from "../ports/ingest.ts";
 import { NO_CONTENT, fail, ok, type BlobResult, type Failed, type Json, type NoContent, type NotModified, type Ok } from "./result.ts";
 
 const logger = log("documents");
