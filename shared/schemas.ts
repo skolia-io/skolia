@@ -104,16 +104,16 @@ export const ReadingListId = z
 export const ReadingListName = z.object({ name: z.string().trim().min(1).max(100) });
 export const ReadingList = ReadingListName.extend({
   id: ReadingListId,
-  textsCount: z.number().int().nonnegative(),
+  documentsCount: z.number().int().nonnegative(),
   addedAt: Timestamp,
 });
-export const ReadingListText = z.object({ document: z.lazy(() => DocumentSummary), addedAt: Timestamp });
+export const ReadingListDocument = z.object({ document: z.lazy(() => DocumentSummary), addedAt: Timestamp });
 
 export const ReadingStatus = z.enum(READING_STATUSES).meta({ id: "ReadingStatus" });
 export const ReadingEntry = z.object({ status: ReadingStatus, addedAt: Timestamp, updatedAt: Timestamp }).meta({ id: "ReadingEntry" });
 export const SetReading = z.object({ status: ReadingStatus });
 export const ReadingKey = z.tuple([Timestamp, DocumentId]).readonly();
-export const ReadingListTextsQuery = pageQuery(ReadingKey, READING_PAGE).extend({ lang: Lang.optional() });
+export const ReadingListDocumentsQuery = pageQuery(ReadingKey, READING_PAGE).extend({ lang: Lang.optional() });
 /** A page of the texts on the reading list with the status; lang, only those in the language. */
 export const ReadingQuery = pageQuery(ReadingKey, READING_PAGE).extend({ status: ReadingStatus, lang: Lang.optional() });
 

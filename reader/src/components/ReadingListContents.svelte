@@ -1,10 +1,10 @@
 <script lang="ts">
   import type { Lang, ReadingListId } from "@skolia/shared/api";
-  import { createReadingListTexts, createReadingListChange } from "../lib/reading-lists.ts";
+  import { createReadingListDocuments, createReadingListChange } from "../lib/reading-lists.ts";
   import DocumentList from "./DocumentList.svelte";
   import Button from "./Button.svelte";
   let { id, lang }: { id: ReadingListId; lang: Lang | undefined } = $props();
-  const texts = createReadingListTexts(
+  const texts = createReadingListDocuments(
     () => id,
     () => lang,
   );

@@ -54,7 +54,7 @@ CREATE TRIGGER migration_log_no_update BEFORE UPDATE ON migration_log
 CREATE TABLE reading_list (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL CHECK(length(name) BETWEEN 1 AND 100),
-  texts_count INTEGER NOT NULL DEFAULT 0 CHECK(texts_count >= 0),
+  documents_count INTEGER NOT NULL DEFAULT 0 CHECK(documents_count >= 0),
   added_at TEXT NOT NULL CHECK (added_at IS strftime('%Y-%m-%dT%H:%M:%fZ', added_at))
 ) STRICT, WITHOUT ROWID;
 
@@ -71,7 +71,7 @@ CREATE TABLE reading_list_count (
   total INTEGER NOT NULL CHECK(total BETWEEN 0 AND 200)
 ) STRICT;
 
-CREATE TABLE reading_list_text (
+CREATE TABLE "reading_list_document" (
   list_id TEXT NOT NULL REFERENCES reading_list(id) ON DELETE CASCADE,
   document_id TEXT NOT NULL,
   lang TEXT NOT NULL,
@@ -79,18 +79,18 @@ CREATE TABLE reading_list_text (
   PRIMARY KEY (list_id, document_id)
 ) STRICT, WITHOUT ROWID;
 
-CREATE INDEX reading_list_text_document ON reading_list_text(document_id, list_id);
+CREATE INDEX reading_list_document_document ON reading_list_document(document_id, list_id);
 
-CREATE INDEX reading_list_text_lang ON reading_list_text(list_id, lang, added_at DESC, document_id DESC);
+CREATE INDEX reading_list_document_lang ON reading_list_document(list_id, lang, added_at DESC, document_id DESC);
 
-CREATE INDEX reading_list_text_page ON reading_list_text(list_id, added_at DESC, document_id DESC);
+CREATE INDEX reading_list_document_page ON reading_list_document(list_id, added_at DESC, document_id DESC);
 
-CREATE TRIGGER reading_list_text_added AFTER INSERT ON reading_list_text BEGIN
-  UPDATE reading_list SET texts_count = texts_count + 1 WHERE id = new.list_id;
+CREATE TRIGGER reading_list_document_added AFTER INSERT ON reading_list_document BEGIN
+  UPDATE reading_list SET documents_count = documents_count + 1 WHERE id = new.list_id;
 END;
 
-CREATE TRIGGER reading_list_text_removed AFTER DELETE ON reading_list_text BEGIN
-  UPDATE reading_list SET texts_count = texts_count - 1 WHERE id = old.list_id;
+CREATE TRIGGER reading_list_document_removed AFTER DELETE ON reading_list_document BEGIN
+  UPDATE reading_list SET documents_count = documents_count - 1 WHERE id = old.list_id;
 END;
 
 CREATE TABLE reading_position (

@@ -5,7 +5,7 @@ import {
   type DocumentId,
   type Lang,
   type ReadingKey,
-  type ReadingListText,
+  type ReadingListDocument,
 } from "@skolia/shared/api";
 import { ReadingListId as ListId } from "@skolia/shared/schemas";
 import type { PageRequest } from "@skolia/shared/page";
@@ -25,12 +25,11 @@ export async function create(deps: Deps, user: User, name: string) {
 }
 
 export async function rename(deps: Deps, user: User, id: ReadingListId, name: string) {
-  if (id === "to-read") return fail(400, "The To read list cannot be renamed.");
   return (await deps.users.renameReadingList(user.id, id, name)) ? NO_CONTENT : fail(404, "No such reading list");
 }
 
 export async function remove(deps: Deps, user: User, id: ReadingListId) {
-  if (id === "to-read") return fail(400, "The To read list cannot be deleted.");
+  if (id === "to-read") return fail(400, "The default reading list cannot be deleted.");
   return (await deps.users.deleteReadingList(user.id, id)) ? NO_CONTENT : fail(404, "No such reading list");
 }
 
@@ -42,7 +41,7 @@ export async function save(deps: Deps, user: User, id: ReadingListId, documentId
   // Removal remains possible after a text becomes unavailable.
   const document = saved ? await deps.documents.visible(documentId, user.id) : null;
   if (saved && !document) return fail(404, "No such document");
-  return (await deps.users.setReadingListText(
+  return (await deps.users.setReadingListDocument(
     user.id,
     id,
     documentId,
@@ -52,8 +51,8 @@ export async function save(deps: Deps, user: User, id: ReadingListId, documentId
     : fail(404, "No such reading list");
 }
 
-export async function texts(deps: Deps, user: User, id: ReadingListId, lang: Lang | undefined, page: PageRequest<ReadingKey>) {
-  const found = await deps.users.readingListTexts(user.id, id, lang, page);
+export async function documents(deps: Deps, user: User, id: ReadingListId, lang: Lang | undefined, page: PageRequest<ReadingKey>) {
+  const found = await deps.users.readingListDocuments(user.id, id, lang, page);
   if (!found) return fail(404, "No such reading list");
   const documents = await deps.documents.visibleAll(
     found.items.map((item) => item.documentId),
@@ -61,7 +60,7 @@ export async function texts(deps: Deps, user: User, id: ReadingListId, lang: Lan
   );
   const items = found.items.flatMap(({ documentId, addedAt }) => {
     const record = documents.get(documentId);
-    return record === undefined ? [] : [{ document: listed(record, user), addedAt } satisfies ReadingListText];
+    return record === undefined ? [] : [{ document: listed(record, user), addedAt } satisfies ReadingListDocument];
   });
   return ok({ items, next: found.next });
 }

@@ -37,7 +37,7 @@ import {
   type ReadingEntry,
   type ReadingListId,
   type ReadingList,
-  type ReadingListText,
+  type ReadingListDocument,
   type ReadingKey,
   type ReadingPosition,
   type ReadingNames,
@@ -361,17 +361,20 @@ export async function readingListMemberships(id: DocumentId): Promise<readonly R
   if (!response.ok) throw await failure(response);
   return (await response.json()).lists;
 }
-export async function setReadingListText(listId: ReadingListId, id: DocumentId, saved: boolean): Promise<void> {
-  const route = api.me["reading-lists"][":listId"].texts[":id"];
+export async function setReadingListDocument(listId: ReadingListId, id: DocumentId, saved: boolean): Promise<void> {
+  const route = api.me["reading-lists"][":listId"].documents[":id"];
   const response = await (saved ? route.$put({ param: { listId, id } }) : route.$delete({ param: { listId, id } }));
   if (!response.ok) throw await failure(response);
 }
-export async function readingListTexts(
+export async function readingListDocuments(
   listId: ReadingListId,
   lang: Lang | undefined,
   after?: Cursor<ReadingKey>,
-): Promise<Paginated<ReadingListText, ReadingKey>> {
-  const response = await api.me["reading-lists"][":listId"].texts.$get({ param: { listId }, query: { after, ...(lang ? { lang } : {}) } });
+): Promise<Paginated<ReadingListDocument, ReadingKey>> {
+  const response = await api.me["reading-lists"][":listId"].documents.$get({
+    param: { listId },
+    query: { after, ...(lang ? { lang } : {}) },
+  });
   if (!response.ok) throw await failure(response);
   return response.json();
 }

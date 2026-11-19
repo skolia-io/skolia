@@ -19,8 +19,8 @@ export function readingProgressQuery({ status, lang }: ReadingFilter, { after, l
     .limit(limit + 1);
 }
 
-export function readingListTextsQuery(id: ReadingListId, lang: Lang | undefined, { after, limit }: PageRequest<ReadingKey>) {
-  return sql`SELECT document_id AS documentId, added_at AS addedAt FROM reading_list_text
+export function readingListDocumentsQuery(id: ReadingListId, lang: Lang | undefined, { after, limit }: PageRequest<ReadingKey>) {
+  return sql`SELECT document_id AS documentId, added_at AS addedAt FROM reading_list_document
     WHERE list_id = ${id} ${lang === undefined ? sql`` : sql`AND lang = ${lang}`}
     ${after === undefined ? sql`` : sql`AND (added_at, document_id) < (${after[0]}, ${after[1]})`}
     ORDER BY added_at DESC, document_id DESC LIMIT ${limit + 1}`;

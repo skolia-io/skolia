@@ -7,7 +7,7 @@ import { userQuery } from "./queries.ts";
 const READING_LISTS_KEY = ["me", "reading-lists"] as const;
 const readingListsQuery = queryOptions({ queryKey: [...READING_LISTS_KEY, "all"], queryFn: api.readingLists });
 const membershipKey = (id: DocumentId) => [...READING_LISTS_KEY, "memberships", id] as const;
-const textsKey = (id: ReadingListId) => [...READING_LISTS_KEY, "texts", id] as const;
+const documentsKey = (id: ReadingListId) => [...READING_LISTS_KEY, "documents", id] as const;
 export function findReadingLists(lists: readonly ReadingList[] = [], search: string): readonly ReadingList[] {
   const needle = search.trim().toLocaleLowerCase();
   return lists
@@ -30,11 +30,11 @@ export function createMemberships(id: () => DocumentId, enabled: () => boolean) 
 export function createReadingListChange() {
   return createMutation(() => ({
     mutationFn: ({ listId, id, saved }: { readonly listId: ReadingListId; readonly id: DocumentId; readonly saved: boolean }) =>
-      api.setReadingListText(listId, id, saved),
+      api.setReadingListDocument(listId, id, saved),
     onSuccess: async (_data, { listId, id }, _held, { client }) => {
       await Promise.all([
         client.invalidateQueries({ queryKey: membershipKey(id) }),
-        client.invalidateQueries({ queryKey: textsKey(listId) }),
+        client.invalidateQueries({ queryKey: documentsKey(listId) }),
         client.invalidateQueries({ queryKey: readingListsQuery.queryKey }),
       ]);
     },
@@ -61,10 +61,10 @@ export function createReadingListEdit() {
       client.invalidateQueries({ queryKey: change.action === "delete" ? READING_LISTS_KEY : readingListsQuery.queryKey }),
   }));
 }
-export function createReadingListTexts(id: () => ReadingListId, lang: () => Lang | undefined) {
+export function createReadingListDocuments(id: () => ReadingListId, lang: () => Lang | undefined) {
   return createInfiniteQuery(() => ({
-    queryKey: [...textsKey(id()), lang()],
-    queryFn: ({ pageParam }) => api.readingListTexts(id(), lang(), pageParam),
+    queryKey: [...documentsKey(id()), lang()],
+    queryFn: ({ pageParam }) => api.readingListDocuments(id(), lang(), pageParam),
     initialPageParam: undefined as Cursor<ReadingKey> | undefined,
     getNextPageParam: (page) => page.next ?? undefined,
   }));

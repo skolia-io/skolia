@@ -104,13 +104,13 @@
           <header class="summary">
             <ReadingListCover name={current.name} saved={current.id === "to-read"} />
             <h2>{current.name}</h2>
-            <p class="muted">{current.textsCount} {current.textsCount === 1 ? "text" : "texts"}</p>
-            {#if current.id !== "to-read"}
-              <div class="buttons">
-                <Button small variant="quiet" onclick={() => void show("rename")}>Rename</Button>
+            <p class="muted">{current.documentsCount} {current.documentsCount === 1 ? "text" : "texts"}</p>
+            <div class="buttons">
+              <Button small variant="quiet" onclick={() => void show("rename")}>Rename</Button>
+              {#if current.id !== "to-read"}
                 <Button small variant="danger" onclick={() => void show("delete")}>Delete list</Button>
-              </div>
-            {/if}
+              {/if}
+            </div>
           </header>
           <section class="contents" aria-label="List contents">
             <div class="detail-filter">{@render filter()}</div>
@@ -155,9 +155,9 @@
         {#each shown as list (list.id)}
           <li>
             <a class="list" href={link("list", list.id)}>
-              <ReadingListCover name={list.name} count={list.textsCount} saved={list.id === "to-read"} />
+              <ReadingListCover name={list.name} count={list.documentsCount} saved={list.id === "to-read"} />
               <strong>{list.name}</strong>
-              <span class="sr-only">{list.textsCount} {list.textsCount === 1 ? "text" : "texts"}</span>
+              <span class="sr-only">{list.documentsCount} {list.documentsCount === 1 ? "text" : "texts"}</span>
             </a>
           </li>
         {:else}

@@ -2959,7 +2959,7 @@
                           "id": {
                             "$ref": "#/components/schemas/ReadingListId"
                           },
-                          "textsCount": {
+                          "documentsCount": {
                             "type": "integer",
                             "minimum": 0,
                             "maximum": 9007199254740991
@@ -2971,7 +2971,7 @@
                         "required": [
                           "name",
                           "id",
-                          "textsCount",
+                          "documentsCount",
                           "addedAt"
                         ],
                         "additionalProperties": false
@@ -3105,7 +3105,7 @@
             "description": "Done; no body"
           },
           "400": {
-            "description": "Built-in list",
+            "description": "The request doesn't fit its schema",
             "content": {
               "application/json": {
                 "schema": {
@@ -3227,9 +3227,9 @@
         ]
       }
     },
-    "/api/me/reading-lists/{listId}/texts": {
+    "/api/me/reading-lists/{listId}/documents": {
       "get": {
-        "operationId": "getApiMeReadingListsByListIdTexts",
+        "operationId": "getApiMeReadingListsByListIdDocuments",
         "tags": [
           "Reading"
         ],
@@ -3421,9 +3421,9 @@
         ]
       }
     },
-    "/api/me/reading-lists/{listId}/texts/{id}": {
+    "/api/me/reading-lists/{listId}/documents/{id}": {
       "put": {
-        "operationId": "putApiMeReadingListsByListIdTextsById",
+        "operationId": "putApiMeReadingListsByListIdDocumentsById",
         "tags": [
           "Reading"
         ],
@@ -3491,7 +3491,7 @@
         ]
       },
       "delete": {
-        "operationId": "deleteApiMeReadingListsByListIdTextsById",
+        "operationId": "deleteApiMeReadingListsByListIdDocumentsById",
         "tags": [
           "Reading"
         ],

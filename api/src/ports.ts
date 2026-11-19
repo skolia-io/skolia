@@ -196,13 +196,13 @@ export interface UserData {
   renameReadingList(userId: UserId, id: ReadingListId, name: string): Promise<boolean>;
   deleteReadingList(userId: UserId, id: ReadingListId): Promise<boolean>;
   readingListMemberships(userId: UserId, documentId: DocumentId): Promise<readonly ReadingListId[]>;
-  setReadingListText(
+  setReadingListDocument(
     userId: UserId,
     id: ReadingListId,
     documentId: DocumentId,
     save: { readonly lang: Lang; readonly addedAt: Timestamp } | null,
   ): Promise<boolean>;
-  readingListTexts(
+  readingListDocuments(
     userId: UserId,
     id: ReadingListId,
     lang: Lang | undefined,

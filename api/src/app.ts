@@ -230,7 +230,7 @@ export function createApp(deps: Deps) {
       mine(TAGS.reading, "Rename a reading list"),
       validator("param", z.object({ listId: schemas.ReadingListId }), badRequest()),
       validator("json", schemas.ReadingListName, badRequest()),
-      responds({ 204: NO_BODY, 400: error("Built-in list"), 401: NOT_SIGNED_IN, 404: error("No such list") }),
+      responds({ 204: NO_BODY, 401: NOT_SIGNED_IN, 404: error("No such list") }),
       (c) => signedIn(c, (user) => readingLists.rename(deps, user, c.req.valid("param").listId, c.req.valid("json").name)),
     )
     .delete(
@@ -241,15 +241,15 @@ export function createApp(deps: Deps) {
       (c) => signedIn(c, (user) => readingLists.remove(deps, user, c.req.valid("param").listId)),
     )
     .get(
-      "/api/me/reading-lists/:listId/texts",
+      "/api/me/reading-lists/:listId/documents",
       mine(TAGS.reading, "A page of a reading list's texts"),
       validator("param", z.object({ listId: schemas.ReadingListId }), badRequest()),
-      validator("query", schemas.ReadingListTextsQuery, badRequest()),
-      responds({ 200: json(schemas.page(schemas.ReadingListText), "Texts"), 401: NOT_SIGNED_IN, 404: error("No such list") }),
+      validator("query", schemas.ReadingListDocumentsQuery, badRequest()),
+      responds({ 200: json(schemas.page(schemas.ReadingListDocument), "Texts"), 401: NOT_SIGNED_IN, 404: error("No such list") }),
       (c) =>
         signedIn(c, (user) => {
           const { lang, ...page } = c.req.valid("query");
-          return readingLists.texts(deps, user, c.req.valid("param").listId, lang, page);
+          return readingLists.documents(deps, user, c.req.valid("param").listId, lang, page);
         }),
     )
     .get(
@@ -260,14 +260,14 @@ export function createApp(deps: Deps) {
       (c) => signedIn(c, (user) => readingLists.memberships(deps, user, c.req.valid("param").id)),
     )
     .put(
-      "/api/me/reading-lists/:listId/texts/:id",
+      "/api/me/reading-lists/:listId/documents/:id",
       mine(TAGS.reading, "Add a text to a reading list"),
       validator("param", z.object({ listId: schemas.ReadingListId, id: schemas.DocumentId }), badRequest()),
       responds({ 204: NO_BODY, 401: NOT_SIGNED_IN, 404: error("No such list or document") }),
       (c) => signedIn(c, (user) => readingLists.save(deps, user, c.req.valid("param").listId, c.req.valid("param").id, true)),
     )
     .delete(
-      "/api/me/reading-lists/:listId/texts/:id",
+      "/api/me/reading-lists/:listId/documents/:id",
       mine(TAGS.reading, "Remove a text from a reading list"),
       validator("param", z.object({ listId: schemas.ReadingListId, id: schemas.DocumentId }), badRequest()),
       responds({ 204: NO_BODY, 401: NOT_SIGNED_IN, 404: error("No such list") }),

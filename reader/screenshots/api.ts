@@ -338,7 +338,7 @@ function deps(signedIn: boolean, annotations: readonly Annotation[]): Deps {
   ].map((name, index) => ({
     id: ReadingListId.parse(index === 0 ? "to-read" : `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`),
     name,
-    textsCount: 0,
+    documentsCount: 0,
     addedAt: Timestamp.parse(NOW.toISOString()),
   }));
   let memberships: readonly {
@@ -351,7 +351,7 @@ function deps(signedIn: boolean, annotations: readonly Annotation[]): Deps {
     { listId: readingLists[1]!.id, documentId: LALKA, addedAt: Timestamp.parse(NOW.toISOString()) },
   ];
   const withCounts = () =>
-    readingLists.map((list) => ({ ...list, textsCount: memberships.filter((item) => item.listId === list.id).length }));
+    readingLists.map((list) => ({ ...list, documentsCount: memberships.filter((item) => item.listId === list.id).length }));
   return {
     auth: {
       handle: async () => new Response(null, { status: 404 }),
@@ -392,7 +392,7 @@ function deps(signedIn: boolean, annotations: readonly Annotation[]): Deps {
       },
       readingLists: async () => withCounts(),
       createReadingList: async (_userId, id, name, addedAt) => {
-        readingLists = [...readingLists, { id, name, addedAt, textsCount: 0 }];
+        readingLists = [...readingLists, { id, name, addedAt, documentsCount: 0 }];
         return true;
       },
       renameReadingList: async (_userId, id, name) => {
@@ -405,12 +405,12 @@ function deps(signedIn: boolean, annotations: readonly Annotation[]): Deps {
         return true;
       },
       readingListMemberships: async (_userId, id) => memberships.filter((item) => item.documentId === id).map((item) => item.listId),
-      setReadingListText: async (_userId, listId, documentId, save) => {
+      setReadingListDocument: async (_userId, listId, documentId, save) => {
         memberships = memberships.filter((item) => item.listId !== listId || item.documentId !== documentId);
         if (save) memberships = [...memberships, { listId, documentId, addedAt: save.addedAt }];
         return true;
       },
-      readingListTexts: async (_userId, listId, lang) => ({
+      readingListDocuments: async (_userId, listId, lang) => ({
         items: memberships.filter(
           (item) => item.listId === listId && (lang === undefined || documents.find((doc) => doc.id === item.documentId)?.lang === lang),
         ),

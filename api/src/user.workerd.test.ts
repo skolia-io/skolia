@@ -7,7 +7,7 @@ import { sql } from "@skolia/util/sql";
 import { startLocal, type Local } from "./testing/harness.ts";
 import { MIGRATIONS } from "./user/migrations/index.ts";
 import { checksum } from "./user/migrator.ts";
-import { BLANK_DOCUMENT, BLANK_START, cardsQuery, readingProgressQuery, readingListTextsQuery } from "./user/queries.ts";
+import { BLANK_DOCUMENT, BLANK_START, cardsQuery, readingProgressQuery, readingListDocumentsQuery } from "./user/queries.ts";
 
 let local: Local;
 
@@ -206,11 +206,11 @@ test("reading lists migrate saved texts without losing progress and maintain cou
   await user.migrate(LATEST);
   const toRead = schemas.ReadingListId.parse("to-read");
   assert.deepEqual(
-    (await user.readingLists()).map((list) => [list.id, list.textsCount]),
+    (await user.readingLists()).map((list) => [list.id, list.documentsCount]),
     [[toRead, 1]],
   );
   assert.deepEqual(
-    (await user.readingListTexts(toRead, undefined, { limit: 10 }))?.items.map((item) => item.documentId),
+    (await user.readingListDocuments(toRead, undefined, { limit: 10 }))?.items.map((item) => item.documentId),
     [documents[0]],
   );
   for (const [index, status] of ["to-read", "reading", "finished"].entries()) {
@@ -222,13 +222,15 @@ test("reading lists migrate saved texts without losing progress and maintain cou
   const id = schemas.ReadingListId.parse(crypto.randomUUID());
   assert.equal(await user.createReadingList(id, "Stories", AT), true);
   const save = { lang: "pl", addedAt: AT } as const;
-  assert.equal(await user.setReadingListText(id, documents[0]!, save), true);
-  assert.equal(await user.setReadingListText(id, documents[0]!, save), true);
-  assert.equal((await user.readingLists()).find((list) => list.id === id)?.textsCount, 1);
+  assert.equal(await user.setReadingListDocument(id, documents[0]!, save), true);
+  assert.equal(await user.setReadingListDocument(id, documents[0]!, save), true);
+  assert.equal((await user.readingLists()).find((list) => list.id === id)?.documentsCount, 1);
   assert.equal(await user.deleteReadingList(id), true);
   assert.deepEqual(await user.readingListMemberships(documents[0]!), [toRead]);
   assert.equal(await user.deleteReadingList(toRead), false);
-  assert.equal(await user.renameReadingList(toRead, "Other"), false);
+  assert.equal(await user.renameReadingList(toRead, "Later"), true);
+  assert.equal((await user.readingLists()).find((list) => list.id === toRead)?.name, "Later");
+  assert.deepEqual(await user.readingListMemberships(documents[0]!), [toRead]);
   assert.equal((await user.reading(documents[0]!))?.status, "to-read");
 });
 
@@ -237,10 +239,10 @@ test("reading list pages seek an index, with language and cursor, without sortin
   const storage = await storageOf("reading-lists-plan");
   for (const lang of [undefined, "pl"] as const) {
     for (const after of [undefined, schemas.ReadingKey.parse([AT, "0".repeat(64)])]) {
-      const query = readingListTextsQuery(schemas.ReadingListId.parse("to-read"), lang, { after, limit: 3 });
+      const query = readingListDocumentsQuery(schemas.ReadingListId.parse("to-read"), lang, { after, limit: 3 });
       const plan = (await storage.exec<{ detail: string }>(`EXPLAIN QUERY PLAN ${query.text}`, ...query.params)).map((row) => row.detail);
-      const index = lang ? "reading_list_text_lang" : "reading_list_text_page";
-      assert.ok(plan.length === 1 && plan[0]!.startsWith(`SEARCH reading_list_text USING COVERING INDEX ${index} `), plan.join("; "));
+      const index = lang ? "reading_list_document_lang" : "reading_list_document_page";
+      assert.ok(plan.length === 1 && plan[0]!.startsWith(`SEARCH reading_list_document USING COVERING INDEX ${index} `), plan.join("; "));
     }
   }
 });
