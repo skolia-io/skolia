@@ -96,17 +96,19 @@ export const ReadingPosition = z.object({ sentence: Index, token: Index, at: Iso
 /** A position as it's kept, its time a Timestamp. */
 export const StoredPosition = ReadingPosition.extend({ at: Timestamp });
 
-export const ReadingListId = z
-  .union([z.literal("to-read"), z.uuid()])
-  .brand<"ReadingListId">()
-  .meta({ id: "ReadingListId" });
+export const ReadingListId = z.number().int().positive().brand<"ReadingListId">().meta({ id: "ReadingListId" });
+export const ReadingListIdParam = z
+  .string()
+  .regex(/^[1-9][0-9]*$/u)
+  .transform(Number)
+  .pipe(ReadingListId);
 export const ReadingListName = z.object({ name: z.string().trim().min(1).max(100) });
 export const ReadingList = ReadingListName.extend({
   id: ReadingListId,
   documentsCount: z.number().int().nonnegative(),
-  addedAt: Timestamp,
+  createdAt: Timestamp,
 });
-export const ReadingListDocument = z.object({ document: z.lazy(() => DocumentSummary), addedAt: Timestamp });
+export const ReadingListDocument = z.object({ document: z.lazy(() => DocumentSummary), createdAt: Timestamp });
 
 export const ReadingKey = z.tuple([Timestamp, DocumentId]).readonly();
 export const ReadingListDocumentsQuery = pageQuery(ReadingKey, READING_PAGE).extend({ lang: Lang.optional() });

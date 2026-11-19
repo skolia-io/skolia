@@ -1,15 +1,11 @@
 <script lang="ts">
-  let { name, count, saved = false }: { name: string; count?: number; saved?: boolean } = $props();
-  const tone = $derived(saved ? 0 : 1 + (Array.from(name).reduce((hash, ch) => (hash * 31 + ch.codePointAt(0)!) >>> 0, 0) % 4));
+  let { name, count }: { name: string; count?: number } = $props();
+  const tone = $derived(Array.from(name).reduce((hash, ch) => (hash * 31 + ch.codePointAt(0)!) >>> 0, 0) % 5);
 </script>
 
 <div class="cover" data-tone={tone} aria-hidden="true">
   <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    {#if saved}
-      <path d="M14 8h20a3 3 0 0 1 3 3v29l-13-8-13 8V11a3 3 0 0 1 3-3Z" />
-    {:else}
-      <path d="M8 12h32M8 20h32M8 28h20M8 36h20m11-8v12m-6-6h12" />
-    {/if}
+    <path d="M8 12h32M8 20h32M8 28h20M8 36h20m11-8v12m-6-6h12" />
   </svg>
   {#if count !== undefined}
     <span>{count.toLocaleString()} {count === 1 ? "text" : "texts"}</span>

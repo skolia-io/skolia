@@ -1,7 +1,7 @@
 <script lang="ts">
   import { tick } from "svelte";
-  import { LANGS, LANGUAGE_INFO, type User } from "@skolia/shared/api";
-  import { ReadingListId } from "@skolia/shared/schemas";
+  import { LANGS, LANGUAGE_INFO, type ReadingListId, type User } from "@skolia/shared/api";
+  import { ReadingListIdParam } from "@skolia/shared/schemas";
   import { signIn } from "../lib/api.ts";
   import { queryReadingLists, createReadingListEdit, findReadingLists } from "../lib/reading-lists.ts";
   import { hashQuery, readReadingList } from "../lib/filters.ts";
@@ -12,7 +12,7 @@
 
   let { user }: { user: User | null | undefined } = $props();
   let query = $state(hashQuery(location.hash));
-  const selected = $derived(ReadingListId.safeParse(query.get("list")));
+  const selected = $derived(ReadingListIdParam.safeParse(query.get("list")));
   const lang = $derived(readReadingList(query) ?? undefined);
   const lists = queryReadingLists();
   const edit = createReadingListEdit();
@@ -24,8 +24,8 @@
   const current = $derived(selected.success ? lists.data?.find((list) => list.id === selected.data) : undefined);
   const title = $derived(current?.name ?? (selected.success ? "Reading list" : "Reading lists"));
   const shown = $derived(findReadingLists(lists.data, search));
-  function link(list: string): string {
-    const next = new URLSearchParams({ list });
+  function link(list: ReadingListId): string {
+    const next = new URLSearchParams({ list: String(list) });
     if (lang) next.set("lang", lang);
     return `#/list?${next}`;
   }
@@ -87,14 +87,12 @@
       {#if current}
         <div class="detail">
           <header class="summary">
-            <ReadingListCover name={current.name} saved={current.id === "to-read"} />
+            <ReadingListCover name={current.name} />
             <h2>{current.name}</h2>
             <p class="muted">{current.documentsCount} {current.documentsCount === 1 ? "text" : "texts"}</p>
             <div class="buttons">
               <Button small variant="quiet" onclick={() => void show("rename")}>Rename</Button>
-              {#if current.id !== "to-read"}
-                <Button small variant="danger" onclick={() => void show("delete")}>Delete list</Button>
-              {/if}
+              <Button small variant="danger" onclick={() => void show("delete")}>Delete list</Button>
             </div>
           </header>
           <section class="contents" aria-label="List contents">
@@ -135,14 +133,14 @@
         {#each shown as list (list.id)}
           <li>
             <a class="list" href={link(list.id)}>
-              <ReadingListCover name={list.name} count={list.documentsCount} saved={list.id === "to-read"} />
+              <ReadingListCover name={list.name} count={list.documentsCount} />
               <strong>{list.name}</strong>
               <span class="sr-only">{list.documentsCount} {list.documentsCount === 1 ? "text" : "texts"}</span>
             </a>
           </li>
         {:else}
           {#if lists.data}
-            <li class="muted">No lists match “{search}”.</li>
+            <li class="muted">{search.trim() ? `No lists match “${search}”.` : "No reading lists yet."}</li>
           {/if}
         {/each}
       </ul>

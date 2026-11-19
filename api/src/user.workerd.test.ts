@@ -141,7 +141,7 @@ test("the tables are STRICT, the user's are WITHOUT ROWID, and timestamps must b
     [
       { name: "card", strict: 1, wr: 1 },
       { name: "migration_log", strict: 1, wr: 0 },
-      { name: "reading_list", strict: 1, wr: 1 },
+      { name: "reading_list", strict: 1, wr: 0 },
       { name: "reading_list_document", strict: 1, wr: 1 },
       { name: "review", strict: 1, wr: 1 },
       { name: "row_count", strict: 1, wr: 1 },
@@ -156,7 +156,7 @@ test("the tables are STRICT, the user's are WITHOUT ROWID, and timestamps must b
   await assert.rejects(storage.exec("insert into row_count values ('other', x'00')"), /cannot store BLOB/);
   assert.equal((await heidi.cards({ lang: "pl", limit: 10 })).items.length, 1);
   await assert.rejects(
-    storage.exec("insert into reading_list_document values ('to-read', ?, 'pl', '2026-11-07T00:00:00Z')", "0".repeat(64)),
+    storage.exec("insert into reading_list_document values (1, ?, 'pl', '2026-11-07T00:00:00Z')", "0".repeat(64)),
     /CHECK constraint failed/,
   );
 });
@@ -187,7 +187,7 @@ test("reading lists migrate each status into a list without touching the resume 
     assert.equal(list.documentsCount, 1);
     const page = await user.readingListDocuments(list.id, "pl", { limit: 10 });
     assert.deepEqual(
-      page?.items.map((item) => [item.documentId, item.addedAt]),
+      page?.items.map((item) => [item.documentId, item.createdAt]),
       [[documents[index], AT]],
     );
     assert.deepEqual(await user.readingListMemberships(documents[index]!), [list.id]);
@@ -197,16 +197,16 @@ test("reading lists migrate each status into a list without touching the resume 
   assert.equal(position?.token, 2);
   assert.equal(position?.at, AT);
   assert.ok(!(await tables("reading-lists-migration")).includes("legacy_reading_list"));
-  const toRead = schemas.ReadingListId.parse("to-read");
-  const id = schemas.ReadingListId.parse(crypto.randomUUID());
-  assert.equal(await user.createReadingList(id, "Stories", AT), true);
-  const save = { lang: "pl", addedAt: AT } as const;
+  const toRead = schemas.ReadingListId.parse(1);
+  const id = await user.createReadingList("Stories", AT);
+  assert.equal(id, 4);
+  assert.ok(id);
+  const save = { lang: "pl", createdAt: AT } as const;
   assert.equal(await user.setReadingListDocument(id, documents[0]!, save), true);
   assert.equal(await user.setReadingListDocument(id, documents[0]!, save), true);
   assert.equal((await user.readingLists()).find((list) => list.id === id)?.documentsCount, 1);
   assert.equal(await user.deleteReadingList(id), true);
   assert.deepEqual(await user.readingListMemberships(documents[0]!), [toRead]);
-  assert.equal(await user.deleteReadingList(toRead), false);
   assert.equal(await user.renameReadingList(toRead, "Later"), true);
   assert.equal((await user.readingLists()).find((list) => list.id === toRead)?.name, "Later");
   assert.deepEqual(await user.readingListMemberships(documents[0]!), [toRead]);
@@ -219,7 +219,7 @@ test("reading list pages seek an index, with language and cursor, without sortin
   const storage = await storageOf("reading-lists-plan");
   for (const lang of [undefined, "pl"] as const) {
     for (const after of [undefined, schemas.ReadingKey.parse([AT, "0".repeat(64)])]) {
-      const query = readingListDocumentsQuery(schemas.ReadingListId.parse("to-read"), lang, { after, limit: 3 });
+      const query = readingListDocumentsQuery(schemas.ReadingListId.parse(1), lang, { after, limit: 3 }).sql;
       const plan = (await storage.exec<{ detail: string }>(`EXPLAIN QUERY PLAN ${query.text}`, ...query.params)).map((row) => row.detail);
       const index = lang ? "reading_list_document_lang" : "reading_list_document_page";
       assert.ok(plan.length === 1 && plan[0]!.startsWith(`SEARCH reading_list_document USING COVERING INDEX ${index} `), plan.join("; "));
@@ -229,12 +229,11 @@ test("reading list pages seek an index, with language and cursor, without sortin
 
 test("reading lists are capped, and deleting one releases its slot", async () => {
   const user = local.env.USER.getByName("reading-lists-limit");
-  const ids = Array.from({ length: 200 }, () => schemas.ReadingListId.parse(crypto.randomUUID()));
-  for (const id of ids.slice(0, 197)) assert.equal(await user.createReadingList(id, "List", AT), true);
-  assert.equal(await user.createReadingList(ids[197]!, "Too many", AT), false);
+  for (let id = 4; id <= 200; id++) assert.equal(await user.createReadingList("List", AT), id);
+  assert.equal(await user.createReadingList("Too many", AT), null);
   assert.equal((await user.readingLists()).length, 200);
-  assert.equal(await user.deleteReadingList(ids[0]!), true);
-  assert.equal(await user.createReadingList(ids[199]!, "Room again", AT), true);
+  assert.equal(await user.deleteReadingList(schemas.ReadingListId.parse(200)), true);
+  assert.equal(await user.createReadingList("Room again", AT), 201);
 });
 
 test("a page of cards seeks to its key in an index, in a language, a word or a text, and sorts nothing", async () => {

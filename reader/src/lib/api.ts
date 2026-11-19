@@ -316,11 +316,11 @@ export async function createReadingList(name: string): Promise<ReadingListId> {
   return (await response.json()).id;
 }
 export async function renameReadingList(listId: ReadingListId, name: string): Promise<void> {
-  const response = await api.me["reading-lists"][":listId"].$patch({ param: { listId }, json: { name } });
+  const response = await api.me["reading-lists"][":listId"].$patch({ param: { listId: String(listId) }, json: { name } });
   if (!response.ok) throw await failure(response);
 }
 export async function deleteReadingList(listId: ReadingListId): Promise<void> {
-  const response = await api.me["reading-lists"][":listId"].$delete({ param: { listId } });
+  const response = await api.me["reading-lists"][":listId"].$delete({ param: { listId: String(listId) } });
   if (!response.ok) throw await failure(response);
 }
 export async function readingListMemberships(id: DocumentId): Promise<readonly ReadingListId[]> {
@@ -330,7 +330,8 @@ export async function readingListMemberships(id: DocumentId): Promise<readonly R
 }
 export async function setReadingListDocument(listId: ReadingListId, id: DocumentId, saved: boolean): Promise<void> {
   const route = api.me["reading-lists"][":listId"].documents[":id"];
-  const response = await (saved ? route.$put({ param: { listId, id } }) : route.$delete({ param: { listId, id } }));
+  const param = { listId: String(listId), id };
+  const response = await (saved ? route.$put({ param }) : route.$delete({ param }));
   if (!response.ok) throw await failure(response);
 }
 export async function readingListDocuments(
@@ -339,7 +340,7 @@ export async function readingListDocuments(
   after?: Cursor<ReadingKey>,
 ): Promise<Paginated<ReadingListDocument, ReadingKey>> {
   const response = await api.me["reading-lists"][":listId"].documents.$get({
-    param: { listId },
+    param: { listId: String(listId) },
     query: { after, ...(lang ? { lang } : {}) },
   });
   if (!response.ok) throw await failure(response);

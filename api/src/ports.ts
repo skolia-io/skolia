@@ -189,7 +189,7 @@ export interface UserData {
   /** Keeps the stored position if it's as new as this one or newer. */
   setPosition(userId: UserId, documentId: DocumentId, position: StoredPosition): Promise<void>;
   readingLists(userId: UserId): Promise<readonly ReadingList[]>;
-  createReadingList(userId: UserId, id: ReadingListId, name: string, now: Timestamp): Promise<boolean>;
+  createReadingList(userId: UserId, name: string, now: Timestamp): Promise<ReadingListId | null>;
   renameReadingList(userId: UserId, id: ReadingListId, name: string): Promise<boolean>;
   deleteReadingList(userId: UserId, id: ReadingListId): Promise<boolean>;
   readingListMemberships(userId: UserId, documentId: DocumentId): Promise<readonly ReadingListId[]>;
@@ -197,14 +197,14 @@ export interface UserData {
     userId: UserId,
     id: ReadingListId,
     documentId: DocumentId,
-    save: { readonly lang: Lang; readonly addedAt: Timestamp } | null,
+    save: { readonly lang: Lang; readonly createdAt: Timestamp } | null,
   ): Promise<boolean>;
   readingListDocuments(
     userId: UserId,
     id: ReadingListId,
     lang: Lang | undefined,
     page: PageRequest<ReadingKey>,
-  ): Promise<Paginated<{ readonly documentId: DocumentId; readonly addedAt: Timestamp }, ReadingKey> | null>;
+  ): Promise<Paginated<{ readonly documentId: DocumentId; readonly createdAt: Timestamp }, ReadingKey> | null>;
 }
 
 export type StoredPosition = z.output<typeof schemas.StoredPosition>;

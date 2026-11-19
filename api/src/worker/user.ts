@@ -336,18 +336,17 @@ export class User extends DurableObject<UserEnv> {
 
   readingLists(): readonly ReadingList[] {
     return this.#exec(
-      sql`SELECT id, name, documents_count AS documentsCount, added_at AS addedAt FROM reading_list WHERE id >= '' ORDER BY id LIMIT 200`,
+      sql`SELECT id, name, documents_count AS documentsCount, created_at AS createdAt FROM reading_list WHERE id > 0 ORDER BY id LIMIT 200`,
     )
       .toArray()
       .map((row) => schemas.ReadingList.parse(row));
   }
 
-  createReadingList(id: ReadingListId, name: string, now: Timestamp): boolean {
-    return (
-      this.#exec(sql`INSERT INTO reading_list (id, name, added_at)
-      SELECT ${id}, ${name}, ${now} WHERE (SELECT total FROM reading_list_count WHERE id = 1) < 200
-      RETURNING id`).toArray().length > 0
-    );
+  createReadingList(name: string, now: Timestamp): ReadingListId | null {
+    const row = this.#exec(sql`INSERT INTO reading_list (name, created_at)
+      SELECT ${name}, ${now} WHERE (SELECT total FROM reading_list_count WHERE id = 1) < 200
+      RETURNING id`).toArray()[0];
+    return row ? schemas.ReadingListId.parse(row["id"]) : null;
   }
 
   renameReadingList(id: ReadingListId, name: string): boolean {
@@ -355,7 +354,7 @@ export class User extends DurableObject<UserEnv> {
   }
 
   deleteReadingList(id: ReadingListId): boolean {
-    return this.#exec(sql`DELETE FROM reading_list WHERE id = ${id} AND id != 'to-read' RETURNING id`).toArray().length > 0;
+    return this.#exec(sql`DELETE FROM reading_list WHERE id = ${id} RETURNING id`).toArray().length > 0;
   }
 
   readingListMemberships(documentId: DocumentId): readonly ReadingListId[] {
@@ -367,12 +366,12 @@ export class User extends DurableObject<UserEnv> {
   setReadingListDocument(
     id: ReadingListId,
     documentId: DocumentId,
-    save: { readonly lang: Lang; readonly addedAt: Timestamp } | null,
+    save: { readonly lang: Lang; readonly createdAt: Timestamp } | null,
   ): boolean {
     if (!this.#exec(sql`SELECT id FROM reading_list WHERE id = ${id}`).toArray().length) return false;
     if (save) {
-      this.#exec(sql`INSERT INTO reading_list_document (list_id, document_id, lang, added_at)
-        VALUES (${id}, ${documentId}, ${save.lang}, ${save.addedAt}) ON CONFLICT DO NOTHING`);
+      this.#exec(sql`INSERT INTO reading_list_document (list_id, document_id, lang, created_at)
+        VALUES (${id}, ${documentId}, ${save.lang}, ${save.createdAt}) ON CONFLICT DO NOTHING`);
     } else {
       this.#exec(sql`DELETE FROM reading_list_document WHERE list_id = ${id} AND document_id = ${documentId}`);
     }
@@ -383,14 +382,14 @@ export class User extends DurableObject<UserEnv> {
     id: ReadingListId,
     lang: Lang | undefined,
     page: PageRequest<ReadingKey>,
-  ): Paginated<{ readonly documentId: DocumentId; readonly addedAt: Timestamp }, ReadingKey> | null {
+  ): Paginated<{ readonly documentId: DocumentId; readonly createdAt: Timestamp }, ReadingKey> | null {
     if (!this.#exec(sql`SELECT id FROM reading_list WHERE id = ${id}`).toArray().length) return null;
     const { limit } = page;
     const rows = this.#exec(readingListDocumentsQuery(id, lang, page))
       .toArray()
-      .map((row) => ({ documentId: schemas.DocumentId.parse(row["documentId"]), addedAt: schemas.Timestamp.parse(row["addedAt"]) }));
+      .map((row) => ({ documentId: schemas.DocumentId.parse(row["documentId"]), createdAt: schemas.Timestamp.parse(row["createdAt"]) }));
     return paginate(
-      rows.map((item) => ({ item, key: [item.addedAt, item.documentId] as const })),
+      rows.map((item) => ({ item, key: [item.createdAt, item.documentId] as const })),
       limit,
     );
   }

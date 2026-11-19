@@ -5,11 +5,12 @@ import type { PageRequest } from "@skolia/shared/page";
 import { desc, eq, gt, lit, lt, row, select, type Query } from "@skolia/util/query";
 import { sql } from "@skolia/util/sql";
 
-export function readingListDocumentsQuery(id: ReadingListId, lang: Lang | undefined, { after, limit }: PageRequest<ReadingKey>) {
-  return sql`SELECT document_id AS documentId, added_at AS addedAt FROM reading_list_document
-    WHERE list_id = ${id} ${lang === undefined ? sql`` : sql`AND lang = ${lang}`}
-    ${after === undefined ? sql`` : sql`AND (added_at, document_id) < (${after[0]}, ${after[1]})`}
-    ORDER BY added_at DESC, document_id DESC LIMIT ${limit + 1}`;
+export function readingListDocumentsQuery(id: ReadingListId, lang: Lang | undefined, { after, limit }: PageRequest<ReadingKey>): Query {
+  return select({ documentId: "document_id", createdAt: "created_at" })
+    .from("reading_list_document")
+    .where(eq("list_id", id), lang !== undefined && eq("lang", lang), after !== undefined && lt(row("created_at", "document_id"), after))
+    .orderBy(desc("created_at"), desc("document_id"))
+    .limit(limit + 1);
 }
 
 /** A cloze card's text, and where its blank starts, as card_blank indexes them: a query

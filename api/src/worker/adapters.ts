@@ -152,8 +152,8 @@ export class DurableObjectUsers implements UserData {
   async readingLists(userId: UserId): Promise<readonly ReadingList[]> {
     return this.users.getByName(userId).readingLists();
   }
-  async createReadingList(userId: UserId, id: ReadingListId, name: string, now: Timestamp): Promise<boolean> {
-    return this.users.getByName(userId).createReadingList(id, name, now);
+  async createReadingList(userId: UserId, name: string, now: Timestamp): Promise<ReadingListId | null> {
+    return this.users.getByName(userId).createReadingList(name, now);
   }
   async renameReadingList(userId: UserId, id: ReadingListId, name: string): Promise<boolean> {
     return this.users.getByName(userId).renameReadingList(id, name);
@@ -168,7 +168,7 @@ export class DurableObjectUsers implements UserData {
     userId: UserId,
     id: ReadingListId,
     documentId: DocumentId,
-    save: { readonly lang: Lang; readonly addedAt: Timestamp } | null,
+    save: { readonly lang: Lang; readonly createdAt: Timestamp } | null,
   ): Promise<boolean> {
     return this.users.getByName(userId).setReadingListDocument(id, documentId, save);
   }

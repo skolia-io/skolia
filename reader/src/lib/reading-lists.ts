@@ -10,9 +10,7 @@ const membershipKey = (id: DocumentId) => [...READING_LISTS_KEY, "memberships", 
 const documentsKey = (id: ReadingListId) => [...READING_LISTS_KEY, "documents", id] as const;
 export function findReadingLists(lists: readonly ReadingList[] = [], search: string): readonly ReadingList[] {
   const needle = search.trim().toLocaleLowerCase();
-  return lists
-    .filter((list) => list.name.toLocaleLowerCase().includes(needle))
-    .toSorted((a, b) => Number(b.id === "to-read") - Number(a.id === "to-read") || a.name.localeCompare(b.name));
+  return lists.filter((list) => list.name.toLocaleLowerCase().includes(needle)).toSorted((a, b) => a.name.localeCompare(b.name));
 }
 
 export function queryReadingLists(enabled: () => boolean = () => true) {

@@ -321,20 +321,21 @@ function deps(signedIn: boolean, annotations: readonly Annotation[]): Deps {
     "Poetry",
     "For a rainy day",
   ].map((name, index) => ({
-    id: ReadingListId.parse(index === 0 ? "to-read" : `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`),
+    id: ReadingListId.parse(index + 1),
     name,
     documentsCount: 0,
-    addedAt: Timestamp.parse(NOW.toISOString()),
+    createdAt: Timestamp.parse(NOW.toISOString()),
   }));
+  let nextListId = readingLists.length + 1;
   let memberships: readonly {
     readonly listId: ReadingListIdType;
     readonly documentId: DocumentIdType;
-    readonly addedAt: ReturnType<typeof Timestamp.parse>;
+    readonly createdAt: ReturnType<typeof Timestamp.parse>;
   }[] = [
-    { listId: ReadingListId.parse("to-read"), documentId: PETIT_PRINCE.id, addedAt: Timestamp.parse(NOW.toISOString()) },
-    { listId: readingLists[1]!.id, documentId: LALKA, addedAt: Timestamp.parse(NOW.toISOString()) },
-    { listId: readingLists[3]!.id, documentId: PETIT_PRINCE.id, addedAt: Timestamp.parse(NOW.toISOString()) },
-    { listId: readingLists[3]!.id, documentId: LALKA, addedAt: Timestamp.parse(NOW.toISOString()) },
+    { listId: readingLists[0]!.id, documentId: PETIT_PRINCE.id, createdAt: Timestamp.parse(NOW.toISOString()) },
+    { listId: readingLists[1]!.id, documentId: LALKA, createdAt: Timestamp.parse(NOW.toISOString()) },
+    { listId: readingLists[3]!.id, documentId: PETIT_PRINCE.id, createdAt: Timestamp.parse(NOW.toISOString()) },
+    { listId: readingLists[3]!.id, documentId: LALKA, createdAt: Timestamp.parse(NOW.toISOString()) },
   ];
   const withCounts = () =>
     readingLists.map((list) => ({ ...list, documentsCount: memberships.filter((item) => item.listId === list.id).length }));
@@ -377,9 +378,10 @@ function deps(signedIn: boolean, annotations: readonly Annotation[]): Deps {
         settings = next;
       },
       readingLists: async () => withCounts(),
-      createReadingList: async (_userId, id, name, addedAt) => {
-        readingLists = [...readingLists, { id, name, addedAt, documentsCount: 0 }];
-        return true;
+      createReadingList: async (_userId, name, createdAt) => {
+        const id = ReadingListId.parse(nextListId++);
+        readingLists = [...readingLists, { id, name, createdAt, documentsCount: 0 }];
+        return id;
       },
       renameReadingList: async (_userId, id, name) => {
         readingLists = readingLists.map((list) => (list.id === id ? { ...list, name } : list));
@@ -393,7 +395,7 @@ function deps(signedIn: boolean, annotations: readonly Annotation[]): Deps {
       readingListMemberships: async (_userId, id) => memberships.filter((item) => item.documentId === id).map((item) => item.listId),
       setReadingListDocument: async (_userId, listId, documentId, save) => {
         memberships = memberships.filter((item) => item.listId !== listId || item.documentId !== documentId);
-        if (save) memberships = [...memberships, { listId, documentId, addedAt: save.addedAt }];
+        if (save) memberships = [...memberships, { listId, documentId, createdAt: save.createdAt }];
         return true;
       },
       readingListDocuments: async (_userId, listId, lang) => ({

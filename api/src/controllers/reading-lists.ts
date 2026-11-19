@@ -7,7 +7,6 @@ import {
   type ReadingKey,
   type ReadingListDocument,
 } from "@skolia/shared/api";
-import { ReadingListId as ListId } from "@skolia/shared/schemas";
 import type { PageRequest } from "@skolia/shared/page";
 import type { Deps } from "../ports.ts";
 import { listed } from "./documents.ts";
@@ -18,10 +17,8 @@ export async function all(deps: Deps, user: User) {
 }
 
 export async function create(deps: Deps, user: User, name: string) {
-  const id = ListId.parse(crypto.randomUUID());
-  return (await deps.users.createReadingList(user.id, id, name, timestamp(deps.now())))
-    ? ok({ id })
-    : fail(409, "You can have up to 200 reading lists.");
+  const id = await deps.users.createReadingList(user.id, name, timestamp(deps.now()));
+  return id === null ? fail(409, "You can have up to 200 reading lists.") : ok({ id });
 }
 
 export async function rename(deps: Deps, user: User, id: ReadingListId, name: string) {
@@ -29,7 +26,6 @@ export async function rename(deps: Deps, user: User, id: ReadingListId, name: st
 }
 
 export async function remove(deps: Deps, user: User, id: ReadingListId) {
-  if (id === "to-read") return fail(400, "The default reading list cannot be deleted.");
   return (await deps.users.deleteReadingList(user.id, id)) ? NO_CONTENT : fail(404, "No such reading list");
 }
 
@@ -45,7 +41,7 @@ export async function save(deps: Deps, user: User, id: ReadingListId, documentId
     user.id,
     id,
     documentId,
-    document ? { lang: document.lang, addedAt: timestamp(deps.now()) } : null,
+    document ? { lang: document.lang, createdAt: timestamp(deps.now()) } : null,
   ))
     ? NO_CONTENT
     : fail(404, "No such reading list");
@@ -58,9 +54,9 @@ export async function documents(deps: Deps, user: User, id: ReadingListId, lang:
     found.items.map((item) => item.documentId),
     user.id,
   );
-  const items = found.items.flatMap(({ documentId, addedAt }) => {
+  const items = found.items.flatMap(({ documentId, createdAt }) => {
     const record = documents.get(documentId);
-    return record === undefined ? [] : [{ document: listed(record, user), addedAt } satisfies ReadingListDocument];
+    return record === undefined ? [] : [{ document: listed(record, user), createdAt } satisfies ReadingListDocument];
   });
   return ok({ items, next: found.next });
 }
