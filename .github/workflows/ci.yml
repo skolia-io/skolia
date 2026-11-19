@@ -36,6 +36,7 @@ concurrency:
 # actions: read is for actions-timeline (deploy.yml), which lists the run's jobs
 permissions:
   contents: read
+  pull-requests: read
   actions: read
 
 env:
@@ -168,7 +169,7 @@ jobs:
   # Once the preview's Worker is deployed, even if its end-to-end tests then fail: links to it
   # for a tester, with the commit it runs. One comment, edited by each deploy.
   comment-preview:
-    if: always() && needs.deploy-preview.outputs.serving == 'true'
+    if: ${{ !cancelled() && needs.deploy-preview.outputs.serving == 'true' }}
     needs: [plan, deploy-preview]
     runs-on: ubuntu-24.04
     permissions:
@@ -183,7 +184,12 @@ jobs:
       RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
       - uses: actions/checkout@v7
-      - run: |
+      - id: preview
+        uses: ./.github/actions/preview-state
+        with:
+          env: pr-${{ github.event.number }}
+      - if: steps.preview.outputs.state == 'open'
+        run: |
           case $RESULT in
             success) tests="passed" ;;
             current) tests="passed on an earlier deploy of the same code" ;;

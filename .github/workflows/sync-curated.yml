@@ -13,6 +13,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 env:
   CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
@@ -34,4 +35,9 @@ jobs:
           fetch-depth: 0
       - uses: ./.github/actions/setup
       - uses: ./.github/actions/pnpm
-      - run: just sync-curated ${{ inputs.env }}
+      - id: preview
+        uses: ./.github/actions/preview-state
+        with:
+          env: ${{ inputs.env }}
+      - if: steps.preview.outputs.state == 'open'
+        run: just sync-curated ${{ inputs.env }}

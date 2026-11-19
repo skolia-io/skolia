@@ -1,0 +1,30 @@
+name: Check preview state
+description: Check whether the preview's pull request is still open
+inputs:
+  env:
+    description: Deployment environment
+    required: true
+outputs:
+  state:
+    description: The current pull request state, or open for staging and production
+    value: ${{ steps.state.outputs.state }}
+runs:
+  using: composite
+  steps:
+    - id: state
+      shell: bash
+      env:
+        DEPLOY_ENV: ${{ inputs.env }}
+        GH_TOKEN: ${{ github.token }}
+        GH_REPO: ${{ github.repository }}
+      run: |
+        state=open
+        if [[ "$DEPLOY_ENV" == pr-* ]]; then
+          state=$(gh api "repos/{owner}/{repo}/pulls/${DEPLOY_ENV#pr-}" --jq .state)
+          case "$state" in
+            open) ;;
+            closed) echo "Skipping preview work for closed pull request #${DEPLOY_ENV#pr-}." ;;
+            *) echo "Unexpected pull request state: '$state'" >&2; exit 1 ;;
+          esac
+        fi
+        echo "state=$state" >> "$GITHUB_OUTPUT"

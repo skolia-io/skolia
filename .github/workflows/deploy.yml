@@ -9,7 +9,8 @@ name: Deploy
 # One deploy of an environment runs at a time (ci.yml's concurrency), so no older deploy
 # lands between the plan and what it skipped. A newer push cancels the run, but a step that
 # changes what's deployed finishes first (.github/uninterruptible.sh). Previews (pr-<N>)
-# share one GitHub environment, preview.
+# share one GitHub environment, preview. Jobs check the PR again before using its preview,
+# since reruns can start after it closes.
 
 on:
   workflow_call:
@@ -31,6 +32,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
   actions: read
 
 env:
@@ -86,7 +88,12 @@ jobs:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
       - uses: ./.github/actions/pnpm
-      - run: .github/uninterruptible.sh just deploy-infra ${{ inputs.env }}
+      - id: preview
+        uses: ./.github/actions/preview-state
+        with:
+          env: ${{ inputs.env }}
+      - if: steps.preview.outputs.state == 'open'
+        run: .github/uninterruptible.sh just deploy-infra ${{ inputs.env }}
 
   # The lexicon for cards, built with Nix from the lexicon and venv build-ingest-image put
   # in Cachix (just load-lexicon), so after it when it runs
@@ -99,7 +106,12 @@ jobs:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
       - uses: ./.github/actions/pnpm
-      - run: just load-lexicon ${{ inputs.env }}
+      - id: preview
+        uses: ./.github/actions/preview-state
+        with:
+          env: ${{ inputs.env }}
+      - if: steps.preview.outputs.state == 'open'
+        run: just load-lexicon ${{ inputs.env }}
         env:
           CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
 
@@ -113,7 +125,12 @@ jobs:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
       - uses: ./.github/actions/pnpm
-      - run: .github/uninterruptible.sh just deploy-internal ${{ inputs.env }}
+      - id: preview
+        uses: ./.github/actions/preview-state
+        with:
+          env: ${{ inputs.env }}
+      - if: steps.preview.outputs.state == 'open'
+        run: .github/uninterruptible.sh just deploy-internal ${{ inputs.env }}
 
   # Its status publisher, storage and images must exist first.
   deploy-ingest:
@@ -127,7 +144,12 @@ jobs:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
       - uses: ./.github/actions/pnpm
-      - run: .github/uninterruptible.sh infra/deploy-ingest.sh ${{ inputs.env }} deploy
+      - id: preview
+        uses: ./.github/actions/preview-state
+        with:
+          env: ${{ inputs.env }}
+      - if: steps.preview.outputs.state == 'open'
+        run: .github/uninterruptible.sh infra/deploy-ingest.sh ${{ inputs.env }} deploy
 
   # After the lexicon is loaded: the end-to-end tests' card and lexicon journeys read it
   deploy-web:
@@ -156,7 +178,12 @@ jobs:
           fetch-depth: 0
       - uses: ./.github/actions/setup
       - uses: ./.github/actions/pnpm
+      - id: preview
+        uses: ./.github/actions/preview-state
+        with:
+          env: ${{ inputs.env }}
       - id: deploy
+        if: steps.preview.outputs.state == 'open'
         run: |
           .github/uninterruptible.sh just deploy-web ${{ inputs.env }}
           echo "deployed=true" >> "$GITHUB_OUTPUT"
@@ -178,9 +205,14 @@ jobs:
           fetch-depth: 0
       - uses: ./.github/actions/setup
       - uses: ./.github/actions/pnpm
-      - run: just e2e ${{ inputs.env }}
+      - id: preview
+        uses: ./.github/actions/preview-state
+        with:
+          env: ${{ inputs.env }}
+      - if: steps.preview.outputs.state == 'open'
+        run: just e2e ${{ inputs.env }}
       - id: result
-        if: always()
+        if: always() && steps.preview.outputs.state != 'closed'
         run: echo "result=${{ job.status }}" >> "$GITHUB_OUTPUT"
 
   sync-curated:
