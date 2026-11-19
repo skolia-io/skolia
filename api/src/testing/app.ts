@@ -4,13 +4,20 @@ import { brotliCompressSync } from "node:zlib";
 import { hc, type ClientResponse } from "hono/client";
 import * as schemas from "@skolia/shared/schemas";
 import type { DocumentId, DocumentKey, DocumentSummary, Lang, NewClozeInput, Paginated } from "@skolia/shared/api";
+import type { Versions } from "@skolia/shared/schema";
 import { partKey, statusKey, versionsKey } from "@skolia/shared/keys";
 import { allPages, encodeCursor, type Cursor } from "@skolia/shared/page";
 import { createApp, type AppType } from "../app.ts";
-import type { Auth, IngestJobs, JobQueue } from "../ports.ts";
+import type { Auth } from "../ports/auth.ts";
+import type { IngestJobs, JobQueue } from "../ports/ingest.ts";
 import type { IngestParams } from "@skolia/ingest/rpc";
 import { sql } from "@skolia/util/sql";
-import { IngestRuns, D1Documents, D1Lexicon, DurableObjectUsers, R2Blobs, lexiconsOf, prepare, type JobsOf } from "../worker/adapters.ts";
+import { IngestRuns, type JobsOf } from "../worker/adapters/ingest.ts";
+import { D1Documents } from "../worker/adapters/documents.ts";
+import { D1Lexicon, lexiconsOf } from "../worker/adapters/lexicon.ts";
+import { DurableObjectUsers } from "../worker/adapters/users.ts";
+import { R2Blobs } from "../worker/adapters/blobs.ts";
+import { prepare } from "@skolia/util/d1";
 import { D1IngestHistory } from "@skolia/ingest/history";
 import { ORIGIN, startLocal, type Local } from "./harness.ts";
 import { body, expectStatus } from "./responses.ts";
@@ -44,7 +51,7 @@ export function setup({ auth = local.auth, at = NOW, jobsOf = async () => null }
     lexicon: new D1Lexicon(lexiconsOf(env)),
     documents: new D1Documents(env.DB.withSession("first-primary")),
     blobs: new R2Blobs(env.BLOBS),
-    queue: recordingStarts(new IngestRuns(env.INGEST_WORKFLOW, jobsOf), local.started),
+    queue: new RecordingStarts(new IngestRuns(env.INGEST_WORKFLOW, jobsOf), local.started),
     ingestHistory: new D1IngestHistory(env.INGEST_DB),
     version: "v1.2.3",
     now: () => new Date(at),
@@ -55,14 +62,23 @@ export function setup({ auth = local.auth, at = NOW, jobsOf = async () => null }
 export type App = ReturnType<typeof setup>;
 
 /** Notes each run of ingest the API asks for, then starts it */
-function recordingStarts(runs: JobQueue, started: IngestParams[]): JobQueue {
-  return {
-    async start(doc, lang, versions) {
-      await runs.start(doc, lang, versions);
-      started.push({ doc, lang });
-    },
-    jobs: (lang) => runs.jobs(lang),
-  };
+class RecordingStarts implements JobQueue {
+  private readonly runs: JobQueue;
+  private readonly started: IngestParams[];
+
+  constructor(runs: JobQueue, started: IngestParams[]) {
+    this.runs = runs;
+    this.started = started;
+  }
+
+  async start(doc: DocumentId, lang: Lang, versions: Versions | null): Promise<void> {
+    await this.runs.start(doc, lang, versions);
+    this.started.push({ doc, lang });
+  }
+
+  jobs(lang: Lang): Promise<IngestJobs | null> {
+    return this.runs.jobs(lang);
+  }
 }
 
 /** What a language's ingest container answers, idle unless given */

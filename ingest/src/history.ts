@@ -1,7 +1,7 @@
 // The jobs the ingest containers ran, in skolia-ingest's D1 database (ingest/migrations):
 // each run of IngestWorkflow stores its job's attempts, and the ingest Worker serves the
 // history over RPC.
-import type { DocumentId, IngestJobRecord, Lang, Timestamp } from "@skolia/shared/api";
+import type { DocumentId, IngestHistory, IngestJobRecord, Lang, Timestamp } from "@skolia/shared/api";
 import type { JobAttempt } from "@skolia/shared/schema";
 import * as schemas from "@skolia/shared/schemas";
 import { prepare } from "@skolia/util/d1";
@@ -38,7 +38,7 @@ function pruneQuery(before: Timestamp): Sql {
   return sql`DELETE FROM ingest_job WHERE started_at < ${before}`;
 }
 
-export class D1IngestHistory {
+export class D1IngestHistory implements IngestHistory {
   private readonly db: D1Database;
 
   constructor(db: D1Database) {

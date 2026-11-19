@@ -14,7 +14,7 @@ import type { Cursor } from "@skolia/shared/page";
 import { sql } from "@skolia/util/sql";
 import { ALICE, NOW, TEXT, client, importer, local, raw, refusesBadPages, setup, useLocal, walk, type App } from "./testing/app.ts";
 import { body, expectStatus } from "./testing/responses.ts";
-import { prepare } from "./worker/adapters.ts";
+import { prepare } from "@skolia/util/d1";
 
 useLocal();
 

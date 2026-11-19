@@ -6,7 +6,8 @@ import type { Status } from "@skolia/shared/schema";
 import type { StatusPublisher } from "@skolia/shared/status";
 import * as schemas from "@skolia/shared/schemas";
 import { publishStatus } from "../controllers/documents.ts";
-import { D1Documents, R2Blobs } from "./adapters.ts";
+import { D1Documents } from "./adapters/documents.ts";
+import { R2Blobs } from "./adapters/blobs.ts";
 
 interface Env {
   DB: D1Database;

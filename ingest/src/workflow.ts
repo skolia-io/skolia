@@ -4,7 +4,7 @@
 // tried again; the attempts it made are lost with it.
 //
 // The API writes the queued status, then starts a run, named for the document and the bundle
-// version it's to make (api/src/worker/adapters.ts IngestRuns), so a run asked for twice is one
+// version it's to make (api/src/worker/adapters/ingest.ts IngestRuns), so a run asked for twice is one
 // run. From then on the run writes the status.
 import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep, type WorkflowStepConfig } from "cloudflare:workers";
 import { timestamp, type DocumentId } from "@skolia/shared/api";

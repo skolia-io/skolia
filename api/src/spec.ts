@@ -7,7 +7,7 @@ import type { OpenAPIV3_1 } from "openapi-types";
 import { createApp } from "./app.ts";
 import { API_KEY_HEADER } from "./auth.ts";
 import { MARK, TAGS, type Mark, type Specs } from "./openapi.ts";
-import type { Deps } from "./ports.ts";
+import type { Deps } from "./ports/index.ts";
 
 const DOCUMENTATION = {
   openapi: "3.1.0",

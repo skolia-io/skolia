@@ -14,7 +14,7 @@ import {
 } from "@skolia/shared/api";
 import { docId, statusKey, textKey } from "@skolia/shared/keys";
 import type { Cursor } from "@skolia/shared/page";
-import type { IngestJobs } from "./ports.ts";
+import type { IngestJobs } from "./ports/ingest.ts";
 import {
   ALICE,
   NOW,

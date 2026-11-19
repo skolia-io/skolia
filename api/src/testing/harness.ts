@@ -8,9 +8,10 @@ import { RoleName, UserId } from "@skolia/shared/schemas";
 import * as z from "zod";
 import type { IngestParams } from "@skolia/ingest/rpc";
 import { authOptions, toAuth, type AuthConfig } from "../auth.ts";
-import type { Auth } from "../ports.ts";
+import type { Auth } from "../ports/auth.ts";
 import { sql } from "@skolia/util/sql";
-import { lexiconBinding, lexiconsOf, prepare, type LexiconBindings } from "../worker/adapters.ts";
+import { lexiconBinding, lexiconsOf, type LexiconBindings } from "../worker/adapters/lexicon.ts";
+import { prepare } from "@skolia/util/d1";
 import type { User as UserObject } from "../worker/user.ts";
 import type { RecorderEnv } from "./ingest-recorder.ts";
 

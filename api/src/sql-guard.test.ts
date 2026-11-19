@@ -7,7 +7,7 @@ const ROOT = join(import.meta.dirname, "..", "..");
 const DIRS = ["api/src", "util"];
 
 /** A query run other than from a Sql: D1's prepare of anything but a Sql's text (prepare in
- * worker/adapters.ts), or SqlStorage's or D1's exec of anything but a Sql's text and
+ * util/d1.ts), or SqlStorage's or D1's exec of anything but a Sql's text and
  * parameters (User's #exec) or a migration step's checksummed text. */
 const RUN = /\.prepare\((?!text\))|\b(?:sql|db|DB)\.exec\((?!text, |step\.sql\))/gu;
 /** sql.raw of anything but one string literal. */

@@ -31,7 +31,7 @@ import {
   responses,
   validator,
 } from "./openapi.ts";
-import type { Deps } from "./ports.ts";
+import type { Deps } from "./ports/index.ts";
 import spec from "../openapi.json" with { type: "json" };
 
 const logger = log("api");

@@ -6,8 +6,12 @@ import { runBackgroundMigrations } from "./background-migrations/runner.ts";
 import { NO_AUTH, createAuth } from "../auth.ts";
 import type { IngesterRpc, IngestParams } from "@skolia/ingest/rpc";
 import { log } from "@skolia/util/log";
-import type { Auth } from "../ports.ts";
-import { IngestRuns, D1Documents, D1Lexicon, DurableObjectUsers, R2Blobs, lexiconsOf, type LexiconBindings } from "./adapters.ts";
+import type { Auth } from "../ports/auth.ts";
+import { RpcIngestHistory, IngestRuns } from "./adapters/ingest.ts";
+import { D1Documents } from "./adapters/documents.ts";
+import { D1Lexicon, lexiconsOf, type LexiconBindings } from "./adapters/lexicon.ts";
+import { DurableObjectUsers } from "./adapters/users.ts";
+import { R2Blobs } from "./adapters/blobs.ts";
 import type { User } from "./user.ts";
 
 export { User } from "./user.ts";
@@ -71,7 +75,7 @@ export default {
       documents: new D1Documents(env.DB.withSession("first-primary")),
       blobs: new R2Blobs(env.BLOBS),
       queue: new IngestRuns(env.INGEST_WORKFLOW, (lang) => env.INGESTER.getByName(lang).jobs(lang)),
-      ingestHistory: { recent: (limit) => env.INGESTER.getByName("history").recent(limit) },
+      ingestHistory: new RpcIngestHistory(env.INGESTER),
       now: () => new Date(),
     });
     return app.fetch(request, env, ctx);

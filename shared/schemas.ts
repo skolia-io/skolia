@@ -548,7 +548,7 @@ export const JobResult = gen.JobResult;
 export const JobAnswer = gen.JobAnswer;
 
 /** An IngestWorkflow instance (ingest/src/workflow.ts): one document made to one bundle
- * version, `{doc}-{short hash of the bundle name}` (api/src/worker/adapters.ts runId) */
+ * version, `{doc}-{short hash of the bundle name}` (api/src/worker/adapters/ingest.ts runId) */
 export const IngestRunId = z
   .string()
   .regex(/^[0-9a-f]{64}-[0-9a-f]{12}$/u)
