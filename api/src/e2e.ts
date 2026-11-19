@@ -37,6 +37,8 @@ const POLL_MS = 10 * 1000;
 // How long a run may take to record its job's attempts after it writes the status
 const HISTORY_TIMEOUT_MS = 60 * 1000;
 const VERSION_TIMEOUT_MS = 2 * 60 * 1000;
+const FETCH_RETRIES = 3;
+const FETCH_RETRY_DELAY_MS = 500;
 
 const TEXTS: Record<Lang, string> = {
   en: "I'm looking for the dog that ran away last night.",
@@ -54,15 +56,33 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
  * than one of the API's, which aren't HTML. */
 const isEdge404 = (response: Response) => response.status === 404 && (response.headers.get("content-type") ?? "").startsWith("text/html");
 
-/** fetch, trying Cloudflare's 404 again for up to VERSION_TIMEOUT_MS. A new Worker's
- * workers.dev name answers on some of Cloudflare's machines before others: a preview's
- * /api/me gave that 404 10 s after its /api/version had answered. */
+/** Retry the edge 404 while a new Worker's workers.dev name propagates. Retry network
+ * failures on reads: a write whose response was lost may already have reached the Worker. */
 async function retryingFetch(input: string | URL | Request, init?: RequestInit): Promise<Response> {
+  const request = input instanceof Request ? input : undefined;
+  const method = (init?.method ?? request?.method ?? "GET").toUpperCase();
+  const url = request?.url ?? String(input);
   const deadline = Date.now() + VERSION_TIMEOUT_MS;
+  let retries = 0;
   for (;;) {
-    const response = await fetch(input, init);
+    let response: Response;
+    try {
+      response = await fetch(input, init);
+    } catch (error) {
+      // Node's fetch reports transport errors, including ECONNRESET, through this TypeError.
+      const networkFailure = error instanceof TypeError && error.message === "fetch failed";
+      const delay = FETCH_RETRY_DELAY_MS * 2 ** retries;
+      if ((method !== "GET" && method !== "HEAD") || !networkFailure || retries >= FETCH_RETRIES || Date.now() + delay > deadline) {
+        log.error("request failed", { method, url, error });
+        throw error;
+      }
+      retries += 1;
+      log.warn("network request failed; trying again", { method, url, retry: retries, ms: delay, error });
+      await sleep(delay);
+      continue;
+    }
     if (!isEdge404(response) || Date.now() > deadline) return response;
-    log.info("Cloudflare's 404; trying again", { url: String(input instanceof Request ? input.url : input) });
+    log.info("Cloudflare's 404; trying again", { method, url });
     await sleep(POLL_MS);
   }
 }
