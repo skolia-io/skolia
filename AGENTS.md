@@ -1,4 +1,4 @@
-# Notes for Claude
+# Repository instructions
 
 - Open items and follow-ups are GitHub issues on the private repo skolia-io/tracking (`gh issue list -R skolia-io/tracking`, `gh issue create -R skolia-io/tracking -t … -b … -l …`). A PR that finishes one says so in its description, `Closes skolia-io/tracking#N` (or `Fixes`, `Resolves`), so merging it closes the issue. git-bug is no longer used.
 - A pull request's title is a conventional commit, `type(scope)?: description` (feat, fix, perf, refactor, docs, test, build, ci, chore, revert), since it becomes the squashed commit on main; pr-title.yml checks it. The description is a lowercase verb phrase saying what changes: `feat: show the word type on recognition cards`.
