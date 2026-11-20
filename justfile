@@ -264,11 +264,7 @@ deploy-oauth-proxy:
 deploy-ingest env:
     infra/deploy-ingest.sh {{ env }}
 
-# local (the default): against wrangler dev with fresh local state and the lexicon samples
-# (api/scripts/e2e.sh; needs Docker). Otherwise the deployed environment, after checking it serves this
-# checkout's version, with new API keys for the system user and a new e2e user written to its D1 first
-# (api/src/e2e-keys.ts).
-# The end-to-end tests (api/src/e2e.ts): import a text and wait until it's ready, auth, the lexicon, cards
+# Run api/tests/e2e against fresh local state (Docker) or against a deployed environment.
 e2e env="local":
     #!/usr/bin/env bash
     set -euo pipefail
@@ -276,12 +272,25 @@ e2e env="local":
       just install build images
       exec api/scripts/e2e.sh {{ langs }}
     fi
-    url=$(just url {{ env }})
-    E2E_API_KEY=$(openssl rand -hex 32) E2E_USER_KEY=$(openssl rand -hex 32)
-    export E2E_API_KEY E2E_USER_KEY
-    just d1-sql {{ env }} api/src/e2e-keys.ts
-    node api/src/e2e.ts "$url" "$(infra/plan.py version)"
+    just e2e-tests {{ env }} "$(just url {{ env }})" "$(infra/plan.py version)"
     infra/plan.py deployed {{ env }} e2e
+
+[private]
+[positional-arguments]
+e2e-tests env url version persist="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    export E2E_URL="$2" E2E_VERSION="$3"
+    node api/tests/e2e/ready.ts
+    E2E_RUN_ID=$(openssl rand -hex 16)
+    E2E_API_KEY=$(openssl rand -hex 32)
+    E2E_USER_KEY=$(openssl rand -hex 32)
+    export E2E_RUN_ID E2E_API_KEY E2E_USER_KEY
+    trap 'E2E_KEYS_ACTION=cleanup just d1-sql "$1" api/src/e2e-keys.ts "$4" || exit 1' EXIT
+    started=$SECONDS
+    just d1-sql "$1" api/src/e2e-keys.ts "$4"
+    echo "Provisioned e2e credentials in $((SECONDS - started))s"
+    node --test --test-concurrency=4 api/tests/e2e/*.test.ts
 
 # Make the curated user's documents match curated/ (api/src/sync-curated.ts); with --check, only list what that takes.
 # A preview gets 5 of the texts (--sample), spread over languages, kinds and annotations.
@@ -313,14 +322,15 @@ url env:
 # a file goes through D1's import, which refuses every other query meanwhile, such as the
 # end-to-end tests' while sync-curated writes its key
 [private]
-d1-sql env script:
+[positional-arguments]
+d1-sql env script persist="":
     #!/usr/bin/env bash
     set -euo pipefail
-    sql=$(node {{ script }})
-    if [ {{ env }} = local ]; then
-      pnpm --dir api exec wrangler d1 execute DB --local --env='' --command "$sql" >/dev/null
+    sql=$(node "$2")
+    if [ "$1" = local ]; then
+      pnpm --dir api exec wrangler d1 execute DB --local --env='' ${3:+--persist-to "$3"} --command "$sql" >/dev/null
     else
-      infra/wrangler.sh {{ env }} d1 execute DB --remote --yes --command "$sql" >/dev/null
+      infra/wrangler.sh "$1" d1 execute DB --remote --yes --command "$sql" >/dev/null
     fi
 
 # Add infra/.terraform.lock.hcl's providers to skolia-tf-providers, which CI installs them from (infra/terraformrc)

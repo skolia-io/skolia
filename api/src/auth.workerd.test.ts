@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { insertKeySql } from "./api-keys.ts";
 import { API_KEY_HEADER, NO_AUTH, createAuth } from "./auth.ts";
-import { SYSTEM_USER, e2eKeysSql } from "./e2e-keys.ts";
+import { SYSTEM_USER, e2eCleanupSql, e2eKeysSql, e2eUserId, e2eUserKey } from "./e2e-keys.ts";
 import { CURATED_USER, syncCuratedKeySql } from "./sync-curated-key.ts";
 import { ALICE, TEXT, client, importText, importer, local, raw, setup, useLocal } from "./testing/app.ts";
 import { ORIGIN, authConfig } from "./testing/harness.ts";
@@ -59,24 +59,24 @@ test("without its configuration sign-in answers 503 and nobody is signed in", as
   assert.equal((await client(app).me.$get()).status, 401);
 });
 
-test("the end-to-end tests' keys, as e2e-keys.ts writes them, sign in the system user and a new user; earlier ones don't", async () => {
+test("end-to-end runs get independent credentials and clean up only their own fixtures", async () => {
   const app = setup();
   const keys = { system: "ab".repeat(32), user: "12".repeat(32) };
-  const earlier = { system: "cd".repeat(32), user: "34".repeat(32) };
-  const run = (k: typeof keys, at: string) => local.env.DB.batch(e2eKeysSql(k, at).map((q) => local.env.DB.prepare(q)));
-  await run(earlier, "2026-11-04T00:00:00.000Z");
-  const earlierUser = await whoIs(app, earlier.user);
-  await run(keys, "2026-11-05T00:00:00.000Z");
+  const other = { system: "cd".repeat(32), user: "34".repeat(32) };
+  const batch = (queries: string[]) => local.env.DB.batch(queries.map((query) => local.env.DB.prepare(query)));
+  const at = new Date().toISOString();
+  await batch(e2eKeysSql("first", keys, at));
+  await batch(e2eKeysSql("second", other, at));
   assert.equal(await whoIs(app, keys.system), SYSTEM_USER);
-  const user = await whoIs(app, keys.user);
-  assert.match(user ?? "", /^e2e-/);
-  assert.notEqual(user, earlierUser);
+  for (const scenario of ["en", "fr", "pl"] as const) {
+    assert.equal(await whoIs(app, e2eUserKey(keys.user, scenario)), e2eUserId("first", scenario));
+  }
   assert.equal((await importText(app, TEXT, { headers: { [API_KEY_HEADER]: keys.system }, visibility: "private" })).status, 202);
-  // The keys and user they replaced
-  assert.equal(await whoIs(app, earlier.system), null);
-  assert.equal(await whoIs(app, earlier.user), null);
-  assert.equal((await local.env.DB.prepare(`SELECT count(*) AS n FROM "user" WHERE "id" LIKE 'e2e-%'`).first<{ n: number }>())?.n, 1);
-  assert.equal((await importText(app, "Inny tekst.", { headers: { [API_KEY_HEADER]: "ef".repeat(32) } })).status, 401);
+  await batch(e2eCleanupSql("first"));
+  assert.equal(await whoIs(app, keys.system), null);
+  assert.equal(await whoIs(app, e2eUserKey(keys.user, "en")), null);
+  assert.equal(await whoIs(app, other.system), SYSTEM_USER);
+  assert.equal(await whoIs(app, e2eUserKey(other.user, "en")), e2eUserId("second", "en"));
 });
 
 async function whoIs(app: ReturnType<typeof setup>, key: string): Promise<string | null> {
@@ -91,7 +91,7 @@ test("sync-curated's key signs in the curated user, a system user; new end-to-en
   const key = "56".repeat(32);
   await local.env.DB.batch(syncCuratedKeySql(key, "2026-11-04T00:00:00.000Z").map((q) => local.env.DB.prepare(q)));
   await local.env.DB.batch(
-    e2eKeysSql({ system: "ab".repeat(32), user: "12".repeat(32) }, "2026-11-05T00:00:00.000Z").map((q) => local.env.DB.prepare(q)),
+    e2eKeysSql("test", { system: "ab".repeat(32), user: "12".repeat(32) }, new Date().toISOString()).map((q) => local.env.DB.prepare(q)),
   );
   const me = await body("me", client(app, new Headers({ [API_KEY_HEADER]: key })).me.$get());
   assert.deepEqual([me.id, me.type], [CURATED_USER, "system"]);

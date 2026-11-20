@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Local end to end: wrangler dev with all three Workers, the ingest containers and empty local
 # D1, R2 and queue, each language's lexicon sample (as a preview has) loaded, then the
-# end-to-end tests (src/e2e.ts) and the curated texts' sync (src/sync-curated.ts, twice: the second run must find
+# end-to-end tests (tests/e2e) and the curated texts' sync (src/sync-curated.ts, twice: the second run must find
 # nothing to do) against it. Needs Docker, the reader build and the ingest images (just
 # images). Port 8787 must be free: api/.env points the containers at it.
 # usage: e2e.sh <lang>...
@@ -28,7 +28,13 @@ just load-lexicon local --sample 3000 --persist-to "$api/$state"
 
 pnpm exec wrangler dev -c wrangler.jsonc -c wrangler.internal.jsonc -c ../ingest/wrangler.jsonc --persist-to "$state" --port "$port" --show-interactive-dev-session=false >"$log" 2>&1 &
 dev=$!
-trap 'kill "$dev" 2>/dev/null; wait "$dev" 2>/dev/null || true' EXIT
+stop_dev() {
+  local status=$?
+  kill "$dev" 2>/dev/null || true
+  wait "$dev" 2>/dev/null || true
+  if [ "$status" -ne 0 ]; then echo "See api/$log for the Worker logs" >&2; fi
+}
+trap stop_dev EXIT
 
 until curl -fs -o /dev/null "http://localhost:$port/api/documents"; do
   if ! kill -0 "$dev" 2>/dev/null; then
@@ -38,14 +44,9 @@ until curl -fs -o /dev/null "http://localhost:$port/api/documents"; do
   sleep 2
 done
 
-E2E_API_KEY=$(openssl rand -hex 32) E2E_USER_KEY=$(openssl rand -hex 32) SYNC_CURATED_API_KEY=$(openssl rand -hex 32)
-export E2E_API_KEY E2E_USER_KEY SYNC_CURATED_API_KEY
-node src/e2e-keys.ts > "$state/e2e-keys.sql"
-node src/sync-curated-key.ts > "$state/sync-curated-key.sql"
-d1 execute DB --file "$state/e2e-keys.sql"
-d1 execute DB --file "$state/sync-curated-key.sql"
-
-# wrangler dev serves version "dev" (define in wrangler.jsonc)
-node src/e2e.ts "http://localhost:$port" dev || { echo "end-to-end tests failed; see api/$log" >&2; exit 1; }
-node src/sync-curated.ts "http://localhost:$port" ../curated || { echo "sync-curated failed; see api/$log" >&2; exit 1; }
-node src/sync-curated.ts "http://localhost:$port" ../curated --check || { echo "sync-curated left changes; see api/$log" >&2; exit 1; }
+SYNC_CURATED_API_KEY=$(openssl rand -hex 32)
+export SYNC_CURATED_API_KEY
+just d1-sql local api/src/sync-curated-key.ts "$api/$state"
+just e2e-tests local "http://localhost:$port" dev "$api/$state"
+node src/sync-curated.ts "http://localhost:$port" ../curated
+node src/sync-curated.ts "http://localhost:$port" ../curated --check
