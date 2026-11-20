@@ -113,11 +113,14 @@ export function raw(app: App, method: string, path: string, headers: Headers | u
 export interface TestEntry {
   lemmaId: string;
   lemma: string;
-  upos: string;
-  gloss: string;
+  /** null: a spelling relations point at, with no entry */
+  upos: string | null;
+  /** null: no senses */
+  gloss: string | null;
   pronunciations?: unknown[];
   /** Compact, as in D1: [{ homonym, forms: [["psa", [0, 1]]] }] */
   paradigms?: unknown[];
+  relations?: { kind: string; targetId: string; note?: string; targetSenses?: number[] }[];
 }
 
 /** Loads a lexicon version with its feature sets, by id, and makes it the one served. */
@@ -132,16 +135,31 @@ export async function loadLexicon(
     ...entries.map((e) =>
       prepare(
         db,
-        sql`INSERT INTO entry (lemma_id, version, lemma, upos, senses, relations, pronunciations, paradigms) VALUES ${sql.tuple([
+        sql`INSERT INTO entry (lemma_id, version, lemma, upos, senses, pronunciations, paradigms) VALUES ${sql.tuple([
           e.lemmaId,
           version,
           e.lemma,
           e.upos,
-          JSON.stringify([{ gloss: e.gloss, tags: [] }]),
-          sql`'[]'`,
+          JSON.stringify(e.gloss === null ? [] : [{ gloss: e.gloss, tags: [] }]),
           JSON.stringify(e.pronunciations ?? []),
           JSON.stringify(e.paradigms ?? []),
         ])}`,
+      ),
+    ),
+    ...entries.flatMap((e) =>
+      (e.relations ?? []).map((r, ord) =>
+        prepare(
+          db,
+          sql`INSERT INTO relation (source_id, version, ord, target_id, kind, note, target_senses) VALUES ${sql.tuple([
+            e.lemmaId,
+            version,
+            ord,
+            r.targetId,
+            r.kind,
+            r.note ?? null,
+            r.targetSenses === undefined ? null : JSON.stringify(r.targetSenses),
+          ])}`,
+        ),
       ),
     ),
     ...featureSets.flatMap((set, id) =>

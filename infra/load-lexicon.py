@@ -8,8 +8,9 @@
       [--sample N] [--persist-to DIR] [--built-from OUT]
   load-lexicon.py <staging|production|pr-N|local> --lang LANG --built-from OUT
       [--sample N] [--persist-to DIR]
-sqlite is analysis's {lang}.cards.sqlite (skolia-build-cards, or the Nix output
-analysis#cards-lexicon-{lang}); its meta table gives the language and version. Skipped if D1
+sqlite is analysis's {lang}.d1.sqlite (skolia-build-d1-export, or the Nix output
+analysis#d1-export-{lang}), which has D1's schema; its meta table gives the language and
+version. Skipped if D1
 already serves that version. The new version's rows go in beside the old ones, then
 loaded points at it and the old rows are deleted in batches (api/lexicon-migrations), so a
 load that stops part way leaves the old version serving and can be run again. local is wrangler
@@ -112,37 +113,54 @@ def record_built_from(target: Target, version: str, key: str) -> None:
     )
 
 
-def selection(lang: str, sample: int | None) -> str:
-    columns = (
-        "SELECT lemma_id, lemma, upos, senses, relations, pronunciations, paradigms FROM entry"
+TABLES = ("entry", "relation", "featureset")
+"""The tables the export fills, copied column for column, since it has D1's schema."""
+
+type Cell = str | int | None
+
+
+def sampled(db: sqlite3.Connection, lang: str, sample: int) -> frozenset[str]:
+    """The nodes a preview loads: every entry of wordfreq's sample most common words (run
+    the noun and the verb), not proper nouns, and the nodes their relations point at."""
+    words = frozenset(wordfreq.top_n_list(lang, sample))
+    sources = frozenset(
+        lemma_id
+        for lemma_id, lemma, upos in cast(
+            Iterable[tuple[str, str, str | None]],
+            db.execute("SELECT lemma_id, lemma, upos FROM entry WHERE upos IS NOT NULL"),
+        )
+        if upos != "PROPN" and lemma.lower() in words
     )
-    if sample is None:
-        return columns
-    # A word's every entry (run the noun and the verb), not its proper nouns
-    words = json.dumps(wordfreq.top_n_list(lang, sample))
-    return (
-        f"{columns} WHERE upos != 'PROPN' "
-        f"AND lemma_lower IN (SELECT value FROM json_each({quote(words)}))"
+    targets = frozenset(
+        target_id
+        for source_id, target_id in cast(
+            Iterable[tuple[str, str]], db.execute("SELECT source_id, target_id FROM relation")
+        )
+        if source_id in sources
     )
+    return sources | targets
 
 
 def statements(db: sqlite3.Connection, lang: str, version: str, sample: int | None) -> list[str]:
     which = f"version = {quote(version)}"
-    out = [f"DELETE FROM entry WHERE {which};", f"DELETE FROM featureset WHERE {which};"]
-    entries = cast(list[tuple[str, ...]], db.execute(selection(lang, sample)))
-    out += inserts(
-        "INSERT INTO entry (lemma_id, version, lemma, upos, senses, relations, "
-        "pronunciations, paradigms) VALUES",
-        ((lemma_id, version, *rest) for lemma_id, *rest in entries),
-    )
-    features = cast(
-        list[tuple[int, str, str]], db.execute("SELECT id, feature, value FROM featureset")
-    )
-    out += inserts(
-        "INSERT INTO featureset (version, id, feature, value) VALUES",
-        ((version, str(i), feature, value) for i, feature, value in features),
-        numeric=frozenset({1}),
-    )
+    out = [f"DELETE FROM {table} WHERE {which};" for table in TABLES]
+    keep = None if sample is None else sampled(db, lang, sample)
+    for table in TABLES:
+        columns = [cast(str, column[1]) for column in db.execute(f"PRAGMA table_info({table})")]
+        rows = cast(
+            Iterable[tuple[Cell, ...]], db.execute(f"SELECT {', '.join(columns)} FROM {table}")
+        )
+        if keep is not None and table == "entry":
+            lemma_id = columns.index("lemma_id")
+            rows = (row for row in rows if row[lemma_id] in keep)
+        if keep is not None and table == "relation":
+            source, target = columns.index("source_id"), columns.index("target_id")
+            rows = (row for row in rows if row[source] in keep and row[target] in keep)
+        at = columns.index("version")
+        out += inserts(
+            f"INSERT INTO {table} ({', '.join(columns)}) VALUES",
+            ((*row[:at], version, *row[at + 1 :]) for row in rows),
+        )
     out.append(
         f"INSERT INTO loaded (id, version, built_from) VALUES (1, {quote(version)}, NULL) "
         "ON CONFLICT (id) DO UPDATE SET version = excluded.version, built_from = NULL;"
@@ -150,16 +168,23 @@ def statements(db: sqlite3.Connection, lang: str, version: str, sample: int | No
     return out
 
 
-def inserts(
-    head: str, rows: Iterable[Sequence[str]], numeric: frozenset[int] = frozenset()
-) -> list[str]:
-    """Multi-row INSERTs, each under D1's longest statement. Columns in numeric aren't quoted."""
+def literal(cell: Cell) -> str:
+    match cell:
+        case None:
+            return "NULL"
+        case int():
+            return str(cell)
+        case str():
+            return quote(cell)
+
+
+def inserts(head: str, rows: Iterable[Sequence[Cell]]) -> list[str]:
+    """Multi-row INSERTs, each under D1's longest statement."""
     out: list[str] = []
     values: list[str] = []
     size = len(head) + 1
     for row in rows:
-        cells = (v if i in numeric else quote(v) for i, v in enumerate(row))
-        value = f"({', '.join(cells)})"
+        value = f"({', '.join(literal(cell) for cell in row)})"
         if values and size + len(value.encode()) + 2 > MAX_STATEMENT_BYTES:
             out.append(head + "\n" + ",\n".join(values) + ";")
             values, size = [], len(head) + 1
@@ -173,16 +198,17 @@ def inserts(
 def clean(target: Target, version: str) -> None:
     """Deletes the rows of other versions, in batches. Run on every load, so a load that
     stopped after repointing loaded is cleaned up by the next."""
-    old = f"FROM entry WHERE version != {quote(version)}"
-    batch = f"SELECT lemma_id, version {old} LIMIT {CLEAN_BATCH}"
-    delete = f"DELETE FROM entry WHERE (lemma_id, version) IN ({batch})"
-    # wrangler's local output doesn't count a delete's changes, so ask what's left
-    count = f"SELECT count(*) AS n {old}"
     replaced = ", ".join(old_versions(target, version)) or "older versions"
-    while (left := remaining(target, count)) > 0:
-        print(f"{target.env}: deleting {target.lang} {replaced}, {left} rows left")
-        wrangler(target, "--command", delete)
-    # A few thousand rows per version
+    for table, key in (("entry", "lemma_id, version"), ("relation", "source_id, version, ord")):
+        old = f"FROM {table} WHERE version != {quote(version)}"
+        batch = f"SELECT {key} {old} LIMIT {CLEAN_BATCH}"
+        delete = f"DELETE FROM {table} WHERE ({key}) IN ({batch})"
+        # wrangler's local output doesn't count a delete's changes, so ask what's left
+        count = f"SELECT count(*) AS n {old}"
+        while (left := remaining(target, count)) > 0:
+            print(f"{target.env}: deleting {target.lang} {table} {replaced}, {left} rows left")
+            wrangler(target, "--command", delete)
+    # A few thousand rows per version; last, so old_versions finds a stopped clean's versions
     wrangler(target, "--command", f"DELETE FROM featureset WHERE version != {quote(version)}")
 
 
@@ -209,7 +235,7 @@ def remaining(target: Target, count: str) -> int:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Loads a language's lexicon into its D1 database.")
     parser.add_argument("env", help="staging, production, pr-N or local")
-    parser.add_argument("sqlite", type=Path, nargs="?", help="analysis's {lang}.cards.sqlite")
+    parser.add_argument("sqlite", type=Path, nargs="?", help="analysis's {lang}.d1.sqlite")
     parser.add_argument("--sample", type=int, help="only wordfreq's N most common words")
     parser.add_argument("--persist-to", type=Path, help="wrangler dev's state directory (local)")
     parser.add_argument(

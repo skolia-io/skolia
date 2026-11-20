@@ -115,7 +115,7 @@ flowchart TB
     MOD["models (fixed-output)"]
     VENV["venv (uv2nix)"]
     LEXN["lexicon-{lang}: {lang}.sqlite"]
-    CARDS["cards-lexicon-{lang}: {lang}.cards.sqlite"]
+    D1X["d1-export-{lang}: {lang}.d1.sqlite, in D1's schema"]
     IMG["ingest-{lang} image"]
   end
   subgraph CI["GitHub Actions (ci.yml, deploy.yml)"]
@@ -146,7 +146,8 @@ flowchart TB
   PY --> VENV
   INP --> LEXN
   VENV --> LEXN
-  LEXN --> CARDS
+  LEXN --> D1X
+  APIS -- "lexicon-migrations" --> D1X
   MOD --> IMG
   VENV --> IMG
   LEXN --> IMG

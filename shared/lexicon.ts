@@ -1,5 +1,5 @@
 // Looking a token up in its document's bundle.
-import type { Bundle, Entry, Feats, Pronunciation, Recording, Sense, Token, Upos } from "@skolia/shared/schema";
+import type { Bundle, Entry, Feats, Pronunciation, Recording, Relation, Sense, Token, Upos } from "@skolia/shared/schema";
 
 /** The sentence decides these, not the form, so paradigms leave them out (see the
  * BundleParadigm docstring in analysis/src/skolia_analysis/lexicon/schema.py). */
@@ -57,7 +57,37 @@ export interface RankedSense {
 }
 
 /** Senses the token's features select first, otherwise in Wiktionary's order. */
-export function rankSenses(entry: Entry, token: Feats): RankedSense[] {
-  const ranked = entry.senses.map((sense) => ({ sense, fits: selects(sense, token) }));
+export function rankSenses(senses: readonly Sense[], token: Feats): RankedSense[] {
+  const ranked = senses.map((sense) => ({ sense, fits: selects(sense, token) }));
   return [...ranked.filter((r) => r.fits), ...ranked.filter((r) => !r.fits)];
+}
+
+/** What a word's meaning depends on: a bundle's Entry or the API's LexiconEntry. */
+type Meaning = { readonly senses: readonly Sense[]; readonly relations: readonly Relation[] };
+
+/** Wiktionary's tags for a verb's aspect, which on a borrowed sense describe the target. */
+const ASPECT_TAGS: ReadonlySet<string> = new Set(["perfective", "imperfective"]);
+
+/** The entries a word with no senses of its own takes its meaning from, its relations'
+ * targets that find has; none for a word with senses. */
+export function lenders<E>(entry: Meaning, find: (lemmaId: string) => E | undefined): E[] {
+  if (entry.senses.length > 0) return [];
+  return entry.relations.flatMap((relation) => {
+    const target = relation.lemma_id === undefined ? undefined : find(relation.lemma_id);
+    return target === undefined ? [] : [target];
+  });
+}
+
+/** An entry's senses, or with none of its own, the ones its relations name in their
+ * targets: zgolić, which Wiktionary only lists as the perfective of golić's "to down, to
+ * soak (to drink)", means that and not "to shave". A borrowed sense keeps its gloss and
+ * tags but not aspect tags, examples or selectors, which describe the target. */
+export function sensesOf(entry: Meaning, find: (lemmaId: string) => { readonly senses: readonly Sense[] } | undefined): Sense[] {
+  if (entry.senses.length > 0) return [...entry.senses];
+  return entry.relations.flatMap((relation) => {
+    const target = relation.lemma_id === undefined ? undefined : find(relation.lemma_id);
+    if (target === undefined) return [];
+    const named = relation.sense_indexes?.flatMap((i) => target.senses[i] ?? []) ?? target.senses;
+    return named.map((sense) => ({ gloss: sense.gloss, tags: sense.tags.filter((tag) => !ASPECT_TAGS.has(tag)) }));
+  });
 }

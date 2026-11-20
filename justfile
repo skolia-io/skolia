@@ -173,7 +173,7 @@ lexicon-cli lang *args:
       uv run --project analysis --locked skolia-lexicon --db "$out/$lang.sqlite" "$@"
     fi
 
-# Load each language's lexicon into its database (staging, production, pr-N or local), from its Nix build for cards.
+# Load each language's lexicon into its D1 database (staging, production, pr-N or local), from its Nix D1 export.
 # A preview gets each language's entries for wordfreq's 3,000 most common words (infra/load-lexicon.py --sample).
 # A language whose build evaluates to the Nix output D1 last loaded is skipped without building it.
 # With CACHIX_AUTH_TOKEN set (CI), a build is pushed to Cachix, so the next environment substitutes it.
@@ -183,14 +183,14 @@ load-lexicon env *flags:
     set -euo pipefail
     case {{ env }} in pr-*) sample="--sample 3000" ;; *) sample= ;; esac
     for lang in {{ langs }}; do
-      build="./analysis#cards-lexicon-$lang"
+      build="./analysis#d1-export-$lang"
       out=$(nix eval --raw "$build.outPath")
       state=$(infra/load-lexicon.py {{ env }} --lang "$lang" --built-from "$out" $sample {{ flags }})
       if [ "$state" = current ]; then echo "{{ env }}: $lang already serves $out"; continue; fi
       out=$(nix build --no-link --print-out-paths "$build")
       if [ -n "${CACHIX_AUTH_TOKEN:-}" ]; then cachix push andyyu2004 "$out"; fi
       if [ {{ env }} != local ]; then infra/plan.py deploying {{ env }} lexicon; fi
-      infra/load-lexicon.py {{ env }} "$out/$lang.cards.sqlite" --built-from "$out" $sample {{ flags }}
+      infra/load-lexicon.py {{ env }} "$out/$lang.d1.sqlite" --built-from "$out" $sample {{ flags }}
     done
     if [ {{ env }} != local ]; then infra/plan.py deployed {{ env }} lexicon; fi
 

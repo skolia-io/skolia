@@ -8,7 +8,7 @@ from typing import cast
 from .. import lang
 from ..plugin import lexicon_path
 from ..schema import Blob
-from . import build, cards, commons
+from . import build, commons, d1_export
 from .store import Lexicon
 
 
@@ -81,17 +81,20 @@ def fetch_commons_main() -> None:
     print(f"{commons.fetch(args.lang, args.out)} files", file=sys.stderr)
 
 
-def cards_main() -> None:
+def d1_export_main() -> None:
     parser = argparse.ArgumentParser(
-        prog="skolia-build-cards",
-        description="Build the lexicon review cards read (infra/load-lexicon.py loads it): "
-        "each entry with its lemma's pronunciations and compact paradigms.",
+        prog="skolia-build-d1-export",
+        description="Build the API's D1 lexicon as a SQLite file in D1's schema "
+        "(infra/load-lexicon.py loads it).",
     )
     parser.add_argument("lang", choices=lang.LANGS)
     parser.add_argument("lexicon", type=Path, help="{lang}.sqlite from skolia-build-lexicon")
+    parser.add_argument("migrations", type=Path, help="api/lexicon-migrations")
     parser.add_argument("out", type=Path, help="output .sqlite file (replaced)")
     args = parser.parse_args()
-    count = cards.build(Lexicon(args.lexicon), lang.plugin(args.lang).paradigms(), args.out)
+    count = d1_export.build(
+        Lexicon(args.lexicon), lang.plugin(args.lang).paradigms(), args.migrations, args.out
+    )
     print(f"{count} entries", file=sys.stderr)
 
 

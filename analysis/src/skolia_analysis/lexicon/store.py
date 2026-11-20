@@ -64,6 +64,11 @@ CREATE TABLE relation (
     evidence TEXT CHECK (
         evidence IS NULL OR (json_valid(evidence) AND json_type(evidence) = 'array')
     ),
+    -- The target's sense ords the evidence names; NULL: the whole entry
+    target_senses TEXT CHECK (
+        target_senses IS NULL
+        OR (json_valid(target_senses) AND json_type(target_senses) = 'array')
+    ),
     PRIMARY KEY (source_id, ord)
 ) WITHOUT ROWID;
 CREATE INDEX relation_target ON relation (target_id, source_id, ord);
@@ -101,6 +106,17 @@ CREATE TABLE recording (
 );
 CREATE INDEX recording_word ON recording (word, upos, ord);
 """
+
+
+class Edge(NamedTuple):
+    """A relation row: target_senses is its JSON array of sense ords, or None for all."""
+
+    source_id: str
+    ord: int
+    target_id: str
+    kind: RelationType
+    note: str | None
+    target_senses: str | None
 
 
 class Row(NamedTuple):
@@ -265,6 +281,7 @@ def _write_derivatives(db: sqlite3.Connection, derivatives: Iterable[VerbDerivat
         if glosses and glosses not in senses:
             senses.append(glosses)
     for (source_id, target_id), senses in evidence.items():
+        target_senses = _evidenced_senses(db, target_id, senses)
         found = db.execute(
             """
             SELECT ord FROM relation
@@ -275,18 +292,50 @@ def _write_derivatives(db: sqlite3.Connection, derivatives: Iterable[VerbDerivat
         ).fetchone()
         if found:
             db.execute(
-                "UPDATE relation SET evidence = ? WHERE source_id = ? AND ord = ?",
-                (json.dumps(senses, ensure_ascii=False), source_id, found[0]),
+                """
+                UPDATE relation SET evidence = ?, target_senses = ?
+                WHERE source_id = ? AND ord = ?
+                """,
+                (json.dumps(senses, ensure_ascii=False), target_senses, source_id, found[0]),
             )
         else:
             db.execute(
                 """
-                INSERT INTO relation (source_id, ord, target_id, kind, note, evidence)
-                SELECT ?, coalesce(max(ord), -1) + 1, ?, 'derived-from', 'perfective derivative', ?
+                INSERT INTO relation
+                    (source_id, ord, target_id, kind, note, evidence, target_senses)
+                SELECT ?, coalesce(max(ord), -1) + 1, ?, 'derived-from', 'perfective derivative',
+                    ?, ?
                 FROM relation WHERE source_id = ?
                 """,
-                (source_id, target_id, json.dumps(senses, ensure_ascii=False), source_id),
+                (
+                    source_id,
+                    target_id,
+                    json.dumps(senses, ensure_ascii=False),
+                    target_senses,
+                    source_id,
+                ),
             )
+
+
+def _evidenced_senses(
+    db: sqlite3.Connection, target_id: str, evidence: list[tuple[str, ...]]
+) -> str | None:
+    """The ords of the target's senses whose gloss is one the evidence came from, as JSON;
+    None when none matches, so the whole entry stands. A sense's gloss is its Kaikki
+    glosses joined with ": " (senses.sense)."""
+    glosses = json.dumps([": ".join(found) for found in evidence], ensure_ascii=False)
+    ords = [
+        ord_
+        for (ord_,) in db.execute(
+            """
+            SELECT ord FROM sense
+            WHERE lemma_id = ? AND gloss IN (SELECT value FROM json_each(?))
+            ORDER BY ord
+            """,
+            (target_id, glosses),
+        )
+    ]
+    return json.dumps(ords) if ords else None
 
 
 def _write_recordings(
@@ -401,19 +450,44 @@ class Lexicon:
                 lemma,
                 upos,
                 list(self._senses(lemma_id)),
-                [
-                    _relation(kind, target, note)
-                    for kind, target, note in self._db.execute(
-                        """
-                        SELECT relation.kind, target.lemma, relation.note
-                        FROM relation JOIN entry AS target ON target.lemma_id = relation.target_id
-                        WHERE relation.source_id = ? ORDER BY relation.ord
-                        """,
-                        (lemma_id,),
-                    )
-                ],
+                list(self._relations(lemma_id)),
                 list(self._paradigms(lemma_id)),
             )
+
+    def spellings(self) -> Iterator[tuple[str, str]]:
+        """The nodes with no entry, (lemma_id, lemma): spellings relations point at."""
+        return iter(
+            self._db.execute(
+                "SELECT lemma_id, lemma FROM entry WHERE upos IS NULL ORDER BY lemma_id"
+            ).fetchall()
+        )
+
+    def edges(self) -> Iterator[Edge]:
+        """Every relation as stored, by source."""
+        for source_id, ord_, target_id, kind, note, target_senses in self._db.execute(
+            """
+            SELECT source_id, ord, target_id, kind, note, target_senses FROM relation
+            ORDER BY source_id, ord
+            """
+        ):
+            yield Edge(source_id, ord_, target_id, kind, note, target_senses)
+
+    def _relations(self, lemma_id: str) -> Iterator[Relation]:
+        for kind, target_id, target, upos, note, target_senses in self._db.execute(
+            """
+            SELECT relation.kind, relation.target_id, target.lemma, target.upos, relation.note,
+                relation.target_senses
+            FROM relation JOIN entry AS target ON target.lemma_id = relation.target_id
+            WHERE relation.source_id = ? ORDER BY relation.ord
+            """,
+            (lemma_id,),
+        ):
+            relation = _relation(kind, target, note)
+            if upos is not None:
+                relation["lemma_id"] = target_id
+            if target_senses is not None:
+                relation["sense_indexes"] = cast(list[int], json.loads(target_senses))
+            yield relation
 
     def _senses(self, lemma_id: str) -> Iterator[Sense]:
         for id_, gloss, tags in self._db.execute(

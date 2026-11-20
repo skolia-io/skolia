@@ -122,10 +122,22 @@ def make(
             entry_id = row.lemma_id if row else token_id
             if entry_id != token_id:
                 bundle["lookup"][token_id] = entry_id
-            if entry_id not in bundle["entries"]:
-                entry = _entry(entry_id, row, paradigms, frames, feats)
-                bundle["entries"][entry_id] = entry
-                add_pronunciation(entry["lemma"], entry["upos"])
+            if entry_id in bundle["entries"]:
+                continue
+            entry = _entry(entry_id, row, paradigms, frames, feats)
+            bundle["entries"][entry_id] = entry
+            add_pronunciation(entry["lemma"], entry["upos"])
+            # A word with no senses takes its meaning from its relations' targets
+            # (Relation.sense_indexes), so they come along
+            if not entry["senses"]:
+                for relation in entry["relations"]:
+                    target_id = relation.get("lemma_id")
+                    if target_id is None or target_id in bundle["entries"]:
+                        continue
+                    target = lexicon.get(target_id)
+                    bundle["entries"][target_id] = _entry(
+                        target_id, target, paradigms, frames, feats
+                    )
     return bundle
 
 

@@ -580,6 +580,53 @@ test("a lexicon lookup gives each language's loaded version, leaving out ids it 
   );
 });
 
+test("a word with no senses comes with the entries its relations point at, and a due card with them as related", async () => {
+  const app = setup();
+  const headers = await signedIn();
+  await loadLexicon("pl", "lex/1", [
+    {
+      lemmaId: "pl:zgolić:VERB",
+      lemma: "zgolić",
+      upos: "VERB",
+      gloss: null,
+      relations: [
+        { kind: "derived-from", targetId: "pl:golić:VERB", note: "perfective derivative", targetSenses: [0] },
+        { kind: "derived-from", targetId: "pl:golnąć:" },
+      ],
+    },
+    { lemmaId: "pl:golić:VERB", lemma: "golić", upos: "VERB", gloss: "to down" },
+    { lemmaId: "pl:golnąć:", lemma: "golnąć", upos: null, gloss: null },
+    {
+      lemmaId: "pl:pies:NOUN",
+      lemma: "pies",
+      upos: "NOUN",
+      gloss: "dog",
+      relations: [{ kind: "derived-from", targetId: "pl:golić:VERB" }],
+    },
+  ]);
+  const { entries } = await body("lookup", lookUp(app, ["pl:zgolić:VERB", "pl:pies:NOUN"]));
+  assert.deepEqual(
+    entries.map((e) => [e.lemmaId, e.relations] as const).sort(([a], [b]) => a.localeCompare(b)),
+    [
+      ["pl:golić:VERB", []],
+      ["pl:pies:NOUN", [{ type: "derived-from", lemma: "golić", lemma_id: "pl:golić:VERB" }]],
+      [
+        "pl:zgolić:VERB",
+        [
+          { type: "derived-from", lemma: "golić", note: "perfective derivative", lemma_id: "pl:golić:VERB", sense_indexes: [0] },
+          { type: "derived-from", lemma: "golnąć" },
+        ],
+      ],
+    ],
+  );
+  await learn(app, headers, "pl:zgolić:VERB");
+  const [card] = (await due(app, headers, "pl")).cards;
+  assert.deepEqual(
+    card?.related.map((e) => e.lemmaId),
+    ["pl:golić:VERB"],
+  );
+});
+
 test("a language's cards, of every kind, are listed newest first, a page at a time", async () => {
   const headers = await signedIn();
   await learn(setup(), headers, "pl:pies:NOUN");
