@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { lenders, sensesOf } from "./lexicon.ts";
-import type { Relation, Sense } from "./schema.gen.ts";
+import { aspectOf, lenders, sensesOf } from "./lexicon.ts";
+import type { Feats, Relation, Sense } from "./schema.gen.ts";
 
 const GOLIĆ: { senses: Sense[]; relations: Relation[] } = {
   senses: [
@@ -34,4 +34,19 @@ test("a relation without sense indexes lends every sense, and a word with senses
   const own = { senses: [{ gloss: "to shave off", tags: [] }], relations: whole };
   assert.deepEqual(sensesOf(own, find), own.senses);
   assert.deepEqual(lenders(own, find), []);
+});
+
+test("a verb's aspect is the one all its forms share, and none when they differ or lack one", () => {
+  const sets: Record<number, Feats> = {
+    0: { VerbForm: "Inf", Aspect: "Perf" },
+    1: { VerbForm: "Fin", Aspect: "Perf", Tense: "Fut" },
+    2: { VerbForm: "Fin", Aspect: "Imp", Tense: "Pres" },
+    3: { Case: "Nom" },
+  };
+  const featsOf = (id: number) => sets[id];
+  const with_ = (...ids: number[]) => ({ paradigms: [{ homonym: "", forms: ids.map((id): [string, number[]] => [`f${id}`, [id]]) }] });
+  assert.equal(aspectOf(with_(0, 1), featsOf), "Perf");
+  assert.equal(aspectOf(with_(0, 2), featsOf), undefined);
+  assert.equal(aspectOf(with_(3), featsOf), undefined);
+  assert.equal(aspectOf({ paradigms: [] }, featsOf), undefined);
 });

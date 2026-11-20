@@ -62,6 +62,14 @@ export function rankSenses(senses: readonly Sense[], token: Feats): RankedSense[
   return [...ranked.filter((r) => r.fits), ...ranked.filter((r) => !r.fits)];
 }
 
+/** A verb's aspect, when every form in its paradigms has the same one: Morfeusz gives
+ * zgolić's forms Perf even though Wiktionary gives zgolić no senses to tag. */
+export function aspectOf(entry: Pick<Entry, "paradigms">, featsOf: (id: number) => Feats | undefined): Feats["Aspect"] {
+  const aspects = new Set(entry.paradigms.flatMap((p) => p.forms.flatMap(([, ids]) => ids.map((id) => featsOf(id)?.Aspect))));
+  const [only, ...rest] = aspects;
+  return rest.length === 0 ? only : undefined;
+}
+
 /** What a word's meaning depends on: a bundle's Entry or the API's LexiconEntry. */
 type Meaning = { readonly senses: readonly Sense[]; readonly relations: readonly Relation[] };
 
