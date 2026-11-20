@@ -229,9 +229,10 @@ the entries it finds, including their senses, relations, and stored paradigms.
 `--incoming` uses the relation target index to find links pointing to a headword,
 even if it has no entry of its own. Rebuild any SQLite files from before this schema change.
 
-The build stores senses, examples, tags, paradigms, forms and audio in ordered
-child tables. Relations have an index for each direction. The bundle and cards
-builders assemble their existing JSON shapes from these tables.
+The build stores senses, examples, paradigms, forms and audio in ordered tables.
+Tags, accent labels and feature maps stay with their parent rows. Both endpoints
+of a relation reference entries, which can have zero senses. Each endpoint has
+an index. The bundle and cards builders assemble their JSON from these tables.
 
 A document's bundle (the lexicon slice the phone downloads) from its analysis:
 
