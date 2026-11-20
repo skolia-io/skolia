@@ -168,7 +168,7 @@ def _verb_derivatives(lang: str, entry: kaikki.KaikkiEntry) -> Iterator[store.Ve
                 and "perfective" in tags
                 and "verb" in tags
             ):
-                yield store.VerbDerivative(lang, base, word, tuple(sense.get("glosses", [])))
+                yield store.VerbDerivative(lang, base, word)
 
 
 def build(

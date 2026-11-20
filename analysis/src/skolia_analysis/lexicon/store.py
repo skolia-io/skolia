@@ -66,9 +66,6 @@ CREATE TABLE relation (
     target_id TEXT REFERENCES entry,
     kind TEXT NOT NULL,
     data TEXT NOT NULL CHECK (json_valid(data) AND json_type(data) = 'object'),
-    evidence TEXT CHECK (
-        evidence IS NULL OR (json_valid(evidence) AND json_type(evidence) = 'array')
-    ),
     PRIMARY KEY (source_id, ord)
 ) WITHOUT ROWID;
 CREATE INDEX relation_target_lemma ON relation (target_lemma, source_id, ord);
@@ -139,10 +136,11 @@ class PronunciationRow(NamedTuple):
 
 
 class VerbDerivative(NamedTuple):
+    """A perfective verb Wiktionary lists among another's derived terms: zgolić under golić."""
+
     lang: str
     base: str
     derivative: str
-    glosses: tuple[str, ...]
 
 
 def write(
@@ -291,48 +289,32 @@ def _ensure_verb(db: sqlite3.Connection, lang: str, lemma: str) -> str:
 
 
 def _write_derivatives(db: sqlite3.Connection, derivatives: Iterable[VerbDerivative]) -> None:
-    evidence: dict[tuple[str, str], list[tuple[str, ...]]] = {}
-    for lang, base, derivative, glosses in derivatives:
+    """Each derivative is derived-from its whole base, unless it says so already. Not from
+    the sense Kaikki lists it under: it gives a page's derived terms to the sense before the
+    list, so zgolić came under golić's "to down, to soak (to drink)", not "to shave"."""
+    for lang, base, derivative in dict.fromkeys(derivatives):
         source_id = _ensure_verb(db, lang, derivative)
         target_id = _ensure_verb(db, lang, base)
-        senses = evidence.setdefault((source_id, target_id), [])
-        if glosses and glosses not in senses:
-            senses.append(glosses)
-    # The evidence isn't which of the base's senses the derivative is about: Kaikki gives a
-    # page's derived terms to the sense before the list, so zgolić came under golić's "to
-    # down, to soak (to drink)" though it means "to shave off"
-    for (source_id, target_id), senses in evidence.items():
-        base = target_id.split(":", 1)[1].rsplit(":", 1)[0]
-        found = db.execute(
+        db.execute(
             """
-            SELECT ord FROM relation
-            WHERE source_id = ? AND target_id = ? AND kind = 'derived-from'
-            ORDER BY ord LIMIT 1
+            INSERT INTO relation (source_id, ord, target_lemma, target_id, kind, data)
+            SELECT ?, coalesce(max(ord), -1) + 1, ?, ?, 'derived-from', ?
+            FROM relation WHERE source_id = ?
+            HAVING NOT EXISTS (
+                SELECT 1 FROM relation
+                WHERE source_id = ? AND target_id = ? AND kind = 'derived-from'
+            )
             """,
-            (source_id, target_id),
-        ).fetchone()
-        if found:
-            db.execute(
-                "UPDATE relation SET evidence = ? WHERE source_id = ? AND ord = ?",
-                (json.dumps(senses, ensure_ascii=False), source_id, found[0]),
-            )
-        else:
-            db.execute(
-                """
-                INSERT INTO relation
-                    (source_id, ord, target_lemma, target_id, kind, data, evidence)
-                SELECT ?, coalesce(max(ord), -1) + 1, ?, ?, 'derived-from', ?, ?
-                FROM relation WHERE source_id = ?
-                """,
-                (
-                    source_id,
-                    base,
-                    target_id,
-                    json.dumps({"how": "perfective"}),
-                    json.dumps(senses, ensure_ascii=False),
-                    source_id,
-                ),
-            )
+            (
+                source_id,
+                base,
+                target_id,
+                json.dumps({"how": "perfective"}),
+                source_id,
+                source_id,
+                target_id,
+            ),
+        )
 
 
 def _write_recordings(

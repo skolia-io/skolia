@@ -401,8 +401,10 @@ def test_a_derivative_without_senses_takes_its_bases_and_its_own_aspect(tmp_path
         path,
         [GOLIĆ],
         {"version": "test/1"},
-        # Kaikki lists zgolić under golić's last sense, which isn't what it means
-        derivatives=[store.VerbDerivative("pl", "golić", "zgolić", ("to down, to soak",))],
+        derivatives=[
+            store.VerbDerivative("pl", "golić", "zgolić"),
+            store.VerbDerivative("pl", "golić", "zgolić"),
+        ],
     )
     lexicon = store.Lexicon(path)
     derived = lexicon.get("pl:zgolić:VERB")
@@ -420,13 +422,12 @@ def test_a_derivative_without_senses_takes_its_bases_and_its_own_aspect(tmp_path
         {"gloss": "to down, to soak (to drink)", "tags": ["colloquial"]},
     ]
     with sqlite3.connect(path) as db:
-        assert db.execute("SELECT evidence FROM relation").fetchone() == ('[["to down, to soak"]]',)
         assert db.execute("PRAGMA foreign_key_check").fetchall() == []
 
 
 def test_a_bundle_carries_a_derivative_without_its_base(tmp_path: Path) -> None:
     path = tmp_path / "pl.sqlite"
-    derivatives = [store.VerbDerivative("pl", "golić", "zgolić", ())]
+    derivatives = [store.VerbDerivative("pl", "golić", "zgolić")]
     store.write(path, [GOLIĆ], {"version": "test/1"}, derivatives=derivatives)
     token: Token = {
         "start": 0,
