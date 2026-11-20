@@ -270,3 +270,71 @@ def test_cards_lexicon_has_pronunciations_compact_paradigms_and_feature_rows(
         (1, "Case", "Acc"),
         (1, "Number", "Sing"),
     ]
+
+
+def test_normalized_lexicon_preserves_nested_values_and_incoming_links(tmp_path: Path) -> None:
+    path = tmp_path / "lexicon.sqlite"
+    row = store.Row(
+        "fr:finir:VERB",
+        "finir",
+        "VERB",
+        [
+            {
+                "gloss": "to finish",
+                "tags": ["transitive", "formal"],
+                "when": [{"VerbForm": "Inf"}, {"Number": "Sing"}],
+                "examples": [{"text": "finir le travail", "translation": "finish the work"}],
+            },
+            {"gloss": "to end", "tags": []},
+        ],
+        [{"type": "derived-from", "lemma": "missing"}],
+        [
+            {
+                "homonym": "",
+                "forms": [
+                    {"form": "finis", "xpos": "", "feats": {"Number": "Sing"}},
+                    {"form": "finissons", "xpos": "", "feats": {"Number": "Plur"}},
+                ],
+            }
+        ],
+    )
+    said: list[Pronunciation] = [{"ipa": "fi.niʁ", "accents": []}]
+    heard: list[Recording] = [
+        {"audio": "fr-finir.ogg", "mp3_url": "https://example.org/a", "tags": ["France"]}
+    ]
+    store.write(
+        path,
+        [row],
+        {},
+        lambda: [store.PronunciationRow("finir", "VERB", said, heard)],
+        {"finir": heard},
+    )
+    lexicon = store.Lexicon(path)
+    assert lexicon.get(row.lemma_id) == row
+    assert lexicon.pronunciations("finir") == {"VERB": said}
+    assert lexicon.recordings("finir") == {"VERB": heard}
+    assert lexicon.word_recordings("finir") == heard
+    assert lexicon.by_lemma("missing") == []
+    assert list(lexicon.incoming("missing")) == [(row.lemma_id, row.relations[0])]
+    with sqlite3.connect(path) as db:
+        assert db.execute("SELECT target_id FROM relation").fetchone() == ("fr:missing:",)
+        assert db.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
+def test_derivative_has_a_graph_entry_without_a_definition(tmp_path: Path) -> None:
+    path = tmp_path / "pl.sqlite"
+    base = store.Row("pl:golić:VERB", "golić", "VERB", [{"gloss": "to shave", "tags": []}], [], [])
+    store.write(
+        path, [base], {}, derivatives=[store.VerbDerivative("pl", "golić", "zgolić", ("evidence",))]
+    )
+    lexicon = store.Lexicon(path)
+    derived, match = bundle.resolve(lexicon, "pl:zgolić:VERB")
+    assert match == "none"
+    assert derived is not None and derived.senses == []
+    assert derived.relations == [
+        {"type": "derived-from", "lemma": "golić", "note": "perfective derivative"}
+    ]
+    assert list(lexicon.incoming("golić")) == [(derived.lemma_id, derived.relations[0])]
+    with sqlite3.connect(path) as db:
+        assert db.execute("SELECT evidence FROM relation").fetchone() == ('[["evidence"]]',)
+        assert db.execute("PRAGMA foreign_key_check").fetchall() == []

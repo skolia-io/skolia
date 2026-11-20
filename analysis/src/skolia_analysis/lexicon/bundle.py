@@ -62,12 +62,12 @@ def resolve(lexicon: Lexicon, lemma_id: str) -> tuple[Row | None, Match]:
     lang, lemma, upos = parse_lemma_id(lemma_id)
     row = lexicon.get(lemma_id)
     if row is not None:
-        return row, "exact"
+        return row, "exact" if row.senses else "none"
     if lemma != lemma.lower():
         lowered = lexicon.get(f"{lang}{LEMMA_ID_SEP}{lemma.lower()}{LEMMA_ID_SEP}{upos}")
-        if lowered is not None:
+        if lowered is not None and lowered.senses:
             return lowered, "lowercase"
-    same_lemma = lexicon.by_lemma(lemma)
+    same_lemma = [row for row in lexicon.by_lemma(lemma) if row.senses]
     if same_lemma:
         closest = CLOSEST_UPOS.get(upos, ())
         # sorted is stable: within a rank, by_lemma's most-senses order stays
@@ -76,7 +76,7 @@ def resolve(lexicon: Lexicon, lemma_id: str) -> tuple[Row | None, Match]:
         )
         return ranked[0], "other-pos"
     if lemma != lemma.lower():
-        any_pos = lexicon.by_lowercase(lemma)
+        any_pos = [row for row in lexicon.by_lowercase(lemma) if row.senses]
         if any_pos:
             return any_pos[0], "lowercase"
     return None, "none"

@@ -80,6 +80,7 @@ class KaikkiForm(TypedDict, total=False):
 
 class KaikkiTarget(TypedDict, total=False):
     word: str
+    tags: list[str]
 
 
 class KaikkiExample(TypedDict, total=False):
@@ -98,6 +99,7 @@ class KaikkiSense(TypedDict, total=False):
     alt_of: list[KaikkiTarget]
     """Set for spelling variants: "alternative form of X"."""
     examples: list[KaikkiExample]
+    derived: list[KaikkiTarget]
 
 
 class KaikkiHeadTemplate(TypedDict, total=False):

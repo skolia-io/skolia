@@ -13,7 +13,7 @@ from .pronunciation import merge_recordings
 from .schema import Paradigm, Pronunciation, Recording, Relation, Sense
 from .source import Converted, LexiconSource
 
-LEXICON_VERSION = "5"
+LEXICON_VERSION = "6"
 
 
 @dataclass
@@ -94,6 +94,7 @@ def rows(
     stats: Stats,
     pronunciations: Pronunciations | None = None,
     recordings: Recordings | None = None,
+    derivatives: list[store.VerbDerivative] | None = None,
 ) -> Iterator[store.Row]:
     """Fills pronunciations and recordings, if given, on the way: inflected forms have
     them too."""
@@ -101,6 +102,8 @@ def rows(
     def converted() -> Iterator[Converted]:
         for entry in kaikki.read(path):
             stats.entries += 1
+            if derivatives is not None:
+                derivatives.extend(_verb_derivatives(lang, entry))
             if (said := source.pronounce(entry)) is not None:
                 for upos in said.upos:
                     key = (said.word, upos)
@@ -129,6 +132,24 @@ def rows(
             yield store.Row(entry_id, lemma, upos, entry.senses, entry.relations, entry.paradigms)
 
 
+def _verb_derivatives(lang: str, entry: kaikki.KaikkiEntry) -> Iterator[store.VerbDerivative]:
+    base = entry.get("word", "")
+    if entry.get("pos") != "verb" or not base or " " in base:
+        return
+    for sense in entry.get("senses", []):
+        for relation in sense.get("derived", []):
+            word = relation.get("word", "")
+            tags = relation.get("tags", [])
+            if (
+                word
+                and word != base
+                and " " not in word
+                and "perfective" in tags
+                and "verb" in tags
+            ):
+                yield store.VerbDerivative(lang, base, word, tuple(sense.get("glosses", [])))
+
+
 def build(
     lang: str,
     source: LexiconSource,
@@ -150,9 +171,10 @@ def build(
     meta = {"lang": lang, "version": lexicon_version, "attribution": source.attribution}
     pronunciations: Pronunciations = {}
     recordings: Recordings = {}
+    derivatives: list[store.VerbDerivative] = []
     count = store.write(
         out,
-        rows(lang, source, kaikki_path, stats, pronunciations, recordings),
+        rows(lang, source, kaikki_path, stats, pronunciations, recordings, derivatives),
         meta,
         lambda: (
             store.PronunciationRow(
@@ -161,6 +183,7 @@ def build(
             for word, upos in sorted(pronunciations.keys() | recordings.keys())
         ),
         by_word,
+        derivatives,
     )
     stats.commons = len(by_word)
     stats.pronounced = len(pronunciations)
