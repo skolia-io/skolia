@@ -32,6 +32,7 @@ interface Env {
 }
 
 const PORT = 8080;
+const WARM_IDLE_MS = 3 * 60 * 1000;
 const START_TIMEOUT_MS = 2 * 60 * 1000;
 const PROBE_TIMEOUT_MS = 5 * 1000;
 // 1 vCPU, 6 GiB: Polish ingest peaked at 4.3 GiB on a 2,800-word text, English at 4.7 GiB
@@ -124,7 +125,25 @@ export class Ingester extends DurableObject<Env> implements IngesterRpc {
     return image;
   }
 
+  async warm(lang: Lang): Promise<void> {
+    const image = this.image(lang);
+    await this.env.INGESTER.getByName(image).warmImage(image);
+  }
+
+  async warmImage(image: string): Promise<void> {
+    await this.ensureStarted(image);
+    // Give the web deploy and e2e runner time to hand over the first job.
+    await this.ctx.storage.setAlarm(Date.now() + WARM_IDLE_MS);
+  }
+
   async run(image: string, job: IngestJob): Promise<JobAnswer> {
+    const container = await this.ensureStarted(image);
+    await this.ready(container);
+    await this.ctx.storage.setAlarm(Date.now() + this.sleepAfterMs);
+    return await this.post(container, job);
+  }
+
+  private async ensureStarted(image: string): Promise<Container> {
     const container = this.container();
     if (!container.running) {
       // One start for concurrent calls: registering the intercepts is async
@@ -133,9 +152,7 @@ export class Ingester extends DurableObject<Env> implements IngesterRpc {
       });
       await this.starting;
     }
-    await this.ready(container);
-    await this.ctx.storage.setAlarm(Date.now() + this.sleepAfterMs);
-    return await this.post(container, job);
+    return container;
   }
 
   override async alarm(): Promise<void> {

@@ -7,7 +7,7 @@
 // version it's to make (api/src/worker/adapters/ingest.ts IngestRuns), so a run asked for twice is one
 // run. From then on the run writes the status.
 import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep, type WorkflowStepConfig } from "cloudflare:workers";
-import { timestamp, type DocumentId } from "@skolia/shared/api";
+import { LANGS, timestamp, type DocumentId } from "@skolia/shared/api";
 import { statusKey } from "@skolia/shared/keys";
 import type { StatusPublisher } from "@skolia/shared/status";
 import type { JobAnswer, JobResult, Status } from "@skolia/shared/schema";
@@ -38,8 +38,17 @@ const STORE: WorkflowStepConfig = { retries: { limit: 5, delay: "10 seconds", ba
 const HISTORY_DAYS = 30;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-export class IngestWorkflow extends WorkflowEntrypoint<Env, IngestParams> {
-  override async run(event: WorkflowEvent<IngestParams>, step: WorkflowStep): Promise<Status["state"]> {
+type Params = IngestParams | { readonly warm: true };
+
+export class IngestWorkflow extends WorkflowEntrypoint<Env, Params> {
+  override async run(event: WorkflowEvent<Params>, step: WorkflowStep): Promise<Status["state"] | "warming"> {
+    if ("warm" in event.payload) {
+      await step.do("warm containers", async () => {
+        await Promise.all(LANGS.map((lang) => this.env.INGESTER.getByName(lang).warm(lang)));
+      });
+      return "warming";
+    }
+
     const { doc, lang } = event.payload;
     let answer: JobAnswer;
     try {
