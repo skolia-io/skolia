@@ -15,7 +15,7 @@
     type User,
   } from "@skolia/shared/api";
   import { LANGUAGES } from "@skolia/shared/lang";
-  import { sensesOf } from "@skolia/shared/lexicon";
+  import { aspectOf, sensesOf } from "@skolia/shared/lexicon";
   import type { Sense } from "@skolia/shared/schema";
   import { formTables, lemmaTables, type Table } from "@skolia/shared/paradigm";
   import { featureWords, UPOS_LABEL } from "@skolia/shared/ud";
@@ -171,9 +171,17 @@
   /** Aspect tells apart verbs a clue can't, like pisać and napisać ("to write"). */
   const ASPECTS = new Set(["perfective", "imperfective"]);
 
+  /** From the paradigm, since a borrowed meaning (zgolić's, from golić) has the lender's
+   * aspect tags stripped; otherwise from the first sense's tags. */
+  function aspectWords(c: DueCard): string[] {
+    const sets = due?.featureSets;
+    const aspect = c.entry && sets ? aspectOf(c.entry, (id) => sets[String(id)]) : undefined;
+    if (aspect !== undefined) return featureWords({ Aspect: aspect });
+    return sensesFor(c)[0]?.tags.filter((t) => ASPECTS.has(t)) ?? [];
+  }
+
   function hintOf(c: DueCard): string {
-    const first = sensesFor(c)[0];
-    return [UPOS_LABEL[c.entry?.upos ?? "X"], ...(first?.tags.filter((t) => ASPECTS.has(t)) ?? [])].join(" · ");
+    return [UPOS_LABEL[c.entry?.upos ?? "X"], ...aspectWords(c)].join(" · ");
   }
 
   function tablesOf(c: DueCard): Table[] {
