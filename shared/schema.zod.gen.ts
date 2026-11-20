@@ -206,12 +206,18 @@ export const Pronunciation: z.ZodType<types.Pronunciation> = /* @__PURE__ */ (()
   accents: z.array(Accent).exactOptional(),
 }).meta({ id: "Pronunciation" }))();
 
+export const Recording: z.ZodType<types.Recording> = /* @__PURE__ */ (() => z.object({
+  audio: z.string(),
+  mp3_url: z.string(),
+  tags: z.array(z.string()).exactOptional(),
+}).meta({ id: "Recording" }))();
+
 export const FormRow: z.ZodType<types.FormRow> = /* @__PURE__ */ (() => z.tuple([z.string(), z.array(z.number().int())]).meta({ id: "FormRow" }))();
 
-export const BundleParadigm: z.ZodType<types.BundleParadigm> = /* @__PURE__ */ (() => z.object({
+export const EntryParadigm: z.ZodType<types.EntryParadigm> = /* @__PURE__ */ (() => z.object({
   homonym: z.string(),
   forms: z.array(FormRow),
-}).meta({ id: "BundleParadigm" }))();
+}).meta({ id: "EntryParadigm" }))();
 
 export const PartOfSpeech: z.ZodType<types.PartOfSpeech> = /* @__PURE__ */ (() => z.enum(["verb", "noun", "adj", "adv"]).meta({ id: "PartOfSpeech" }))();
 
@@ -468,27 +474,10 @@ export const Entry: z.ZodType<types.Entry> = /* @__PURE__ */ (() => z.object({
   senses: z.array(Sense),
   relations: z.array(Relation),
   pronunciations: z.array(Pronunciation),
-  paradigms: z.array(BundleParadigm),
+  recordings: z.array(Recording).exactOptional(),
+  paradigms: z.array(EntryParadigm),
   frames: z.array(Schema),
 }).meta({ id: "Entry" }))();
-
-export const Recording: z.ZodType<types.Recording> = /* @__PURE__ */ (() => z.object({
-  audio: z.string(),
-  mp3_url: z.string(),
-  tags: z.array(z.string()).exactOptional(),
-}).meta({ id: "Recording" }))();
-
-export const Bundle: z.ZodType<types.Bundle> = /* @__PURE__ */ (() => z.object({
-  schema: z.number().int(),
-  lang: z.string(),
-  lexicon: z.string(),
-  attribution: z.string(),
-  entries: z.record(z.string(), Entry),
-  lookup: z.record(z.string(), z.string()),
-  feats: z.array(Feats),
-  pronunciations: z.record(z.string(), z.array(Pronunciation)),
-  recordings: z.record(z.string(), z.array(Recording)),
-}).meta({ id: "Bundle" }))();
 
 export const IngestJob: z.ZodType<types.IngestJob> = /* @__PURE__ */ (() => z.object({
   doc: z.string(),
@@ -497,9 +486,7 @@ export const IngestJob: z.ZodType<types.IngestJob> = /* @__PURE__ */ (() => z.ob
 
 export const ReadyAnalysis: z.ZodType<types.ReadyAnalysis> = /* @__PURE__ */ (() => z.object({
   analyzer: z.string(),
-  lexicon: z.string(),
   analysis: z.string(),
-  bundle: z.string(),
 }).meta({ id: "ReadyAnalysis" }))();
 
 export const JobResult: z.ZodType<types.JobResult> = /* @__PURE__ */ (() => z.object({
@@ -556,7 +543,5 @@ export const Status: z.ZodType<types.Status> = /* @__PURE__ */ (() => z.union([Q
 
 export const Versions: z.ZodType<types.Versions> = /* @__PURE__ */ (() => z.object({
   analyzer: z.string(),
-  lexicon: z.string(),
   analysis: z.string(),
-  bundle: z.string(),
 }).meta({ id: "Versions" }))();

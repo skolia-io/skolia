@@ -132,17 +132,16 @@ def record_built_from(target: Target, version: str, key: str) -> None:
     )
 
 
-TABLES = ("entry", "relation", "featureset")
+TABLES = ("entry", "relation", "featureset", "form_pronunciation")
 """The tables the export fills, copied column for column, since it has D1's schema."""
 
 type Cell = str | int | None
 
 
-def sampled(db: sqlite3.Connection, lang: str, sample: int) -> frozenset[str]:
+def sampled(db: sqlite3.Connection, words: frozenset[str]) -> frozenset[str]:
     """The entries a preview loads: every entry of wordfreq's sample most common words (run
     the noun and the verb), not proper nouns. Each is whole, its senses already resolved,
     so what its relations point at needn't come along."""
-    words = frozenset(wordfreq.top_n_list(lang, sample))
     return frozenset(
         lemma_id
         for lemma_id, lemma, upos in cast(
@@ -155,7 +154,8 @@ def sampled(db: sqlite3.Connection, lang: str, sample: int) -> frozenset[str]:
 def statements(db: sqlite3.Connection, lang: str, version: str, sample: int | None) -> list[str]:
     which = f"version = {quote(version)}"
     out = [f"DELETE FROM {table} WHERE {which};" for table in TABLES]
-    keep = None if sample is None else sampled(db, lang, sample)
+    words = None if sample is None else frozenset(wordfreq.top_n_list(lang, sample))
+    keep = None if words is None else sampled(db, words)
     for table in TABLES:
         columns = [cast(str, column[1]) for column in db.execute(f"PRAGMA table_info({table})")]
         rows = cast(
@@ -167,6 +167,9 @@ def statements(db: sqlite3.Connection, lang: str, version: str, sample: int | No
         if keep is not None and table == "relation":
             source = columns.index("source_id")
             rows = (row for row in rows if row[source] in keep)
+        if words is not None and table == "form_pronunciation":
+            form = columns.index("form")
+            rows = (row for row in rows if str(row[form]).lower() in words)
         at = columns.index("version")
         out += inserts(
             f"INSERT INTO {table} ({', '.join(columns)}) VALUES",
@@ -210,7 +213,11 @@ def clean(target: Target, version: str) -> None:
     """Deletes the rows of other versions, in batches. Run on every load, so a load that
     stopped after repointing loaded is cleaned up by the next."""
     replaced = ", ".join(old_versions(target, version)) or "older versions"
-    for table, key in (("entry", "lemma_id, version"), ("relation", "source_id, version, ord")):
+    for table, key in (
+        ("entry", "lemma_id, version"),
+        ("relation", "source_id, version, ord"),
+        ("form_pronunciation", "form, version, upos"),
+    ):
         old = f"FROM {table} WHERE version != {quote(version)}"
         batch = f"SELECT {key} {old} LIMIT {CLEAN_BATCH}"
         delete = f"DELETE FROM {table} WHERE ({key}) IN ({batch})"

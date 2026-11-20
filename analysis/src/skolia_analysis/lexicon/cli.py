@@ -3,12 +3,10 @@ import json
 import sqlite3
 import sys
 from pathlib import Path
-from typing import cast
 
 from .. import lang
 from ..plugin import lexicon_path
-from ..schema import Blob
-from . import build, bundle, commons, d1_export
+from . import build, commons, d1_export
 from .store import Lexicon
 
 
@@ -104,24 +102,3 @@ def d1_export_main() -> None:
         args.out,
     )
     print(f"{count} entries", file=sys.stderr)
-
-
-def bundle_main() -> None:
-    parser = argparse.ArgumentParser(
-        prog="skolia-bundle",
-        description="Read an analysis blob on stdin, write the document's lexicon bundle.",
-    )
-    parser.add_argument(
-        "--data",
-        type=Path,
-        required=True,
-        help="the language's data directory: {lang}.sqlite and the plugin's files",
-    )
-    parser.add_argument("--indent", type=int, default=None)
-    args = parser.parse_args()
-    blob = cast(Blob, json.load(sys.stdin))
-    data: Path = args.data
-    lexicon = Lexicon(lexicon_path(data, blob["lang"]))
-    result = bundle.make(blob, lexicon, lang.plugin(blob["lang"]).extras(data))
-    json.dump(result, sys.stdout, ensure_ascii=False, indent=args.indent)
-    sys.stdout.write("\n")

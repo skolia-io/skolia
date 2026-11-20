@@ -22,7 +22,7 @@ export interface NoContent {
 /** A blob whose URL names its version, so what's there never changes and its key is its
  * ETag. Who may see it can change, so a client asks again each time it's used, and an
  * If-None-Match that matches gets 304 once access is checked. encoding: how it's stored
- * (PART_ENCODING for an analysis or bundle). */
+ * (PART_ENCODING for an analysis). */
 export interface BlobResult {
   status: 200;
   etag: string;

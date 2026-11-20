@@ -25,12 +25,12 @@ test("brotli blobs are sent as stored when accepted, refused otherwise", async (
   await importText(app, TEXT, { visibility: "public", licence: "cc0" });
   const id = await docId("pl", TEXT);
   await readyAt(id, "1");
-  const bundle = (encodings: string) =>
-    client(app).documents[":id"].bundle[":name"].$get({ param: { id, name: "b1-a1-l1" } }, { headers: { "accept-encoding": encodings } });
-  const accepted = await bundle("gzip, br");
+  const analysis = (encodings: string) =>
+    client(app).documents[":id"].analysis[":name"].$get({ param: { id, name: "s2-a1" } }, { headers: { "accept-encoding": encodings } });
+  const accepted = await analysis("gzip, br");
   assert.equal(accepted.headers.get("content-encoding"), "br");
-  assert.equal(brotliDecompressSync(new Uint8Array(await accepted.arrayBuffer())).toString(), '{"bundle":"1"}');
-  const plain = await bundle("gzip");
+  assert.equal(brotliDecompressSync(new Uint8Array(await accepted.arrayBuffer())).toString(), '{"analysis":"1"}');
+  const plain = await analysis("gzip");
   assert.equal(plain.status, 406);
 });
 
@@ -39,14 +39,14 @@ test("a blob is cached, and asked for again each time: 304 while the viewer may 
   await importText(app, TEXT);
   const id = await docId("pl", TEXT);
   await readyAt(id, "1");
-  const get = (part: "text" | "bundle", headers: Headers, etag?: string) => {
+  const get = (part: "text" | "analysis", headers: Headers, etag?: string) => {
     const document = client(app, headers).documents[":id"];
     const options = { headers: { "accept-encoding": "br", ...(etag === undefined ? {} : { "if-none-match": etag }) } };
     return part === "text"
       ? document.text.$get({ param: { id } }, options)
-      : document.bundle[":name"].$get({ param: { id, name: "b1-a1-l1" } }, options);
+      : document.analysis[":name"].$get({ param: { id, name: "s2-a1" } }, options);
   };
-  for (const part of ["text", "bundle"] as const) {
+  for (const part of ["text", "analysis"] as const) {
     const first = await get(part, importer);
     assert.equal(first.status, 200);
     assert.equal(first.headers.get("cache-control"), "private, no-cache");
@@ -69,7 +69,7 @@ test("the summary names the reading once there is one, and it's served by name",
   const id = await docId("pl", TEXT);
   assert.equal((await summaryOf(app, id)).reading, undefined);
   await readyAt(id, "1");
-  assert.deepEqual((await summaryOf(app, id)).reading, { analysis: "s2-a1", bundle: "b1-a1-l1" });
+  assert.deepEqual((await summaryOf(app, id)).reading, { analysis: "s2-a1" });
   const analysis = client(app).documents[":id"].analysis[":name"];
   const served = await analysis.$get({ param: { id, name: "s2-a1" } }, { headers: { "accept-encoding": "br" } });
   assert.equal(served.status, 200);
@@ -104,15 +104,15 @@ test("an outdated document is queued once when it's opened, not listed, and its 
   assert.deepEqual(await local.takeQueued(), []);
 });
 
-test("a bundle of another shape is out of date even if the analyser is the same", async () => {
+test("a legacy bundle version does not make its analysis outdated", async () => {
   const app = setup();
   await importText(app);
   const id = await docId("pl", TEXT);
   await readyAt(id, "1");
-  await putJson(versionsKey("pl"), { analyzer: "pl/1", lexicon: "lex/1", analysis: "s2-a1", bundle: "b2-a1-l1" });
+  await putJson(versionsKey("pl"), { analyzer: "pl/1", lexicon: "old", analysis: "s2-a1", bundle: "old" });
   await local.takeQueued();
-  assert.equal((await summaryOf(app, id)).state, "queued");
-  assert.equal((await local.takeQueued()).length, 1);
+  assert.equal((await summaryOf(app, id)).state, "ready");
+  assert.deepEqual(await local.takeQueued(), []);
 });
 
 test("a current document isn't queued, nor any before ingest publishes its versions", async () => {

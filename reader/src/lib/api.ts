@@ -1,10 +1,10 @@
 // skolia-api client, typed by the API's routes (AppType), and the lexicon's, typed by its
 // own (lexicon/src/app.ts), which the API passes through at /api/lexicon/. The analysis
-// and bundle are blobs the API passes through, typed by the Python schemas
-// (shared/schema.gen.ts); the API is ours, so they're trusted to match.
+// is a blob the API passes through, typed by the Python schemas
+// (shared/schema.gen.ts); the API is ours, so it's trusted to match.
 import { hc } from "hono/client";
 import type { AppType } from "@skolia/api/app";
-import type { AppType as LexiconApp, EntriesBody } from "@skolia/lexicon/app";
+import type { AppType as LexiconApp, EntriesBody, FormAudio } from "@skolia/lexicon/app";
 import {
   ANNOTATION_PAGE,
   type Annotation,
@@ -46,7 +46,7 @@ import {
   type User,
 } from "@skolia/shared/api";
 import { allPages, type Cursor } from "@skolia/shared/page";
-import { BUNDLE_SCHEMA, SCHEMA, type Blob, type Bundle } from "@skolia/shared/schema";
+import { SCHEMA, type Blob, type Upos } from "@skolia/shared/schema";
 
 const api = hc<AppType>("/").api;
 const lexicon = hc<LexiconApp>("/api/lexicon").v1;
@@ -55,7 +55,6 @@ export interface Reading {
   lang: Lang;
   text: string;
   analysis: Blob;
-  bundle: Bundle;
 }
 
 async function failure(response: Response): Promise<Error> {
@@ -188,22 +187,17 @@ export function listAnnotations(id: DocumentId): Promise<readonly Annotation[]> 
   });
 }
 
-/** The reading by name, or "unsupported" when its analysis schema is newer than this
- * reader knows (an API deployed ahead of the reader), its bundle isn't this reader's
- * schema, or its language isn't one it has. An older bundle is redone when the document
- * is opened (BUNDLER_VERSION), and the text shows as plain text until then. */
+/** The reading by name. Older analysis schemas remain readable. */
 export async function loadReading(id: DocumentId, names: ReadingNames): Promise<Reading | "unsupported"> {
   const doc = api.documents[":id"];
-  const [text, analysis, bundle] = await Promise.all([
+  const [text, analysis] = await Promise.all([
     doc.text.$get({ param: { id } }),
     doc.analysis[":name"].$get({ param: { id, name: names.analysis } }),
-    doc.bundle[":name"].$get({ param: { id, name: names.bundle } }),
   ]);
-  for (const response of [text, analysis, bundle]) if (!response.ok) throw await failure(response);
-  const [a, b] = [(await analysis.json()) as Blob, (await bundle.json()) as Bundle];
-  const lang = a.lang;
-  if (a.schema > SCHEMA || b.schema !== BUNDLE_SCHEMA || !isLang(lang) || b.lang !== lang) return "unsupported";
-  return { lang, text: await text.text(), analysis: a, bundle: b };
+  for (const response of [text, analysis]) if (!response.ok) throw await failure(response);
+  const blob = (await analysis.json()) as Blob;
+  if (blob.schema > SCHEMA || !isLang(blob.lang)) return "unsupported";
+  return { lang: blob.lang, text: await text.text(), analysis: blob };
 }
 
 /** The start of the local day, which today's new cards count from. */
@@ -282,24 +276,34 @@ export async function deleteCard(cardId: CardId): Promise<void> {
   if (!response.ok) throw await failure(response);
 }
 
-export async function lexiconVersion(lang: Lang): Promise<string | null> {
-  const response = await lexicon.lexicons[":lang"].$get({ param: { lang } }, { init: { cache: "no-store", credentials: "omit" } });
-  if (!response.ok) throw await failure(response);
-  return (await response.json()).version;
-}
-
 export class LexiconVersionChanged extends Error {}
 
-export async function lookup(id: LemmaId, version: string): Promise<EntriesBody | null> {
-  const response: Response = await lexicon.entries[":id"].$get(
-    { param: { id: lemmaParam(id) }, query: { version } },
+export async function getEntry(id: LemmaId, version: string | null): Promise<EntriesBody | null> {
+  const response = await lexicon.entries[":id"].$get(
+    { param: { id: lemmaParam(id) }, query: version === null ? {} : { version } },
     { init: { credentials: "omit" } },
   );
   if (response.status === 404) return null;
   if (response.status === 409) throw new LexiconVersionChanged("The lexicon changed during lookup");
   if (!response.ok) throw await failure(response);
-  // Hono's JSON type makes the entries' optional fields `| undefined`.
   return (await response.json()) as EntriesBody;
+}
+
+export async function getFormAudio(lang: Lang, form: string, upos: Upos, version: string | null): Promise<FormAudio> {
+  const response = await lexicon.lexicons[":lang"].forms[":form"].$get(
+    { param: { lang, form: encodeURIComponent(form) }, query: { upos, ...(version === null ? {} : { version }) } },
+    { init: { credentials: "omit" } },
+  );
+  if (response.status === 404) return { pronunciations: [], recordings: [] };
+  if (response.status === 409) throw new LexiconVersionChanged("The lexicon changed during lookup");
+  if (!response.ok) throw await failure(response);
+  return (await response.json()) as FormAudio;
+}
+
+export async function getLexiconInfo(lang: Lang) {
+  const response = await lexicon.lexicons[":lang"].$get({ param: { lang } }, { init: { cache: "no-store", credentials: "omit" } });
+  if (!response.ok) throw await failure(response);
+  return response.json();
 }
 
 export async function getSettings(): Promise<Settings> {

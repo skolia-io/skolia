@@ -1,29 +1,10 @@
-// Looking a token up in its document's bundle.
-import type { Bundle, Derivation, Entry, Feats, Pronunciation, Recording, Relation, Sense, Token, Upos } from "@skolia/shared/schema";
+// Lexicon display helpers.
+import type { Derivation, Feats, Pronunciation, Relation, Sense } from "@skolia/shared/schema";
 import { featureWords } from "./ud.ts";
 
 /** The sentence decides these, not the form, so paradigms leave them out (see the
- * BundleParadigm docstring in analysis/src/skolia_analysis/lexicon/schema.py). */
+ * EntryParadigm docstring in analysis/src/skolia_analysis/lexicon/schema.py). */
 const CONTEXTUAL: ReadonlySet<string> = new Set(["PronType", "ExtPos"]);
-
-/** The id of the token's entry, after the bundle's fallbacks (Old in "Old Town" is
- * en:old:ADJ): the id words and cards are kept under. */
-export function entryIdFor(bundle: Bundle, token: Token): string | undefined {
-  if (token.lemma_id === null) return undefined;
-  const id = bundle.lookup[token.lemma_id] ?? token.lemma_id;
-  return id in bundle.entries ? id : undefined;
-}
-
-export function entryFor(bundle: Bundle, token: Token): Entry | undefined {
-  const id = entryIdFor(bundle, token);
-  return id === undefined ? undefined : bundle.entries[id];
-}
-
-/** How a token's text is said, keyed as pronunciation_key in
- * analysis/src/skolia_analysis/lexicon/schema.py. An entry has its lemma's. */
-export function pronunciationsOf(bundle: Bundle, word: string, upos: Upos): Pronunciation[] {
-  return bundle.pronunciations[`${word}:${upos}`] ?? [];
-}
 
 /** The first transcription for each accent: Wiktionary lists the usual one first, then
  * variants (family has seven UK ones). */
@@ -35,11 +16,6 @@ export function mainPronunciations(said: Pronunciation[]): Pronunciation[] {
     seen.add(accents);
     return true;
   });
-}
-
-/** Recordings of a token's text, keyed like pronunciationsOf. */
-export function recordingsOf(bundle: Bundle, word: string, upos: Upos): Recording[] {
-  return bundle.recordings[`${word}:${upos}`] ?? [];
 }
 
 /** Every feature the token has (bar contextual ones) has the same value in feats. */

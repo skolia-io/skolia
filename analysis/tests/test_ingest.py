@@ -18,7 +18,6 @@ from skolia_analysis.ingest.schema import (
     versions_key,
 )
 from skolia_analysis.ingest.worker import Ingester, Pipeline
-from skolia_analysis.lexicon.schema import BUNDLE_SCHEMA, BUNDLER_VERSION, Bundle
 from skolia_analysis.schema import Blob
 
 TEXT = "Idę do psa."
@@ -28,22 +27,8 @@ def fake_analysis(text: str) -> Blob:
     return {"schema": 2, "analyzer": "test/1", "lang": "pl", "hash": "", "sentences": []}
 
 
-def fake_bundle(blob: Blob) -> Bundle:
-    return {
-        "schema": BUNDLE_SCHEMA,
-        "lang": "pl",
-        "lexicon": "lex/1",
-        "attribution": "",
-        "entries": {},
-        "lookup": {},
-        "feats": [],
-        "pronunciations": {},
-        "recordings": {},
-    }
-
-
 def pipelines() -> dict[str, Pipeline]:
-    return {"pl": Pipeline("pl", fake_analysis, fake_bundle, "test/1", "lex/1")}
+    return {"pl": Pipeline("pl", fake_analysis, "test/1")}
 
 
 def job(doc: str, lang: str = "pl") -> IngestJob:
@@ -58,7 +43,7 @@ def run_to_ready(
     return result["analysis"]
 
 
-def test_job_writes_analysis_and_bundle_but_no_status(tmp_path: Path) -> None:
+def test_job_writes_analysis_but_no_status(tmp_path: Path) -> None:
     blobs = DirBlobs(tmp_path)
     doc = doc_id("pl", TEXT)
     blobs.put(text_key(doc), TEXT.encode(), "text/plain")
@@ -72,7 +57,6 @@ def test_job_writes_analysis_and_bundle_but_no_status(tmp_path: Path) -> None:
     analysis = blobs.get(ready["analysis"])
     assert analysis is not None
     assert json.loads(brotli.decompress(analysis))["analyzer"] == "test/1"
-    assert blobs.get(ready["bundle"]) is not None
 
 
 def test_each_stage_of_a_job_logs_its_time(tmp_path: Path) -> None:
@@ -92,15 +76,11 @@ def test_each_stage_of_a_job_logs_its_time(tmp_path: Path) -> None:
     assert [event["stage"] for event in stages] == [
         "reading",
         "analysing",
-        "bundling",
         "compressing-analysis",
         "uploading-analysis",
-        "compressing-bundle",
-        "uploading-bundle",
     ]
-    assert [event["words"] for event in stages] == [None, 3, 3, 3, 3, 3, 3]
-    for event in (stages[4], stages[6]):
-        assert isinstance(event["bytes"], int) and event["bytes"] > 0
+    assert [event["words"] for event in stages] == [None, 3, 3, 3]
+    assert isinstance(stages[3]["bytes"], int) and stages[3]["bytes"] > 0
     assert events[-1]["event"] == "ingest finished"
     assert events[-1]["outcome"] == "ready"
     for event in events[1:]:
@@ -133,11 +113,8 @@ def test_each_stage_is_reported_to_the_jobs_progress(tmp_path: Path) -> None:
     stages: list[Stage] = [
         "reading",
         "analysing",
-        "bundling",
         "compressing-analysis",
         "uploading-analysis",
-        "compressing-bundle",
-        "uploading-bundle",
     ]
     assert progress.events == [
         event for stage in stages for event in (("started", stage), ("finished", stage))
@@ -146,29 +123,12 @@ def test_each_stage_is_reported_to_the_jobs_progress(tmp_path: Path) -> None:
     assert progress.counts == (len(TEXT), 3)
 
 
-def test_a_rebundle_reports_loading_the_stored_analysis(tmp_path: Path) -> None:
-    blobs = DirBlobs(tmp_path)
-    doc = doc_id("pl", TEXT)
-    blobs.put(text_key(doc), TEXT.encode(), "text/plain")
-    Ingester(blobs, pipelines()).process(job(doc))
-    progress = Recorded()
-    newer = Pipeline("pl", fake_analysis, fake_bundle, "test/1", "lex/2")
-    Ingester(blobs, {"pl": newer}).process(job(doc), progress)
-    assert [stage for event, stage in progress.events if event == "finished"] == [
-        "reading",
-        "loading-analysis",
-        "bundling",
-        "compressing-bundle",
-        "uploading-bundle",
-    ]
-
-
 def test_all_of_a_document_is_under_one_prefix(tmp_path: Path) -> None:
     blobs = DirBlobs(tmp_path)
     doc = doc_id("pl", TEXT)
     blobs.put(text_key(doc), TEXT.encode(), "text/plain")
     ready = run_to_ready(blobs, doc, pipelines())
-    keys = [text_key(doc), status_key(doc), ready["analysis"], ready["bundle"]]
+    keys = [text_key(doc), status_key(doc), ready["analysis"]]
     assert all(key.startswith(f"doc/{doc}/") for key in keys), keys
 
 
@@ -189,9 +149,7 @@ def test_text_over_the_limit_fails_before_analysis(tmp_path: Path) -> None:
     doc = doc_id("pl", text)
     blobs.put(text_key(doc), text.encode(), "text/plain")
     analysed: list[str] = []
-    pipeline = Pipeline(
-        "pl", lambda t: analysed.append(t) or fake_analysis(t), fake_bundle, "test/1", ""
-    )
+    pipeline = Pipeline("pl", lambda t: analysed.append(t) or fake_analysis(t), "test/1")
     failed = Ingester(blobs, {"pl": pipeline}).process(job(doc))
     assert failed["outcome"] == "failed"
     assert analysed == []
@@ -210,11 +168,7 @@ def test_versions_are_published_for_the_api(tmp_path: Path) -> None:
     assert raw is not None
     versions = json.loads(raw)
     assert versions["analyzer"] == "test/1"
-    assert versions["lexicon"] == "lex/1"
-    # The names are what the API compares: the shapes and the bundler count as much as
-    # the versions
     assert versions["analysis"].startswith(f"s{SCHEMA}-a")
-    assert versions["bundle"].startswith(f"b{BUNDLE_SCHEMA}-v{BUNDLER_VERSION}-a")
 
 
 def test_what_a_job_made_has_the_published_names(tmp_path: Path) -> None:
@@ -224,7 +178,6 @@ def test_what_a_job_made_has_the_published_names(tmp_path: Path) -> None:
     pipeline = pipelines()["pl"]
     ready = run_to_ready(blobs, doc, {"pl": pipeline})
     assert ready["analysis"] == f"doc/{doc}/analysis/{pipeline.versions()['analysis']}.json.br"
-    assert ready["bundle"] == f"doc/{doc}/bundle/{pipeline.versions()['bundle']}.json.br"
 
 
 class FailingBlobs(DirBlobs):
@@ -255,42 +208,18 @@ def test_a_job_already_done_is_not_analysed_again(tmp_path: Path) -> None:
     doc = doc_id("pl", TEXT)
     blobs.put(text_key(doc), TEXT.encode(), "text/plain")
     analysed: list[str] = []
-    pipeline = Pipeline(
-        "pl", lambda t: analysed.append(t) or fake_analysis(t), fake_bundle, "test/1", "lex/1"
-    )
+    pipeline = Pipeline("pl", lambda t: analysed.append(t) or fake_analysis(t), "test/1")
     ingester = Ingester(blobs, {"pl": pipeline})
     ingester.process(job(doc))
     assert ingester.process(job(doc))["outcome"] == "ready"
     assert len(analysed) == 1
 
 
-def test_a_new_lexicon_rebundles_without_analysing_again(tmp_path: Path) -> None:
-    blobs = DirBlobs(tmp_path)
-    doc = doc_id("pl", TEXT)
-    blobs.put(text_key(doc), TEXT.encode(), "text/plain")
-    analysed: list[str] = []
-    bundled: list[Blob] = []
-
-    def analyze(text: str) -> Blob:
-        analysed.append(text)
-        return fake_analysis(text)
-
-    def bundle(blob: Blob) -> Bundle:
-        bundled.append(blob)
-        return fake_bundle(blob)
-
-    Ingester(blobs, {"pl": Pipeline("pl", analyze, bundle, "test/1", "lex/1")}).process(job(doc))
-    ready = run_to_ready(blobs, doc, {"pl": Pipeline("pl", analyze, bundle, "test/1", "lex/2")})
-    assert ready["lexicon"] == "lex/2"
-    assert len(analysed) == 1
-    assert len(bundled) == 2 and bundled[1] == fake_analysis(TEXT)
-
-
 def test_an_analyser_unlike_the_published_one_fails(tmp_path: Path) -> None:
     blobs = DirBlobs(tmp_path)
     doc = doc_id("pl", TEXT)
     blobs.put(text_key(doc), TEXT.encode(), "text/plain")
-    pipeline = Pipeline("pl", fake_analysis, fake_bundle, "test/2", "lex/1")
+    pipeline = Pipeline("pl", fake_analysis, "test/2")
     failed = Ingester(blobs, {"pl": pipeline}).process(job(doc))
     assert failed["outcome"] == "failed"
     assert "test/2" in (failed["error"] or "")

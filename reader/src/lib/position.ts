@@ -57,7 +57,7 @@ export async function positionsOf(id: DocumentId, storage = browserStorage()): P
 /** The text's word pieces' elements, in piece id order (Layout.words): each is a span,
  * .w or .punct. */
 export function wordElements(root: ParentNode): readonly HTMLElement[] {
-  return [...root.querySelectorAll<HTMLElement>(":scope > .w, :scope > .punct")];
+  return [...root.querySelectorAll<HTMLElement>(":scope > .paragraph > .w, :scope > .paragraph > .punct")];
 }
 
 /** The index of the first element on a line that ends below `top`, a y in the viewport:

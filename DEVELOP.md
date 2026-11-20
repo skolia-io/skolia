@@ -243,13 +243,12 @@ even if it has no entry of its own. Rebuild any SQLite files from before this sc
 The build stores senses, examples, paradigms, forms and audio in ordered tables.
 Tags, accent labels and feature maps stay with their parent rows. Both endpoints
 of a relation reference entries, which can have zero senses. Each endpoint has
-an index. The bundle and cards builders assemble their JSON from these tables.
+an index. The D1 export builds entries and form audio from these tables.
 
-A document's bundle (the lexicon slice the phone downloads) from its analysis:
+To produce a document analysis for inspection:
 
 ```fish
 uv run skolia-analyze --lang pl --data ../data/lexicon < text.txt > text.json
-uv run skolia-bundle --data ../data/lexicon < text.json > text.bundle.json
 ```
 
 How many analysed words get a meaning:
@@ -258,7 +257,7 @@ How many analysed words get a meaning:
 uv run python scripts/eval_lexicon.py ../data/lexicon/pl.sqlite text.json
 ```
 
-Wiktionary content is CC BY-SA 4.0: bundles carry an `attribution` string, and the app must show it.
+Wiktionary content is CC BY-SA 4.0. The lexicon Worker provides the source credits shown in the reader.
 
 ### Verb valency (case reasons)
 

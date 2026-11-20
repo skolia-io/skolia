@@ -1,5 +1,4 @@
-"""A lexicon row -> the Entry the API serves and a bundle carries, built in one place so
-both say the same: borrowed senses, grammar, pronunciations and compact paradigms."""
+"""Build whole lexicon entries with borrowed senses, grammar, audio and paradigms."""
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -7,7 +6,7 @@ from typing import cast
 
 from ..lang.pl.walenty.model import Schema
 from ..schema import Feats, Upos
-from .schema import BundleParadigm, Entry, Paradigm, Pronunciation, Recording, Sense
+from .schema import Entry, EntryParadigm, Paradigm, Pronunciation, Recording, Sense
 from .store import Lexicon, Row
 
 type Paradigms = Callable[[str, Upos], list[Paradigm]]
@@ -72,6 +71,7 @@ def make(lexicon: Lexicon, row: Row, extras: Extras, feats: FeatsTable) -> Entry
         "senses": row.senses or _borrowed(lexicon, row),
         "relations": row.relations,
         "pronunciations": pronounce(lexicon, row.lemma, row.upos),
+        "recordings": record(lexicon, row.lemma, row.upos),
         "paradigms": [compact(p, feats) for p in paradigms],
         "frames": extras.frames(row.lemma, row.upos),
     }
@@ -104,7 +104,7 @@ def _borrowed(lexicon: Lexicon, row: Row) -> list[Sense]:
     ]
 
 
-def compact(paradigm: Paradigm, feats: FeatsTable) -> BundleParadigm:
+def compact(paradigm: Paradigm, feats: FeatsTable) -> EntryParadigm:
     by_form: dict[str, list[int]] = {}
     for form in paradigm["forms"]:
         indices = by_form.setdefault(form["form"], [])
@@ -136,7 +136,7 @@ def record(lexicon: Lexicon, word: str, upos: Upos) -> list[Recording]:
 def _find[T](
     by_upos_of: Callable[[str], dict[Upos, list[T]]], word: str, upos: Upos
 ) -> tuple[str, Upos] | None:
-    """The spelling and part of speech to look up. Falls back like bundle.resolve: the
+    """The spelling and part of speech to look up. Falls back to the
     word lowercased (a sentence's first word), then the closest other part of speech (be
     as AUX is Wiktionary's verb)."""
     for spelling in dict.fromkeys([word, word.lower()]):

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { Bundle, Entry, Feats, Token } from "@skolia/shared/schema";
-import { paradigmTables, type Table } from "../../paradigm.ts";
+import type { Entry, Feats, Token } from "@skolia/shared/schema";
+import { formTables, type Table } from "../../paradigm.ts";
 import { french } from "./index.ts";
 
 function token(text: string, lemma: string, upos: Token["upos"], feats: Feats): Token {
@@ -96,17 +96,7 @@ const BEAU: Entry = {
   ],
 };
 
-const BUNDLE: Bundle = {
-  schema: 2,
-  lang: "fr",
-  lexicon: "t",
-  attribution: "",
-  entries: { "fr:prendre:VERB": PRENDRE, "fr:beau:ADJ": BEAU },
-  lookup: {},
-  feats: FEATS,
-  pronunciations: {},
-  recordings: {},
-};
+const FEATURE_SETS: readonly Feats[] = FEATS;
 
 function titles(tables: Table[]): string[] {
   return tables.map((t) => t.title);
@@ -114,7 +104,7 @@ function titles(tables: Table[]): string[] {
 
 test("a verb has a table per simple tense it has forms for, then its participles", () => {
   const prends = token("prends", "prendre", "VERB", FEATS[2] ?? {});
-  const tables = paradigmTables(BUNDLE, PRENDRE, prends, french.paradigm);
+  const tables = formTables((id) => FEATURE_SETS[id], PRENDRE, prends, french.paradigm);
   assert.deepEqual(titles(tables), ["Infinitive", "Present", "Imperfect", "Conditional", "Present participle", "Past participle"]);
   // prends is the 1st and 2nd person singular; only the token's own (2nd) is marked
   const present = tables.find((t) => t.title === "Present");
@@ -131,7 +121,7 @@ test("a verb has a table per simple tense it has forms for, then its participles
 test("a past participle is marked by its gender and number, without Voice or Tense", () => {
   // GSD gives participles Voice; the lexicon's forms don't have it, so it doesn't count
   const prises = token("prises", "prendre", "VERB", { Gender: "Fem", Number: "Plur", VerbForm: "Part", Voice: "Pass" });
-  const participle = paradigmTables(BUNDLE, PRENDRE, prises, french.paradigm).find((t) => t.title === "Past participle");
+  const participle = formTables((id) => FEATURE_SETS[id], PRENDRE, prises, french.paradigm).find((t) => t.title === "Past participle");
   assert.ok(participle);
   assert.deepEqual(participle.columns, ["sg", "pl"]);
   assert.deepEqual(
@@ -143,7 +133,7 @@ test("a past participle is marked by its gender and number, without Voice or Ten
 
 test("an adjective's table is gender by number, with bel beside beau", () => {
   const bel = token("bel", "beau", "ADJ", { Gender: "Masc", Number: "Sing" });
-  const tables = paradigmTables(BUNDLE, BEAU, bel, french.paradigm);
+  const tables = formTables((id) => FEATURE_SETS[id], BEAU, bel, french.paradigm);
   assert.equal(tables.length, 1);
   assert.deepEqual(
     tables[0]?.rows.map((r) => r.cells.map((c) => c.map((f) => f.text).join("/"))),

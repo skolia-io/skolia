@@ -1,5 +1,5 @@
 // Documents: importing a text, listing and opening them, and their text, analysis and
-// bundle, queueing a document again when ingest makes other versions or its job is lost.
+// queueing a document again when ingest makes other versions or its job is lost.
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import * as z from "zod";
 import {
@@ -20,7 +20,7 @@ import {
   type User,
 } from "@skolia/shared/api";
 import type { PageRequest } from "@skolia/shared/page";
-import { PART_ENCODING, docId, partKey, statusKey, textKey, versionsKey } from "@skolia/shared/keys";
+import { PART_ENCODING, docId, analysisKey, statusKey, textKey, versionsKey } from "@skolia/shared/keys";
 import type { Status, Versions } from "@skolia/shared/schema";
 import * as schemas from "@skolia/shared/schemas";
 import { log } from "@skolia/util/log";
@@ -159,7 +159,7 @@ export async function update(
   return ok(await current(deps, { ...record, ...fields }, versionsOf(deps.blobs), user));
 }
 
-/** A user deletes their entry. The text, its analyses and bundles stay, so importing it
+/** A user deletes their entry. The text, its analyses stay, so importing it
  * again needn't analyse it again. */
 export async function remove(
   deps: { documents: DocumentEntries & DocumentLookup },
@@ -205,20 +205,17 @@ export async function text(
   return stored(deps, textKey(record.id), undefined, ifNoneMatch, fail(500, "missing text"));
 }
 
-/** An analysis or bundle by name (DocumentSummary.reading): a name is a version, so
- * what's at the URL never changes, and the reader gets an analysis and bundle that
- * belong together. */
+/** A document's analysis at a URL keyed by its immutable version name. */
 export async function part(
   deps: { documents: DocumentLookup; blobs: BlobStore },
   id: string,
   viewer: User | null,
-  which: "analysis" | "bundle",
   name: string,
   ifNoneMatch: string | undefined,
 ): Promise<BlobResult | NotModified | Failed<404>> {
   const record = await findDocument(deps, id, viewer);
   if (!record || !NAME.test(name)) return noSuchDocument();
-  return stored(deps, partKey(record.id, which, name), PART_ENCODING, ifNoneMatch, fail(404, `no ${which} ${name}`));
+  return stored(deps, analysisKey(record.id, name), PART_ENCODING, ifNoneMatch, fail(404, `no analysis ${name}`));
 }
 
 /** The blob at a key that never changes, or 304 without reading it when the client has it. */
@@ -298,11 +295,11 @@ async function requeue(
   return queued;
 }
 
-/** A ready document whose analysis or bundle isn't what ingest makes now. Unknown
+/** A ready document whose analysis isn't what ingest makes now. Unknown
  * until ingest has published its versions. */
 export function isOutdated(status: Status, latest: Versions | null): boolean {
   if (status.state !== "ready" || latest === null) return false;
-  return nameOf(status.artifacts.analysis) !== latest.analysis || nameOf(status.artifacts.bundle) !== latest.bundle;
+  return nameOf(status.artifacts.analysis) !== latest.analysis;
 }
 
 /** Longer than a job takes, waiting its turn included, short of a run's retries. A document
@@ -367,8 +364,7 @@ function summarize(
     state: status?.state ?? "failed",
   };
   const analysis = nameOf(status?.artifacts?.analysis);
-  const bundle = nameOf(status?.artifacts?.bundle);
-  if (analysis !== undefined && bundle !== undefined) summary.reading = { analysis, bundle };
+  if (analysis !== undefined) summary.reading = { analysis };
   if (status === null) summary.error = "no status";
   else if (status.state === "failed") summary.error = status.error;
   return summary;

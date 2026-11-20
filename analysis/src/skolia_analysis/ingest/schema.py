@@ -11,15 +11,12 @@ class IngestJob(TypedDict):
 
 
 class ReadyAnalysis(TypedDict):
-    """The analysis a ready document reads: its blob keys, and the analyser and lexicon that
-    made them. A job that succeeds answers with it, and the run puts it in the status."""
+    """The analysis a ready document reads: its blob key and the analyser that made it.
+    A job that succeeds answers with it, and the run puts it in the status."""
 
     analyzer: str
-    lexicon: str
     analysis: str
     """Blob key of the analysis."""
-    bundle: str
-    """Blob key of the lexicon bundle."""
 
 
 class JobResult(TypedDict):
@@ -102,16 +99,13 @@ type Status = QueuedStatus | ReadyStatus | FailedStatus
 
 class Versions(TypedDict):
     """What ingest currently produces for a language, written when it starts. A ready
-    document whose analysis or bundle has another name is out of date, and the API
-    queues it again; until the new analysis is ready, the status keeps the old keys and
+    document whose analysis has another name is out of date, and the API
+    queues it again; until the new analysis is ready, the status keeps the old key and
     the reader shows the old analysis."""
 
     analyzer: str
-    lexicon: str
     analysis: str
     """analysis_name: the blob shape and analyzer, the part of the key that changes."""
-    bundle: str
-    """bundle_name: the bundle shape, analyzer and lexicon."""
 
 
 SHORT_HASH = 12
@@ -140,7 +134,6 @@ def short_hash(value: str) -> str:
 #   doc/{doc}/text.txt
 #   doc/{doc}/status.json
 #   doc/{doc}/analysis/{analysis_name}.json.br   s{schema}-a{analyzer}
-#   doc/{doc}/bundle/{bundle_name}.json.br       b{bundle schema}-v{bundler}-a{analyzer}-l{lexicon}
 # and, per language:
 #   versions/{lang}.json
 
@@ -161,16 +154,8 @@ def analysis_name(schema: int, analyzer: str) -> str:
     return f"s{schema}-a{short_hash(analyzer)}"
 
 
-def bundle_name(bundle_schema: int, bundler: str, analyzer: str, lexicon: str) -> str:
-    return f"b{bundle_schema}-v{bundler}-a{short_hash(analyzer)}-l{short_hash(lexicon)}"
-
-
 def analysis_key(doc: str, name: str) -> str:
     return f"{doc_prefix(doc)}analysis/{name}.json.br"
-
-
-def bundle_key(doc: str, name: str) -> str:
-    return f"{doc_prefix(doc)}bundle/{name}.json.br"
 
 
 def versions_key(lang: str) -> str:

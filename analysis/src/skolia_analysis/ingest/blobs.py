@@ -9,8 +9,8 @@ from typing import Protocol
 from urllib.parse import quote
 
 BROTLI = "br"
-"""Content-Encoding of the analysis and bundle. Measured on Kamizelka against gzip -9
-and zstd -22: Brotli -11 was 41% (analysis) and 60% (bundle) the size of gzip, and
+"""Content-Encoding of the analysis. Measured on Kamizelka against gzip -9
+and zstd -22: Brotli -11 was 41% the size of gzip, and
 11-17% smaller than zstd. Browsers decode it natively over HTTPS."""
 
 

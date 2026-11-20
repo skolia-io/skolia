@@ -2,7 +2,7 @@
 // page by page.route. The app runs on in-memory ports typed by its Deps, so the
 // screenshots need no Worker, database or ingest, and a change to a port or a route's
 // response fails tsc -p screenshots. The text is the start of Prus's Lalka (public
-// domain), its analysis and bundle as ingest stored them, with a recording of each
+// domain), its analysis as ingest stored it, with a recording of each
 // paragraph: silence, served from AUDIO.
 import { readFileSync } from "node:fs";
 import { extname, join } from "node:path";
@@ -27,8 +27,8 @@ import {
   type UserId as UserIdType,
 } from "@skolia/shared/api";
 import { LANGUAGES } from "@skolia/shared/lang";
-import { partKey, statusKey, textKey } from "@skolia/shared/keys";
-import type { Blob, Bundle, Entry, Status } from "@skolia/shared/schema";
+import { analysisKey, statusKey, textKey } from "@skolia/shared/keys";
+import type { Blob, Entry, Feats, Pronunciation, Recording, Status } from "@skolia/shared/schema";
 import { AnnotationId, CardId, DocumentId, LemmaId, ReadingListId, Timestamp, UserId } from "@skolia/shared/schemas";
 
 type Deps = Parameters<typeof createApp>[0];
@@ -40,7 +40,13 @@ const FIXTURES = join(import.meta.dirname, "fixtures");
 
 const NOW = new Date("2026-11-09T10:00:00Z");
 const fixture = (name: string) => readFileSync(join(FIXTURES, name));
-const bundle = JSON.parse(fixture("lalka.bundle.json").toString("utf8")) as Bundle;
+const dictionary = JSON.parse(fixture("lalka.lexicon.json").toString("utf8")) as {
+  entries: Record<string, Entry>;
+  lookup: Record<string, string>;
+  feats: Feats[];
+  pronunciations: Record<string, Pronunciation[]>;
+  recordings: Record<string, Recording[]>;
+};
 const analysis = JSON.parse(fixture("lalka.analysis.json").toString("utf8")) as Blob;
 const text = fixture("lalka.txt").toString("utf8");
 
@@ -107,8 +113,7 @@ function silence(): Buffer {
   header.writeUInt32LE(samples, 40);
   return Buffer.concat([header, Buffer.alloc(samples, 0x80)]);
 }
-const ANALYSIS = partKey(LALKA, "analysis", "s2-ac973bfbdb066");
-const BUNDLE = partKey(LALKA, "bundle", "b1-v2-ac973bfbdb066-l5da30b8a5747");
+const ANALYSIS = analysisKey(LALKA, "s2-ac973bfbdb066");
 
 const lalka: StoredDocument = {
   status: null,
@@ -179,7 +184,7 @@ const statuses: readonly (readonly [DocumentIdType, Status])[] = [
     {
       state: "ready",
       updated: "2026-11-07T10:00:00.000Z",
-      artifacts: { analyzer: "pl/1", lexicon: "lex/1", analysis: ANALYSIS, bundle: BUNDLE },
+      artifacts: { analyzer: "pl/1", analysis: ANALYSIS },
     },
   ],
   [
@@ -189,9 +194,7 @@ const statuses: readonly (readonly [DocumentIdType, Status])[] = [
       updated: "2026-11-07T10:00:00.000Z",
       artifacts: {
         analyzer: "fr/1",
-        lexicon: "lex/1",
-        analysis: partKey(PETIT_PRINCE.id, "analysis", "s2-a1"),
-        bundle: partKey(PETIT_PRINCE.id, "bundle", "b1-a1-l1"),
+        analysis: analysisKey(PETIT_PRINCE.id, "s2-a1"),
       },
     },
   ],
@@ -201,29 +204,36 @@ const statuses: readonly (readonly [DocumentIdType, Status])[] = [
 
 const JSON_TYPE = "application/json";
 
-/** The blobs as ingest stores them: analyses and bundles Brotli-compressed. */
+/** The blobs as ingest stores them: analyses Brotli-compressed. */
 const blobs: ReadonlyMap<string, StoredBlob> = new Map([
   [textKey(LALKA), { body: new Uint8Array(fixture("lalka.txt")), contentType: "text/plain; charset=utf-8" }],
   [ANALYSIS, { body: new Uint8Array(brotliCompressSync(fixture("lalka.analysis.json"))), contentType: JSON_TYPE }],
-  [BUNDLE, { body: new Uint8Array(brotliCompressSync(fixture("lalka.bundle.json"))), contentType: JSON_TYPE }],
   ...statuses.map(
     ([id, status]) => [statusKey(id), { body: new TextEncoder().encode(JSON.stringify(status)), contentType: JSON_TYPE }] as const,
   ),
 ]);
 
-/** The lexicon serves the same entries a bundle carries. */
+/** The lexicon fixture's entries. */
 function entry(lemmaId: LemmaIdType): Entry | null {
-  return bundle.entries[lemmaId] ?? null;
+  const found = dictionary.entries[dictionary.lookup[lemmaId] ?? lemmaId];
+  return found === undefined ? null : { ...found, recordings: dictionary.recordings[`${found.lemma}:${found.upos}`] ?? [] };
 }
 
-const featureSets = Object.fromEntries(bundle.feats.map((feats, id) => [String(id), feats]));
+const featureSets = Object.fromEntries(dictionary.feats.map((feats, id) => [String(id), feats]));
 
-/** The lexicon Worker's (lexicon/src/app.ts), on the bundle's Polish entries. */
+/** The lexicon Worker's (lexicon/src/app.ts), on the fixture's Polish entries. */
 const lexicon: Lexicon = {
   served: async () => "lex/1",
   byIds: async (_lang, _version, ids) => found(ids.flatMap((id) => entry(id) ?? [])),
+  resolve: async (_lang, _version, id) => found([entry(id)].flatMap((value) => value ?? [])),
+  formAudio: async (_lang, _version, form, upos) => ({
+    pronunciations: dictionary.pronunciations[`${form}:${upos}`] ?? [],
+    recordings: dictionary.recordings[`${form}:${upos}`] ?? [],
+  }),
   byLemma: async (_lang, _version, lemma) =>
-    found(Object.keys(bundle.entries).flatMap((id) => (bundle.entries[id]?.lemma === lemma ? (entry(LemmaId.parse(id)) ?? []) : []))),
+    found(
+      Object.keys(dictionary.entries).flatMap((id) => (dictionary.entries[id]?.lemma === lemma ? (entry(LemmaId.parse(id)) ?? []) : [])),
+    ),
 };
 
 function found(entries: readonly Entry[]): Found {
@@ -609,7 +619,10 @@ async function forward(route: Route, app: Requestable, failed: string[], prefix 
     ...(body ? { body: new Uint8Array(body) } : {}),
   });
   const { pathname } = new URL(request.url());
-  if (response.status >= 400 && response.status !== 401) failed.push(`${request.method()} ${pathname}: ${response.status}`);
+  const missingEntry = response.status === 404 && pathname.startsWith("/api/lexicon/v1/entries/");
+  if (response.status >= 400 && response.status !== 401 && !missingEntry) {
+    failed.push(`${request.method()} ${pathname}: ${response.status}`);
+  }
   const headers = Object.fromEntries(response.headers);
   const raw = Buffer.from(await response.arrayBuffer());
   const decoded = headers["content-encoding"] === "br" ? brotliDecompressSync(raw) : raw;
@@ -619,7 +632,7 @@ async function forward(route: Route, app: Requestable, failed: string[], prefix 
 }
 
 /** Serves the reader and the API to the page; returns the API requests that failed
- * (other than 401s), for the test to check are none. */
+ * except expected sign-in and missing-entry responses. */
 export async function serve(
   page: Page,
   { signedIn, annotations = narration }: { signedIn: boolean; annotations?: readonly Annotation[] },

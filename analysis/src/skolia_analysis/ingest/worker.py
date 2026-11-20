@@ -1,4 +1,4 @@
-"""Process import jobs: text blob -> analysis + bundle blobs. The run that asked for a job
+"""Process import jobs: text blob -> analysis blob. The run that asked for a job
 keeps the document's status (ingest/src/workflow.ts), from the job's result."""
 
 import json
@@ -6,13 +6,11 @@ import time
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Literal, cast
 
 import brotli
 import structlog
 
 from ..blob import SCHEMA
-from ..lexicon.schema import BUNDLE_SCHEMA, BUNDLER_VERSION, Bundle
 from ..schema import Blob
 from .blobs import BROTLI, BlobError, Blobs
 from .jobs import NO_PROGRESS, JobQueue, Progress, Received, Stage
@@ -24,8 +22,6 @@ from .schema import (
     Versions,
     analysis_key,
     analysis_name,
-    bundle_key,
-    bundle_name,
     doc_id,
     text_key,
     versions_key,
@@ -39,12 +35,6 @@ MAX_BACKOFF_SECONDS = 60.0
 # Highest quality: about 1.6 s for a 2,800-word story, paid once per import
 BROTLI_QUALITY = 11
 
-Stored = Literal["analysis", "bundle"]
-STORE_STAGES: dict[Stored, tuple[Stage, Stage]] = {
-    "analysis": ("compressing-analysis", "uploading-analysis"),
-    "bundle": ("compressing-bundle", "uploading-bundle"),
-}
-
 
 class JobError(Exception):
     """A job that can't succeed as given; recorded in the status, not retried."""
@@ -57,19 +47,13 @@ class Pipeline:
 
     lang: str
     analyze: Callable[[str], Blob]
-    bundle: Callable[[Blob], Bundle]
     analyzer: str
     """The name analyze() puts in its blobs, known without analysing anything."""
-    lexicon_version: str
 
     def versions(self) -> Versions:
         return {
             "analyzer": self.analyzer,
-            "lexicon": self.lexicon_version,
             "analysis": analysis_name(SCHEMA, self.analyzer),
-            "bundle": bundle_name(
-                BUNDLE_SCHEMA, BUNDLER_VERSION, self.analyzer, self.lexicon_version
-            ),
         }
 
 
@@ -141,51 +125,20 @@ class Ingester:
                 raise JobError(f"text is longer than {MAX_TEXT_LENGTH} characters")
         versions = pipeline.versions()
         a_key = analysis_key(doc, versions["analysis"])
-        b_key = bundle_key(doc, versions["bundle"])
-        # Already made (an earlier attempt made them, or the document was queued again):
-        # the keys name the versions, so the blobs are current
-        if not self._blobs.exists(b_key):
-            # A new bundler or lexicon with the same analyser: only the bundle is remade
-            stored = self._blobs.get(a_key)
-            if stored is not None:
-                with timed(progress, doc, words, "loading-analysis"):
-                    analysis = cast(Blob, json.loads(brotli.decompress(stored)))
-            else:
-                with timed(progress, doc, words, "analysing"):
-                    analysis = pipeline.analyze(text)
-                if analysis["analyzer"] != pipeline.analyzer:
-                    # Otherwise the API would keep finding it out of date and queueing it
-                    raise JobError(
-                        f"analysed as {analysis['analyzer']!r}, but published {pipeline.analyzer!r}"
-                    )
-            with timed(progress, doc, words, "bundling"):
-                bundle = pipeline.bundle(analysis)
-            if stored is None:
-                self._put_compressed(progress, doc, words, "analysis", a_key, analysis)
-            self._put_compressed(progress, doc, words, "bundle", b_key, bundle)
+        if not self._blobs.exists(a_key):
+            with timed(progress, doc, words, "analysing"):
+                analysis = pipeline.analyze(text)
+            if analysis["analyzer"] != pipeline.analyzer:
+                raise JobError(
+                    f"analysed as {analysis['analyzer']!r}, but published {pipeline.analyzer!r}"
+                )
+            with timed(progress, doc, words, "compressing-analysis"):
+                data = compressed_json(analysis)
+            with timed(progress, doc, words, "uploading-analysis", size_bytes=len(data)):
+                self._blobs.put(a_key, data, JSON, BROTLI)
         else:
-            log.info("bundle already exists", doc=doc, words=words, bundle=versions["bundle"])
-        return {
-            "analyzer": pipeline.analyzer,
-            "lexicon": pipeline.lexicon_version,
-            "analysis": a_key,
-            "bundle": b_key,
-        }
-
-    def _put_compressed(
-        self,
-        progress: Progress,
-        doc: str,
-        words: int,
-        name: Stored,
-        key: str,
-        value: object,
-    ) -> None:
-        compressing, uploading = STORE_STAGES[name]
-        with timed(progress, doc, words, compressing):
-            data = compressed_json(value)
-        with timed(progress, doc, words, uploading, size_bytes=len(data)):
-            self._blobs.put(key, data, JSON, BROTLI)
+            log.info("analysis already exists", doc=doc, words=words, analysis=versions["analysis"])
+        return {"analyzer": pipeline.analyzer, "analysis": a_key}
 
     def run(
         self,

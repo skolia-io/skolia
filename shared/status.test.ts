@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Status } from "./schemas.ts";
 
-const artifacts = { analyzer: "a", lexicon: "l", analysis: "doc/x/analysis/a.json.br", bundle: "doc/x/bundle/b.json.br" };
+const artifacts = { analyzer: "a", analysis: "doc/x/analysis/a.json.br" };
 const updated = "2026-11-04T00:00:00.000Z";
 
 test("status requires the fields its state promises", () => {

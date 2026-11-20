@@ -81,7 +81,7 @@ async function waitForReading(api: Api, lang: Lang, id: DocumentId, imported: nu
     }
     if (summary.state === "failed") throw new Error(`${lang} analysis failed: ${summary.error ?? ""}`);
     if (summary.state === "ready") {
-      assert.ok(summary.reading, `${lang}: ready without analysis and bundle names`);
+      assert.ok(summary.reading, `${lang}: ready without an analysis name`);
       return summary.reading;
     }
     if (Date.now() > deadline) throw new Error(`${lang}: still ${summary.state} after ${TIMEOUT_MS / 60000} min`);

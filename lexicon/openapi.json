@@ -29,7 +29,7 @@
         "pattern": "^(en|fr|pl):[\\s\\S]{1,100}:(ADJ|ADP|ADV|AUX|CCONJ|DET|INTJ|NOUN|NUM|PART|PRON|PROPN|PUNCT|SCONJ|SYM|VERB|X)$",
         "description": "{lang}:{lemma}:{upos}, pl:pies:NOUN"
       },
-      "Entries": {
+      "ResolvedEntry": {
         "type": "object",
         "properties": {
           "entries": {
@@ -54,9 +54,12 @@
             "additionalProperties": {
               "$ref": "#/components/schemas/FeatureSets"
             }
+          },
+          "requestedId": {
+            "$ref": "#/components/schemas/LemmaId"
           }
         },
-        "required": ["entries", "related", "featureSets"],
+        "required": ["entries", "related", "featureSets", "requestedId"],
         "additionalProperties": false
       },
       "CreditedEntry": {
@@ -132,10 +135,16 @@
               "$ref": "#/components/schemas/Pronunciation"
             }
           },
+          "recordings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Recording"
+            }
+          },
           "paradigms": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/BundleParadigm"
+              "$ref": "#/components/schemas/EntryParadigm"
             }
           },
           "frames": {
@@ -550,7 +559,26 @@
         "type": "string",
         "enum": ["UK", "US"]
       },
-      "BundleParadigm": {
+      "Recording": {
+        "type": "object",
+        "properties": {
+          "audio": {
+            "type": "string"
+          },
+          "mp3_url": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": ["audio", "mp3_url"],
+        "additionalProperties": false
+      },
+      "EntryParadigm": {
         "type": "object",
         "properties": {
           "homonym": {
@@ -1587,6 +1615,55 @@
         "required": ["lang", "version", "license", "sources"],
         "additionalProperties": false,
         "description": "A language's lexicon"
+      },
+      "FormAudio": {
+        "type": "object",
+        "properties": {
+          "pronunciations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Pronunciation"
+            }
+          },
+          "recordings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Recording"
+            }
+          }
+        },
+        "required": ["pronunciations", "recordings"],
+        "additionalProperties": false
+      },
+      "Entries": {
+        "type": "object",
+        "properties": {
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CreditedEntry"
+            },
+            "description": "The entries asked for that the lexicon has, by id"
+          },
+          "related": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CreditedEntry"
+            },
+            "description": "With include=related, the entries their relations point at"
+          },
+          "featureSets": {
+            "type": "object",
+            "propertyNames": {
+              "$ref": "#/components/schemas/Lang"
+            },
+            "additionalProperties": {
+              "$ref": "#/components/schemas/FeatureSets"
+            }
+          }
+        },
+        "required": ["entries", "related", "featureSets"],
+        "additionalProperties": false
       }
     }
   },
@@ -1598,11 +1675,11 @@
         "summary": "An entry by id",
         "responses": {
           "200": {
-            "description": "The entry, first in entries",
+            "description": "The resolved entry, first in entries",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Entries"
+                  "$ref": "#/components/schemas/ResolvedEntry"
                 }
               }
             }
@@ -1708,6 +1785,114 @@
               "$ref": "#/components/schemas/Lang"
             },
             "required": true
+          }
+        ]
+      }
+    },
+    "/v1/lexicons/{lang}/forms/{form}": {
+      "get": {
+        "operationId": "getV1LexiconsByLangFormsByForm",
+        "tags": ["Lexicon"],
+        "summary": "Pronunciation and recordings of a word form",
+        "responses": {
+          "200": {
+            "description": "The form's pronunciation and recordings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FormAudio"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "The representation matches If-None-Match"
+          },
+          "400": {
+            "description": "The request doesn't fit its schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The lexicon has no such entry",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The requested version is no longer served",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "lang",
+            "schema": {
+              "$ref": "#/components/schemas/Lang"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "form",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "upos",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "ADJ",
+                "ADP",
+                "ADV",
+                "AUX",
+                "CCONJ",
+                "DET",
+                "INTJ",
+                "NOUN",
+                "NUM",
+                "PART",
+                "PRON",
+                "PROPN",
+                "PUNCT",
+                "SCONJ",
+                "SYM",
+                "VERB",
+                "X"
+              ]
+            },
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "version",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "Pin the lookup to the version from GET /v1/lexicons/{lang} to enable edge caching"
           }
         ]
       }

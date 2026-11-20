@@ -4,8 +4,8 @@ import { timestamp, type DocumentSummary, type QueuePlace } from "@skolia/shared
 import { DocumentId, UserId } from "@skolia/shared/schemas";
 import { MAX_RETRY_MS, POLL_MS, afterPoll, badge, notice, queueText, retryAfter } from "./reading.ts";
 
-const OLD = { analysis: "s2-a1", bundle: "b1-a1-l1" };
-const NEW = { analysis: "s2-a2", bundle: "b1-a2-l1" };
+const OLD = { analysis: "s2-a1" };
+const NEW = { analysis: "s2-a2" };
 
 function summary(state: DocumentSummary["state"], reading?: typeof OLD, error?: string): DocumentSummary {
   const base: DocumentSummary = {

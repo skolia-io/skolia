@@ -1,7 +1,7 @@
-// Requests and responses of skolia-api. The analysis and bundle shapes come from the
+// Requests and responses of skolia-api. The analysis and lexicon entry shapes come from the
 // Python schemas (schema.gen.ts); these are the API's own.
 import type { z } from "zod";
-import type { BundleParadigm, Feats, Pronunciation, Relation, Sense, State, Token, Upos } from "./schema.gen.ts";
+import type { EntryParadigm, Feats, Pronunciation, Relation, Sense, State, Token, Upos } from "./schema.gen.ts";
 import type * as schemas from "./schemas.ts";
 
 import type { PageRequest, PageSize } from "./page.ts";

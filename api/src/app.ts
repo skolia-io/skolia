@@ -58,11 +58,11 @@ function anyone(tag: string, summary: string, description?: string) {
 
 const JSON_ERROR = { "application/json": { schema: { $ref: "#/components/schemas/ApiError" } } };
 
-/** An analysis or bundle: stored Brotli-compressed, and sent that way. */
+/** An analysis: stored Brotli-compressed, and sent that way. */
 const PART_RESPONSES = {
   200: { description: "The JSON, with Content-Encoding: br", content: { "application/json": { schema: { type: "object" } } } },
   304: { description: "The client's copy is current" },
-  404: { description: "No such document, or it has no such analysis or bundle", content: JSON_ERROR },
+  404: { description: "No such document, or it has no such analysis", content: JSON_ERROR },
   406: { description: "The client doesn't accept Brotli", content: JSON_ERROR },
 } as const;
 
@@ -411,28 +411,6 @@ export function createApp(deps: Deps) {
             deps,
             c.req.param("id"),
             await deps.auth.user(c.req.raw.headers),
-            "analysis",
-            c.req.param("name"),
-            c.req.header("if-none-match"),
-          ),
-        ),
-    )
-    .get(
-      "/api/documents/:id/bundle/:name",
-      anyone(
-        TAGS.documents,
-        "A document's lexicon bundle",
-        "By its name in DocumentSummary.reading: the lexicon entries its words need (Bundle in shared/schema.gen.ts), Brotli-compressed.",
-      ),
-      describe({ responses: PART_RESPONSES }),
-      async (c) =>
-        send(
-          c,
-          await documents.part(
-            deps,
-            c.req.param("id"),
-            await deps.auth.user(c.req.raw.headers),
-            "bundle",
             c.req.param("name"),
             c.req.header("if-none-match"),
           ),

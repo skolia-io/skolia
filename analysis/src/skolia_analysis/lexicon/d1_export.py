@@ -17,7 +17,7 @@ from . import entry
 from .entry import Extras, FeatsTable
 from .store import Lexicon
 
-EXPORT_VERSION = 3
+EXPORT_VERSION = 4
 """Goes up when what this adds to an entry changes, so every environment loads it again."""
 
 
@@ -40,13 +40,17 @@ def build(lexicon: Lexicon, extras: Extras, migrations: Path, out: Path) -> int:
         db.executemany("INSERT INTO meta VALUES (?, ?)", meta.items())
         for row in lexicon.rows():
             db.execute(
-                "INSERT INTO entry (lemma_id, version, lemma, upos, data) VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO entry "
+                "(lemma_id, version, lemma, upos, data, lemma_lower, sense_count) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (
                     row.lemma_id,
                     built,
                     row.lemma,
                     row.upos,
                     _json(entry.make(lexicon, row, extras, feats)),
+                    row.lemma.lower(),
+                    len(row.senses),
                 ),
             )
             count += 1
@@ -64,6 +68,34 @@ def build(lexicon: Lexicon, extras: Extras, migrations: Path, out: Path) -> int:
             "INSERT INTO featureset (version, id, feature, value) VALUES (?, ?, ?, ?)",
             ((built, i, k, str(v)) for i, f in enumerate(table) for k, v in f.items()),
         )
+        insert_audio = (
+            "INSERT INTO form_pronunciation (form, upos, version, data) VALUES (?, ?, ?, ?)"
+        )
+        for form in lexicon.spoken_forms():
+            pronunciations = lexicon.pronunciations(form)
+            recordings = lexicon.recordings(form)
+            db.executemany(
+                insert_audio,
+                (
+                    (
+                        form,
+                        upos,
+                        built,
+                        _json(
+                            {
+                                "pronunciations": pronunciations.get(upos, []),
+                                "recordings": recordings.get(upos, []),
+                            }
+                        ),
+                    )
+                    for upos in pronunciations.keys() | recordings.keys()
+                ),
+            )
+            if commons := lexicon.word_recordings(form):
+                db.execute(
+                    insert_audio,
+                    (form, "", built, _json({"pronunciations": [], "recordings": commons})),
+                )
     return count
 
 

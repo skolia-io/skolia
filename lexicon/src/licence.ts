@@ -2,10 +2,8 @@
 // relations and pronunciations (and English and French forms) are Wiktionary's, through
 // kaikki.org's extracts, under CC BY-SA 4.0, so the lexicon is too: share-alike carries
 // over to what's made from it. Polish forms are Morfeusz 2's, generated from SGJP under
-// BSD 2-clause, which allows that. The same credits, as a sentence, are each language's
-// ATTRIBUTION in analysis/src/skolia_analysis/lang/{lang}/lexicon.py, which bundles carry;
-// keep the two alike. Walenty's valency frames and Commons' recordings are in bundles but
-// not in this lexicon, so they're not credited here.
+// BSD 2-clause. Polish entries also carry Walenty valency frames and may link to
+// Wikimedia Commons recordings, whose files have individual credits and licences.
 import type { Lang } from "@skolia/shared/api";
 
 /** A licence: its SPDX identifier, its deed and a sentence that says it. */
@@ -72,7 +70,18 @@ export function wiktionaryUrl(lang: Lang, lemma: string): string {
 /** The sources of a language's lexicon as a whole. */
 export function sources(lang: Lang): readonly Attribution[] {
   const { wiktionary, others } = PROVIDES[lang];
-  return [{ title: "Wiktionary", url: "https://en.wiktionary.org", provides: wiktionary, ...WIKTIONARY }, ...others];
+  const entries = [{ title: "Wiktionary", url: "https://en.wiktionary.org", provides: wiktionary, ...WIKTIONARY }, ...others];
+  if (lang !== "pl") return entries;
+  return [
+    ...entries,
+    {
+      title: "Walenty",
+      author: "Institute of Computer Science, Polish Academy of Sciences",
+      url: "http://zil.ipipan.waw.pl/Walenty",
+      license: "CC-BY-SA-4.0",
+      provides: "verb valency",
+    },
+  ];
 }
 
 /** The sources of one entry: its Wiktionary page, and the language's other sources. */

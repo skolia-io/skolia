@@ -1,8 +1,8 @@
 // Blob keys the API writes and ingest reads. Must match
 // analysis/src/skolia_analysis/ingest/schema.py (doc_prefix, text_key, status_key,
-// versions_key, analysis_key, bundle_key).
-// Ingest writes the analysis and bundle under the same prefix; the API finds their
-// keys in the status.
+// versions_key, analysis_key).
+// Ingest writes the analysis under the document prefix, and the API finds its key
+// in the status.
 import type { DocumentId, Lang } from "./api.ts";
 
 function docPrefix(doc: DocumentId): string {
@@ -17,12 +17,12 @@ export function statusKey(doc: DocumentId): string {
   return `${docPrefix(doc)}status.json`;
 }
 
-/** An analysis or bundle by name (Versions.analysis, Versions.bundle). */
-export function partKey(doc: DocumentId, part: "analysis" | "bundle", name: string): string {
-  return `${docPrefix(doc)}${part}/${name}.json.br`;
+/** An analysis by name (Versions.analysis). */
+export function analysisKey(doc: DocumentId, name: string): string {
+  return `${docPrefix(doc)}analysis/${name}.json.br`;
 }
 
-/** How every analysis and bundle is stored, as its key says. Readers rely on this rather
+/** How every analysis is stored, as its key says. Readers rely on this rather
  * than the object's Content-Encoding, which not every store keeps (wrangler dev's local
  * S3 endpoint drops it). */
 export const PART_ENCODING = "br";

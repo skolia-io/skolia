@@ -1,7 +1,7 @@
-"""skolia-ingest: takes import jobs off a queue, analyses the text and builds its bundle.
+"""skolia-ingest: takes import jobs off a queue, analyses the text.
 
 The API stores the text at doc/{doc}/text.txt, writes doc/{doc}/status.json as queued, and
-enqueues {"doc": ..., "lang": ...}. Ingest writes the analysis and bundle (Brotli-compressed
+enqueues {"doc": ..., "lang": ...}. Ingest writes the analysis (Brotli-compressed
 JSON) and updates the status, which the API reads to tell the reader when it's ready.
 
 Jobs arrive over HTTP from the queue consumer Worker (ingest/src/main.ts), and blobs

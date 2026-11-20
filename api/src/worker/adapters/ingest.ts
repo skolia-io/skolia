@@ -13,11 +13,11 @@ export type JobsOf = (lang: Lang) => Promise<IngestJobs | null>;
 
 const RUN_HASH_LENGTH = 12;
 
-/** A run's name: the document, and a short hash of the bundle it's to make (none before ingest
+/** A run's name: the document, and a short hash of the analysis it's to make (none before ingest
  * has published its versions), so a run asked for twice is one run, and a new version is a
  * new one. */
 export async function runId(doc: DocumentId, versions: Versions | null): Promise<IngestRunId> {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(versions?.bundle ?? ""));
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(versions?.analysis ?? ""));
   const hash = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
   return schemas.IngestRunId.parse(`${doc}-${hash.slice(0, RUN_HASH_LENGTH)}`);
 }

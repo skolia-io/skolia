@@ -3,7 +3,7 @@ import sqlite3
 from pathlib import Path
 
 from skolia_analysis.lang.pl.walenty.parse import parse_schema
-from skolia_analysis.lexicon import build, bundle, commons, d1_export, entry, pronunciation, store
+from skolia_analysis.lexicon import build, commons, d1_export, entry, pronunciation, store
 from skolia_analysis.lexicon.entry import Extras
 from skolia_analysis.lexicon.kaikki import KaikkiSound
 from skolia_analysis.lexicon.schema import (
@@ -14,7 +14,7 @@ from skolia_analysis.lexicon.schema import (
     Sense,
 )
 from skolia_analysis.lexicon.source import Converted
-from skolia_analysis.schema import Aspect, Blob, Feats, Token, Upos
+from skolia_analysis.schema import Aspect, Feats, Upos
 
 DOG: Sense = {"gloss": "dog", "tags": [], "when": [{"Gender": "Masc", "Animacy": "Nhum"}]}
 COP: Sense = {"gloss": "cop", "tags": [], "when": [{"Gender": "Masc", "Animacy": "Hum"}]}
@@ -44,50 +44,7 @@ def test_merge_takes_grammar_tags_off_senses() -> None:
     assert merged["robić", "VERB"].senses[0]["tags"] == ["transitive"]
 
 
-def test_parse_lemma_id_with_separator_in_lemma() -> None:
-    assert bundle.parse_lemma_id("pl:a:b:NOUN") == ("pl", "a:b", "NOUN")
-
-
-def test_resolve_falls_back(tmp_path: Path) -> None:
-    path = tmp_path / "pl.sqlite"
-    rows = [
-        store.Row("pl:by:PART", "by", "PART", [{"gloss": "would", "tags": []}], [], [], {}),
-        store.Row(
-            "pl:krakowski:ADJ", "krakowski", "ADJ", [{"gloss": "of Kraków", "tags": []}], [], [], {}
-        ),
-        # the same spelling as a name: the adjective lowercased wins over it
-        store.Row(
-            "pl:Krakowski:PROPN",
-            "Krakowski",
-            "PROPN",
-            [{"gloss": "a surname", "tags": []}],
-            [],
-            [],
-            {},
-        ),
-    ]
-    store.write(path, rows, {})
-    lexicon = store.Lexicon(path)
-    assert bundle.resolve(lexicon, "pl:by:PART")[1] == "exact"
-    assert bundle.resolve(lexicon, "pl:by:AUX")[1] == "other-pos"
-    found, match = bundle.resolve(lexicon, "pl:Krakowski:ADJ")
-    assert (found and found.lemma_id, match) == ("pl:krakowski:ADJ", "lowercase")
-    assert bundle.resolve(lexicon, "pl:xyzzy:NOUN") == (None, "none")
-
-
-def test_resolve_prefers_the_closest_part_of_speech(tmp_path: Path) -> None:
-    path = tmp_path / "en.sqlite"
-    senses: list[Sense] = [{"gloss": f"sense {i}", "tags": []} for i in range(3)]
-    rows = [
-        store.Row("en:must:NOUN", "must", "NOUN", senses, [], [], {}),
-        store.Row("en:must:VERB", "must", "VERB", senses[:1], [], [], {}),
-    ]
-    store.write(path, rows, {})
-    found, match = bundle.resolve(store.Lexicon(path), "en:must:AUX")
-    assert (found and found.lemma_id, match) == ("en:must:VERB", "other-pos")
-
-
-def test_bundle_shares_feature_sets_and_groups_forms(tmp_path: Path) -> None:
+def test_entry_shares_feature_sets_and_groups_forms(tmp_path: Path) -> None:
     path = tmp_path / "pl.sqlite"
     store.write(
         path, [store.Row("pl:pies:NOUN", "pies", "NOUN", [DOG], [], [], {})], {"version": "test/1"}
@@ -103,46 +60,32 @@ def test_bundle_shares_feature_sets_and_groups_forms(tmp_path: Path) -> None:
         ]
         return [{"homonym": "Sm2", "forms": forms}]
 
-    token: Token = {
-        "start": 0,
-        "end": 3,
-        "text": "psa",
-        "lemma": "pies",
-        "lemma_id": "pl:pies:NOUN",
-        "upos": "NOUN",
-        "xpos": None,
-        "feats": gen,
-        "head": None,
-        "deprel": "root",
-    }
-    blob: Blob = {
-        "schema": 2,
-        "analyzer": "test",
-        "lang": "pl",
-        "hash": "",
-        "sentences": [{"start": 0, "end": 3, "tokens": [token], "expressions": []}],
-    }
-    result = bundle.make(blob, store.Lexicon(path), Extras(paradigms))
-    forms = result["entries"]["pl:pies:NOUN"]["paradigms"][0]["forms"]
-    assert [(f, [result["feats"][i] for i in ids]) for f, ids in forms] == [
+    lexicon = store.Lexicon(path)
+    row = next(lexicon.rows())
+    features: list[Feats] = []
+    feats = entry.FeatsTable(features)
+    result = entry.make(lexicon, row, Extras(paradigms), feats)
+    forms = result["paradigms"][0]["forms"]
+    assert [(f, [features[i] for i in ids]) for f, ids in forms] == [
         ("psa", [gen, acc]),
         ("psu", [{"Case": "Dat"}]),
     ]
-    assert result["entries"]["pl:pies:NOUN"]["grammar"] == {}
-    assert result["entries"]["pl:pies:NOUN"]["frames"] == []
+    assert result["grammar"] == {}
+    assert result["frames"] == []
 
     strach = parse_schema("pies: pewny: : : : {np(gen)}", "noun")
-    with_frames = bundle.make(
-        blob,
-        store.Lexicon(path),
+    with_frames = entry.make(
+        lexicon,
+        row,
         Extras(
             paradigms, lambda lemma, upos: [strach] if (lemma, upos) == ("pies", "NOUN") else []
         ),
+        feats,
     )
-    assert with_frames["entries"]["pl:pies:NOUN"]["frames"] == [strach]
+    assert with_frames["frames"] == [strach]
 
 
-def test_bundle_pronounces_tokens_and_lemmas(tmp_path: Path) -> None:
+def test_pronunciation_fallbacks(tmp_path: Path) -> None:
     path = tmp_path / "en.sqlite"
     lead: Recording = {"audio": "En-lead.ogg", "mp3_url": "https://x/En-lead.ogg.mp3"}
     read: Recording = {"audio": "En-read.ogg", "mp3_url": "https://x/En-read.ogg.mp3"}
@@ -162,30 +105,6 @@ def test_bundle_pronounces_tokens_and_lemmas(tmp_path: Path) -> None:
     assert entry.pronounce(lexicon, "read", "VERB") == []
     assert entry.record(lexicon, "read", "VERB") == [read]
     assert entry.record(lexicon, "lead", "NOUN") == []
-
-    token: Token = {
-        "start": 0,
-        "end": 3,
-        "text": "led",
-        "lemma": "lead",
-        "lemma_id": "en:lead:VERB",
-        "upos": "VERB",
-        "xpos": None,
-        "feats": {},
-        "head": None,
-        "deprel": "root",
-    }
-    blob: Blob = {
-        "schema": 2,
-        "analyzer": "test",
-        "lang": "en",
-        "hash": "",
-        "sentences": [{"start": 0, "end": 3, "tokens": [token], "expressions": []}],
-    }
-    made = bundle.make(blob, lexicon)
-    assert made["pronunciations"] == {"led:VERB": [{"ipa": "/lɛd/"}]}
-    assert made["entries"]["en:lead:VERB"]["pronunciations"] == [{"ipa": "/liːd/"}]
-    assert made["recordings"] == {}
 
 
 def test_commons_names_give_their_words() -> None:
@@ -212,7 +131,7 @@ def test_commons_recordings_are_lingua_libres_first() -> None:
     assert list(found) == ["pies"]
 
 
-def test_bundle_falls_back_to_commons_recordings(tmp_path: Path) -> None:
+def test_record_falls_back_to_commons_recordings(tmp_path: Path) -> None:
     path = tmp_path / "pl.sqlite"
     wiktionary: Recording = {"audio": "Pl-kot.ogg", "mp3_url": "https://x/Pl-kot.ogg.mp3"}
     psa: Recording = {"audio": "LL-psa.wav", "mp3_url": "https://x/LL-psa.wav.mp3"}
@@ -285,9 +204,15 @@ def test_d1_export_stores_whole_entries_relations_and_feature_rows(tmp_path: Pat
     db = sqlite3.connect(out)
     version = f"test/1+d1-{d1_export.EXPORT_VERSION}"
     assert dict(db.execute("SELECT key, value FROM meta")) == {"lang": "pl", "version": version}
-    stored, lemma, upos, data = db.execute(
-        "SELECT version, lemma, upos, data FROM entry"
+    stored, lemma, upos, lower, senses, data = db.execute(
+        "SELECT version, lemma, upos, lemma_lower, sense_count, data FROM entry"
     ).fetchone()
+    assert (lower, senses) == ("pies", 1)
+    audio = db.execute(
+        "SELECT data FROM form_pronunciation WHERE form = ? AND version = ? AND upos = ?",
+        ("pies", version, "NOUN"),
+    ).fetchone()
+    assert json.loads(audio[0]) == {"pronunciations": [{"ipa": "/pjɛs/"}], "recordings": []}
     assert (stored, lemma, upos) == (version, "pies", "NOUN")
     assert json.loads(data) == {
         "lemma_id": "pl:pies:NOUN",
@@ -297,6 +222,7 @@ def test_d1_export_stores_whole_entries_relations_and_feature_rows(tmp_path: Pat
         "senses": [DOG],
         "relations": [{"kind": "variant-of", "lemma": "piesek", "tags": ["rare"]}],
         "pronunciations": [{"ipa": "/pjɛs/"}],
+        "recordings": [],
         "paradigms": [{"homonym": "", "forms": [["psa", [0, 1]]]}],
         "frames": [],
     }
@@ -425,32 +351,15 @@ def test_a_derivative_without_senses_takes_its_bases_and_its_own_aspect(tmp_path
         assert db.execute("PRAGMA foreign_key_check").fetchall() == []
 
 
-def test_a_bundle_carries_a_derivative_without_its_base(tmp_path: Path) -> None:
+def test_an_entry_borrows_senses_from_its_base(tmp_path: Path) -> None:
     path = tmp_path / "pl.sqlite"
     derivatives = [store.VerbDerivative("pl", "golić", "zgolić")]
     store.write(path, [GOLIĆ], {"version": "test/1"}, derivatives=derivatives)
-    token: Token = {
-        "start": 0,
-        "end": 6,
-        "text": "zgolił",
-        "lemma": "zgolić",
-        "lemma_id": "pl:zgolić:VERB",
-        "upos": "VERB",
-        "xpos": None,
-        "feats": {},
-        "head": None,
-        "deprel": "root",
-    }
-    blob: Blob = {
-        "schema": 2,
-        "analyzer": "test",
-        "lang": "pl",
-        "hash": "",
-        "sentences": [{"start": 0, "end": 6, "tokens": [token], "expressions": []}],
-    }
-    made = bundle.make(blob, store.Lexicon(path))
-    assert list(made["entries"]) == ["pl:zgolić:VERB"]
-    assert [s["gloss"] for s in made["entries"]["pl:zgolić:VERB"]["senses"]] == [
+    lexicon = store.Lexicon(path)
+    row = lexicon.get("pl:zgolić:VERB")
+    assert row is not None
+    made = entry.make(lexicon, row, Extras(), entry.FeatsTable([]))
+    assert [sense["gloss"] for sense in made["senses"]] == [
         "to shave",
         "to down, to soak (to drink)",
     ]
