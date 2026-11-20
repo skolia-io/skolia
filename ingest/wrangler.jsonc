@@ -10,7 +10,7 @@
   // No HTTP handler: the API binds its workflow and Ingester
   "workers_dev": false,
   "preview_urls": false,
-  "observability": { "enabled": true },
+  "observability": { "enabled": true, "traces": { "enabled": true } },
   // One container application, whose Ingesters start each language's image
   // (src/main.ts). infra/deploy-ingest.sh puts the pushed images, pinned by
   // digest, in place of the Dockerfiles, which are for wrangler dev.

@@ -11,8 +11,8 @@
   "minify": true,
   "workers_dev": true,
   "preview_urls": false,
-  // Workers Logs, inherited by env.staging and previews; log events are src/log.ts's
-  "observability": { "enabled": true },
+  // Workers Logs and traces, inherited by env.staging and previews; log events are src/log.ts's
+  "observability": { "enabled": true, "traces": { "enabled": true } },
   // Deploys after all status publishers: backfills never race an old publisher.
   "triggers": { "crons": ["* * * * *"] },
   // Runs /api/* near D1 and R2 when that's faster than near the user; assets are still
