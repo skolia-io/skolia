@@ -3,7 +3,7 @@ import { describe, test } from "node:test";
 import { LANGS, type CardCounts, type CardKey, type Due, type Lang } from "@skolia/shared/api";
 import { allPages, type Cursor } from "@skolia/shared/page";
 import { e2eUserKey } from "../../src/e2e-keys.ts";
-import { body, expectStatus } from "../../src/testing/responses.ts";
+import { body, expectStatus } from "@skolia/util/responses";
 import { client } from "./client.ts";
 import { WORDS } from "./words.ts";
 

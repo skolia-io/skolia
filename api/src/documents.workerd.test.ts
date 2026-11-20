@@ -35,7 +35,7 @@ import {
   walk,
   type App,
 } from "./testing/app.ts";
-import { body, expectStatus } from "./testing/responses.ts";
+import { body, expectStatus } from "@skolia/util/responses";
 
 useLocal();
 

@@ -10,7 +10,8 @@ import type { IngestParams } from "@skolia/ingest/rpc";
 import { authOptions, toAuth, type AuthConfig } from "../auth.ts";
 import type { Auth } from "../ports/auth.ts";
 import { sql } from "@skolia/util/sql";
-import { lexiconBinding, lexiconsOf, type LexiconBindings } from "../worker/adapters/lexicon.ts";
+import type { LexiconRpc } from "@skolia/lexicon/rpc";
+import { clearLexicons, lexiconBinding, type LexiconBindings } from "@skolia/lexicon/testing";
 import { prepare } from "@skolia/util/d1";
 import type { User as UserObject } from "../worker/user.ts";
 import type { RecorderEnv } from "./ingest-recorder.ts";
@@ -20,8 +21,9 @@ export const ORIGIN = "http://localhost:5173";
 const API = new URL("../../", import.meta.url).pathname;
 const DIST = `${API}dist/`;
 
-export interface TestEnv extends LexiconBindings {
+export interface TestEnv {
   DB: D1Database;
+  LEXICON: Service<LexiconRpc>;
   USER: DurableObjectNamespace<UserObject>;
   BLOBS: R2Bucket;
   INGEST_WORKFLOW: Workflow<IngestParams>;
@@ -40,6 +42,8 @@ export function authConfig(database: D1Database): AuthConfig {
 export interface Local {
   server: TestHarness;
   env: TestEnv & RecorderEnv;
+  /** The lexicon Worker's databases, which the API's LEXICON reads */
+  lexicon: LexiconBindings;
   auth: Auth;
   signUp(fields: { name: string; email: string }): Promise<User>;
   signIn(userId: string): Promise<Headers>;
@@ -58,12 +62,15 @@ export async function startLocal(): Promise<Local> {
       { configPath: "./wrangler.jsonc", env: "", prebuiltWorkerDir: DIST, vars: { MUTABLE_FINAL_USER_MIGRATION: "true" } },
       { configPath: "./src/testing/ingest-recorder.jsonc" },
       { configPath: "./wrangler.internal.jsonc", env: "" },
+      { configPath: "../lexicon/wrangler.jsonc", env: "" },
     ],
   });
   await server.listen();
   const worker = server.getWorker<TestEnv>();
   await worker.applyD1Migrations("DB");
-  for (const lang of LANGS) await worker.applyD1Migrations(lexiconBinding(lang));
+  const lexiconWorker = server.getWorker<LexiconBindings>("skolia-lexicon");
+  for (const lang of LANGS) await lexiconWorker.applyD1Migrations(lexiconBinding(lang));
+  const lexicon = await lexiconWorker.getEnv();
   const ingest = server.getWorker<RecorderEnv>("skolia-ingest");
   await ingest.applyD1Migrations("INGEST_DB");
   const { INGEST_DB, DOCUMENT_STATUS } = await ingest.getEnv();
@@ -80,6 +87,7 @@ export async function startLocal(): Promise<Local> {
   return {
     server,
     env,
+    lexicon,
     auth: toAuth(instance),
     async signUp(fields) {
       const saved = await test.saveUser(test.createUser(fields));
@@ -106,9 +114,7 @@ export async function startLocal(): Promise<Local> {
         // The system users are the migrations'
         prepare(env.DB, sql`DELETE FROM "user" WHERE role != 'system'`),
       ]);
-      for (const db of Object.values(lexiconsOf(env))) {
-        await db.batch(["entry", "featureset", "loaded"].map((t) => prepare(db, sql`DELETE FROM ${sql.id(t)}`)));
-      }
+      await clearLexicons(lexicon);
       await prepare(env.INGEST_DB, sql`DELETE FROM ingest_job`).run();
       const { objects } = await env.BLOBS.list();
       if (objects.length > 0) await env.BLOBS.delete(objects.map((o) => o.key));

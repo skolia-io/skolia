@@ -1,6 +1,7 @@
 packages:
   - api
   - ingest
+  - lexicon
   - oauth-proxy
   - reader
   - shared

@@ -16,7 +16,7 @@ import {
   summaryOf,
   useLocal,
 } from "./testing/app.ts";
-import { body } from "./testing/responses.ts";
+import { body } from "@skolia/util/responses";
 
 useLocal();
 

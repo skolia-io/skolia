@@ -1,5 +1,7 @@
 // skolia-api on Cloudflare Workers (api/wrangler.jsonc). Static assets (the reader) are
-// served before the Worker runs, except for /api/*.
+// served before the Worker runs, except for /api/*. /api/lexicon/* is the lexicon
+// Worker's API (lexicon/src/app.ts), passed through, so the reader reads it on its own
+// origin in every environment, previews included.
 import { createApp } from "../app.ts";
 import { BACKGROUND_MIGRATIONS } from "./background-migrations/index.ts";
 import { runBackgroundMigrations } from "./background-migrations/runner.ts";
@@ -9,7 +11,8 @@ import { log } from "@skolia/util/log";
 import type { Auth } from "../ports/auth.ts";
 import { RpcIngestHistory, IngestRuns } from "./adapters/ingest.ts";
 import { D1Documents } from "./adapters/documents.ts";
-import { D1Lexicon, lexiconsOf, type LexiconBindings } from "./adapters/lexicon.ts";
+import type { LexiconRpc } from "@skolia/lexicon/rpc";
+import { RpcLexicon } from "./adapters/lexicon.ts";
 import { DurableObjectUsers } from "./adapters/users.ts";
 import { R2Blobs } from "./adapters/blobs.ts";
 import type { User } from "./user.ts";
@@ -18,8 +21,13 @@ export { User } from "./user.ts";
 
 const logger = log("api");
 
-interface Env extends LexiconBindings {
+/** Where the lexicon Worker's API is, here */
+const LEXICON_PATH = "/api/lexicon";
+
+interface Env {
   DB: D1Database;
+  /** The lexicon Worker (lexicon/wrangler.jsonc): its LexiconService, and its API */
+  LEXICON: Service<LexiconRpc>;
   USER: DurableObjectNamespace<User>;
   BLOBS: R2Bucket;
   /** The ingest Worker's runs of ingest, one per document and version */
@@ -67,10 +75,15 @@ export default {
     await runBackgroundMigrations({ db: env.DB.withSession("first-primary"), blobs: new R2Blobs(env.BLOBS) }, BACKGROUND_MIGRATIONS);
   },
   fetch(request, env, ctx) {
+    const url = new URL(request.url);
+    if (url.pathname.startsWith(`${LEXICON_PATH}/`)) {
+      url.pathname = url.pathname.slice(LEXICON_PATH.length);
+      return env.LEXICON.fetch(new Request(url, request));
+    }
     const app = createApp({
       auth: authFor(env),
       users: new DurableObjectUsers(env.USER),
-      lexicon: new D1Lexicon(lexiconsOf(env)),
+      lexicon: new RpcLexicon(env.LEXICON),
       version: env.VERSION ?? "dev",
       documents: new D1Documents(env.DB.withSession("first-primary")),
       blobs: new R2Blobs(env.BLOBS),

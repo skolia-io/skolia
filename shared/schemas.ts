@@ -14,7 +14,6 @@ import {
   MAX_CLOZE_SENTENCE,
   MAX_CLOZE_WHY,
   MAX_LEMMA_LENGTH,
-  MAX_LOOKUP,
   MAX_NEW_PER_DAY,
   MAX_SOURCE_LENGTH,
   MAX_TEXT_LENGTH,
@@ -215,8 +214,6 @@ export const CardsQuery = pageQuery(CardKey, CARD_PAGE)
 const ScheduledFields = z.object({ id: CardId, lemmaId: LemmaId, isNew: z.boolean(), dueAt: Timestamp });
 
 export const ScheduledCard = z.intersection(ScheduledFields, CardContent);
-
-export const LookupRequest = z.object({ ids: z.array(LemmaId).min(1).max(MAX_LOOKUP) });
 
 export const Licence = z.enum(LICENCES).meta({ id: "Licence" });
 
@@ -672,6 +669,8 @@ export const LexiconEntry = z
   });
 
 export const RelationType = gen.RelationType;
+
+export const Relation = gen.Relation;
 
 export const Lookup = z.object({ entries: z.array(LexiconEntry), featureSets: z.partialRecord(Lang, FeatureSets) }).meta({
   id: "Lookup",

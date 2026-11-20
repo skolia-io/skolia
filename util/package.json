@@ -10,12 +10,20 @@
     "./semaphore": "./semaphore.ts",
     "./d1": "./d1.ts",
     "./errors": "./errors.ts",
-    "./log": "./log.ts"
+    "./log": "./log.ts",
+    "./openapi": "./openapi.ts",
+    "./openapi-spec": "./openapi-spec.ts",
+    "./responses": "./responses.ts"
   },
   "scripts": {
     "test": "node --test \"*.test.ts\""
   },
   "dependencies": {
-    "@logtape/logtape": "2.4.2"
+    "@hono/standard-validator": "0.4.1",
+    "@logtape/logtape": "2.4.2",
+    "@standard-schema/spec": "1.1.0",
+    "hono": "4.13.16",
+    "hono-openapi": "1.5.0",
+    "openapi-types": "12.1.3"
   }
 }

@@ -1,0 +1,862 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "skolia lexicon",
+    "description": "Dictionary entries for the languages skolia reads (English, French, Polish): senses, relations between words, pronunciations and inflected forms, mostly from Wiktionary. No sign-in. The content is CC BY-SA 4.0: each entry says whom to credit (attribution) and links its Wiktionary page (sourceUrl). A lexicon's version changes when a new build is loaded; responses carry the versions they were made from as their ETag. An entry's id is {lang}:{lemma}:{upos}, a lemma with a / percent-encoded in a path (pl:i%2Flub:CCONJ).",
+    "version": "v1",
+    "license": {
+      "name": "CC BY-SA 4.0",
+      "identifier": "CC-BY-SA-4.0"
+    }
+  },
+  "servers": [
+    {
+      "url": "..",
+      "description": "Where this spec is served from"
+    }
+  ],
+  "security": [],
+  "tags": [
+    {
+      "name": "Lexicon",
+      "description": "Entries, and each language's lexicon"
+    }
+  ],
+  "components": {
+    "schemas": {
+      "LemmaId": {
+        "type": "string",
+        "pattern": "^(en|fr|pl):[\\s\\S]{1,100}:(ADJ|ADP|ADV|AUX|CCONJ|DET|INTJ|NOUN|NUM|PART|PRON|PROPN|PUNCT|SCONJ|SYM|VERB|X)$",
+        "description": "{lang}:{lemma}:{upos}, pl:pies:NOUN"
+      },
+      "Entries": {
+        "type": "object",
+        "properties": {
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Entry"
+            },
+            "description": "The entries asked for that the lexicon has, by id"
+          },
+          "related": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Entry"
+            },
+            "description": "The entries their relations point at: with include=related, all of them; otherwise those of an entry with no senses, which takes its meaning from them (zgolić from golić)"
+          },
+          "featureSets": {
+            "type": "object",
+            "propertyNames": {
+              "$ref": "#/components/schemas/Lang"
+            },
+            "additionalProperties": {
+              "$ref": "#/components/schemas/FeatureSets"
+            }
+          }
+        },
+        "required": ["entries", "related", "featureSets"],
+        "additionalProperties": false
+      },
+      "Entry": {
+        "type": "object",
+        "properties": {
+          "lemmaId": {
+            "$ref": "#/components/schemas/LemmaId"
+          },
+          "lemma": {
+            "type": "string"
+          },
+          "upos": {
+            "$ref": "#/components/schemas/Upos"
+          },
+          "senses": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Sense"
+            }
+          },
+          "relations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Relation"
+            }
+          },
+          "pronunciations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Pronunciation"
+            },
+            "description": "How the lemma is said"
+          },
+          "paradigms": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BundleParadigm"
+            }
+          },
+          "sourceUrl": {
+            "type": "string",
+            "format": "uri",
+            "description": "The entry's page on English Wiktionary"
+          },
+          "license": {
+            "$ref": "#/components/schemas/License"
+          },
+          "attribution": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Attribution"
+            }
+          },
+          "incoming": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Relation"
+            },
+            "description": "With include=incoming, the relations pointing at this entry, 50 at most, by source id: each one's lemma and lemma_id are its source's, and its sense_indexes are this entry's senses it points at"
+          },
+          "incomingTruncated": {
+            "description": "With include=incoming, whether more than 50 point at it",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "lemmaId",
+          "lemma",
+          "upos",
+          "senses",
+          "relations",
+          "pronunciations",
+          "paradigms",
+          "sourceUrl",
+          "license",
+          "attribution"
+        ],
+        "additionalProperties": false,
+        "description": "A lexicon entry. Its paradigms' forms point into feature sets, [\"psa\", [50, 51]], which the response carries."
+      },
+      "Upos": {
+        "type": "string",
+        "enum": [
+          "ADJ",
+          "ADP",
+          "ADV",
+          "AUX",
+          "CCONJ",
+          "DET",
+          "INTJ",
+          "NOUN",
+          "NUM",
+          "PART",
+          "PRON",
+          "PROPN",
+          "PUNCT",
+          "SCONJ",
+          "SYM",
+          "VERB",
+          "X"
+        ]
+      },
+      "Sense": {
+        "type": "object",
+        "properties": {
+          "gloss": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "when": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Feats"
+            }
+          },
+          "examples": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Example"
+            }
+          }
+        },
+        "required": ["gloss", "tags"],
+        "additionalProperties": false
+      },
+      "Feats": {
+        "type": "object",
+        "properties": {
+          "Abbr": {
+            "$ref": "#/components/schemas/Yes"
+          },
+          "AdpType": {
+            "$ref": "#/components/schemas/AdpType"
+          },
+          "Animacy": {
+            "$ref": "#/components/schemas/Animacy"
+          },
+          "Aspect": {
+            "$ref": "#/components/schemas/Aspect"
+          },
+          "Case": {
+            "$ref": "#/components/schemas/Case"
+          },
+          "ConjType": {
+            "$ref": "#/components/schemas/ConjType"
+          },
+          "Definite": {
+            "$ref": "#/components/schemas/Definite"
+          },
+          "Degree": {
+            "$ref": "#/components/schemas/Degree"
+          },
+          "Emph": {
+            "type": "string",
+            "enum": ["Yes", "No"]
+          },
+          "ExtPos": {
+            "$ref": "#/components/schemas/ExtPos"
+          },
+          "Foreign": {
+            "$ref": "#/components/schemas/Yes"
+          },
+          "Gender": {
+            "$ref": "#/components/schemas/Gender"
+          },
+          "Hyph": {
+            "$ref": "#/components/schemas/Yes"
+          },
+          "Mood": {
+            "$ref": "#/components/schemas/Mood"
+          },
+          "NumForm": {
+            "$ref": "#/components/schemas/NumForm"
+          },
+          "NumType": {
+            "$ref": "#/components/schemas/NumType"
+          },
+          "Number": {
+            "$ref": "#/components/schemas/Number"
+          },
+          "Number[psor]": {
+            "type": "string",
+            "enum": ["Sing", "Plur"]
+          },
+          "PartType": {
+            "$ref": "#/components/schemas/PartType"
+          },
+          "Person": {
+            "$ref": "#/components/schemas/Person"
+          },
+          "Person[psor]": {
+            "type": "string",
+            "enum": ["1", "2", "3"]
+          },
+          "Polarity": {
+            "$ref": "#/components/schemas/Polarity"
+          },
+          "Polite": {
+            "$ref": "#/components/schemas/Polite"
+          },
+          "Poss": {
+            "$ref": "#/components/schemas/Yes"
+          },
+          "PrepCase": {
+            "$ref": "#/components/schemas/PrepCase"
+          },
+          "PronType": {
+            "$ref": "#/components/schemas/PronType"
+          },
+          "PunctSide": {
+            "$ref": "#/components/schemas/PunctSide"
+          },
+          "PunctType": {
+            "$ref": "#/components/schemas/PunctType"
+          },
+          "Reflex": {
+            "$ref": "#/components/schemas/Yes"
+          },
+          "Style": {
+            "$ref": "#/components/schemas/Style"
+          },
+          "Tense": {
+            "$ref": "#/components/schemas/Tense"
+          },
+          "Typo": {
+            "$ref": "#/components/schemas/Yes"
+          },
+          "Variant": {
+            "$ref": "#/components/schemas/Variant"
+          },
+          "VerbForm": {
+            "$ref": "#/components/schemas/VerbForm"
+          },
+          "VerbType": {
+            "$ref": "#/components/schemas/VerbType"
+          },
+          "Voice": {
+            "$ref": "#/components/schemas/Voice"
+          }
+        },
+        "additionalProperties": false
+      },
+      "Yes": {
+        "type": "string",
+        "enum": ["Yes"]
+      },
+      "AdpType": {
+        "type": "string",
+        "enum": ["Prep", "Post"]
+      },
+      "Animacy": {
+        "type": "string",
+        "enum": ["Hum", "Nhum", "Inan"]
+      },
+      "Aspect": {
+        "type": "string",
+        "enum": ["Imp", "Perf"]
+      },
+      "Case": {
+        "type": "string",
+        "enum": ["Nom", "Gen", "Dat", "Acc", "Ins", "Loc", "Voc"]
+      },
+      "ConjType": {
+        "type": "string",
+        "enum": ["Comp", "Pred", "Oper"]
+      },
+      "Definite": {
+        "type": "string",
+        "enum": ["Def", "Ind"]
+      },
+      "Degree": {
+        "type": "string",
+        "enum": ["Pos", "Cmp", "Sup"]
+      },
+      "ExtPos": {
+        "$ref": "#/components/schemas/Upos"
+      },
+      "Gender": {
+        "type": "string",
+        "enum": ["Masc", "Fem", "Neut"]
+      },
+      "Mood": {
+        "type": "string",
+        "enum": ["Ind", "Imp", "Sub", "Cnd"]
+      },
+      "NumForm": {
+        "type": "string",
+        "enum": ["Word", "Digit", "Roman", "Combi"]
+      },
+      "NumType": {
+        "type": "string",
+        "enum": ["Card", "Ord", "Sets", "Frac", "Mult"]
+      },
+      "Number": {
+        "type": "string",
+        "enum": ["Sing", "Plur", "Ptan"]
+      },
+      "PartType": {
+        "type": "string",
+        "enum": ["Int", "Mod"]
+      },
+      "Person": {
+        "type": "string",
+        "enum": ["0", "1", "2", "3"]
+      },
+      "Polarity": {
+        "type": "string",
+        "enum": ["Pos", "Neg"]
+      },
+      "Polite": {
+        "type": "string",
+        "enum": ["Depr"]
+      },
+      "PrepCase": {
+        "type": "string",
+        "enum": ["Pre", "Npr"]
+      },
+      "PronType": {
+        "type": "string",
+        "enum": ["Prs", "Dem", "Rel", "Int", "Ind", "Tot", "Neg", "Art", "Emp", "Rcp", "Exc"]
+      },
+      "PunctSide": {
+        "type": "string",
+        "enum": ["Ini", "Fin"]
+      },
+      "PunctType": {
+        "type": "string",
+        "enum": ["Peri", "Comm", "Dash", "Quot", "Brck", "Qest", "Colo", "Excl", "Semi", "Slsh", "Elip"]
+      },
+      "Style": {
+        "type": "string",
+        "enum": ["Arch", "Coll", "Expr", "Slng", "Vrnc"]
+      },
+      "Tense": {
+        "type": "string",
+        "enum": ["Past", "Pres", "Fut", "Imp"]
+      },
+      "Variant": {
+        "type": "string",
+        "enum": ["Short", "Long"]
+      },
+      "VerbForm": {
+        "type": "string",
+        "enum": ["Fin", "Inf", "Part", "Conv", "Ger", "Vnoun"]
+      },
+      "VerbType": {
+        "type": "string",
+        "enum": ["Quasi", "Mod"]
+      },
+      "Voice": {
+        "type": "string",
+        "enum": ["Act", "Pass"]
+      },
+      "Example": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "translation": {
+            "type": "string"
+          }
+        },
+        "required": ["text"],
+        "additionalProperties": false
+      },
+      "Relation": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "$ref": "#/components/schemas/RelationType"
+          },
+          "lemma": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "lemma_id": {
+            "type": "string"
+          },
+          "sense_indexes": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          }
+        },
+        "required": ["type", "lemma"],
+        "additionalProperties": false
+      },
+      "RelationType": {
+        "type": "string",
+        "enum": ["aspect-partner", "derived-from"]
+      },
+      "Pronunciation": {
+        "type": "object",
+        "properties": {
+          "ipa": {
+            "type": "string"
+          },
+          "accents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Accent"
+            }
+          }
+        },
+        "required": ["ipa"],
+        "additionalProperties": false
+      },
+      "Accent": {
+        "type": "string",
+        "enum": ["UK", "US"]
+      },
+      "BundleParadigm": {
+        "type": "object",
+        "properties": {
+          "homonym": {
+            "type": "string"
+          },
+          "forms": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FormRow"
+            }
+          }
+        },
+        "required": ["homonym", "forms"],
+        "additionalProperties": false
+      },
+      "FormRow": {
+        "type": "array",
+        "prefixItems": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          }
+        ],
+        "items": false,
+        "minItems": 2,
+        "maxItems": 2
+      },
+      "License": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "SPDX identifier: CC-BY-SA-4.0"
+          },
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "description": "The licence's deed"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": ["type", "url", "text"],
+        "additionalProperties": false,
+        "description": "The licence the lexicon's content is under"
+      },
+      "Attribution": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "author": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "license": {
+            "type": "string",
+            "description": "SPDX identifier"
+          },
+          "via": {
+            "description": "Where skolia took it from, when that isn't the source",
+            "type": "string",
+            "format": "uri"
+          },
+          "provides": {
+            "type": "string",
+            "description": "What of the entry it gives"
+          }
+        },
+        "required": ["title", "author", "url", "license", "provides"],
+        "additionalProperties": false,
+        "description": "A source to credit: its title, author, URL and licence"
+      },
+      "FeatureSets": {
+        "type": "object",
+        "propertyNames": {
+          "type": "string"
+        },
+        "additionalProperties": {
+          "$ref": "#/components/schemas/Feats"
+        },
+        "description": "The feature sets a response's paradigms use, by id: { \"50\": { Case: \"Gen\", ... } }. An id means something only within its language's loaded lexicon."
+      },
+      "ApiError": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": ["error"],
+        "additionalProperties": false
+      },
+      "Lang": {
+        "type": "string",
+        "enum": ["en", "fr", "pl"]
+      },
+      "About": {
+        "type": "object",
+        "properties": {
+          "lang": {
+            "$ref": "#/components/schemas/Lang"
+          },
+          "version": {
+            "description": "The version served, which changes when a new build is loaded; null before one is",
+            "type": ["string", "null"]
+          },
+          "license": {
+            "$ref": "#/components/schemas/License"
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Attribution"
+            }
+          }
+        },
+        "required": ["lang", "version", "license", "sources"],
+        "additionalProperties": false,
+        "description": "A language's lexicon"
+      }
+    }
+  },
+  "paths": {
+    "/v1/entries": {
+      "get": {
+        "operationId": "getV1Entries",
+        "tags": ["Lexicon"],
+        "summary": "Entries by id",
+        "description": "The entries the lexicon has of those asked for. Ids it doesn't have are left out.",
+        "responses": {
+          "200": {
+            "description": "The entries",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Entries"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "The versions are the ones If-None-Match names"
+          },
+          "400": {
+            "description": "The request doesn't fit its schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "query",
+            "name": "id",
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/LemmaId"
+                },
+                {
+                  "minItems": 1,
+                  "maxItems": 100,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/LemmaId"
+                  }
+                }
+              ]
+            },
+            "required": true,
+            "description": "An entry's id, {lang}:{lemma}:{upos}; repeat it for up to 100"
+          },
+          {
+            "in": "query",
+            "name": "include",
+            "schema": {
+              "type": "string",
+              "pattern": "^(related|incoming)(,(related|incoming))*$"
+            },
+            "description": "What to bring besides the entries, comma-separated: related, incoming"
+          }
+        ]
+      }
+    },
+    "/v1/entries/{id}": {
+      "get": {
+        "operationId": "getV1EntriesById",
+        "tags": ["Lexicon"],
+        "summary": "An entry by id",
+        "responses": {
+          "200": {
+            "description": "The entry, first in entries",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Entries"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "The versions are the ones If-None-Match names"
+          },
+          "400": {
+            "description": "The request doesn't fit its schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The lexicon has no such entry",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "$ref": "#/components/schemas/LemmaId"
+            },
+            "required": true,
+            "description": "{lang}:{lemma}:{upos}, pl:pies:NOUN"
+          },
+          {
+            "in": "query",
+            "name": "include",
+            "schema": {
+              "type": "string",
+              "pattern": "^(related|incoming)(,(related|incoming))*$"
+            },
+            "description": "What to bring besides the entries, comma-separated: related, incoming"
+          }
+        ]
+      }
+    },
+    "/v1/lexicons/{lang}": {
+      "get": {
+        "operationId": "getV1LexiconsByLang",
+        "tags": ["Lexicon"],
+        "summary": "A language's lexicon",
+        "description": "The version it serves, its licence and its sources.",
+        "responses": {
+          "200": {
+            "description": "The lexicon",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/About"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "The versions are the ones If-None-Match names"
+          },
+          "400": {
+            "description": "The request doesn't fit its schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "lang",
+            "schema": {
+              "$ref": "#/components/schemas/Lang"
+            },
+            "required": true
+          }
+        ]
+      }
+    },
+    "/v1/lexicons/{lang}/lemmas/{lemma}": {
+      "get": {
+        "operationId": "getV1LexiconsByLangLemmasByLemma",
+        "tags": ["Lexicon"],
+        "summary": "Entries by spelling",
+        "description": "The entries whose lemma is spelt so, one per part of speech: pl/lemmas/zamek has zamek the noun.",
+        "responses": {
+          "200": {
+            "description": "The entries",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Entries"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "The versions are the ones If-None-Match names"
+          },
+          "400": {
+            "description": "The request doesn't fit its schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The lexicon has no such entry",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "lang",
+            "schema": {
+              "$ref": "#/components/schemas/Lang"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "lemma",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "include",
+            "schema": {
+              "type": "string",
+              "pattern": "^(related|incoming)(,(related|incoming))*$"
+            },
+            "description": "What to bring besides the entries, comma-separated: related, incoming"
+          }
+        ]
+      }
+    }
+  }
+}

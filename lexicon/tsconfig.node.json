@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["node"]
+  },
+  "include": ["src/spec.ts", "src/**/*.test.ts"],
+  "exclude": [
+    "src/**/*.workerd.test.ts",
+    "src/store.ts",
+    "src/main.ts",
+    "../shared/**/*.test.ts",
+    "../shared/scripts",
+    "../util/**/*.test.ts"
+  ]
+}

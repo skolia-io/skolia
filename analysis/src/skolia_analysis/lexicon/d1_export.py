@@ -1,5 +1,5 @@
-"""The API's D1 lexicon (LEXICON_{LANG}) as a SQLite file: one version's rows in D1's own
-schema, made by applying api/lexicon-migrations in order, plus a meta table with the
+"""The lexicon Worker's D1 lexicon (LEXICON_{LANG}) as a SQLite file: one version's rows in
+D1's own schema, made by applying lexicon/migrations in order, plus a meta table with the
 language and version. infra/load-lexicon.py copies the rows into D1.
 
 Entries and relations are the lexicon's graph: a spelling a relation points at that has no
@@ -31,7 +31,7 @@ def version(lexicon: Lexicon) -> str:
 
 def build(lexicon: Lexicon, paradigms: Paradigms | None, migrations: Path, out: Path) -> int:
     """paradigms generates a lemma's, for a language whose lexicon stores none (Polish).
-    migrations is api/lexicon-migrations."""
+    migrations is lexicon/migrations."""
     table: list[Feats] = []
     feats = FeatsTable(table)
     built = version(lexicon)

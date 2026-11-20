@@ -89,7 +89,7 @@ def d1_export_main() -> None:
     )
     parser.add_argument("lang", choices=lang.LANGS)
     parser.add_argument("lexicon", type=Path, help="{lang}.sqlite from skolia-build-lexicon")
-    parser.add_argument("migrations", type=Path, help="api/lexicon-migrations")
+    parser.add_argument("migrations", type=Path, help="lexicon/migrations")
     parser.add_argument("out", type=Path, help="output .sqlite file (replaced)")
     args = parser.parse_args()
     count = d1_export.build(

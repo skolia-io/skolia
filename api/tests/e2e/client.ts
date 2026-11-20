@@ -1,6 +1,7 @@
 import { setTimeout as sleep } from "node:timers/promises";
 import { hc } from "hono/client";
 import type { AppType } from "../../src/app.ts";
+import type { AppType as LexiconApp } from "@skolia/lexicon/app";
 import { API_KEY_HEADER } from "../../src/auth.ts";
 import { configureScriptLog, scriptLog } from "../../src/script-log.ts";
 
@@ -60,6 +61,11 @@ function headers(key?: string): Record<string, string> {
 
 export function client(key?: string): Api {
   return hc<AppType>(base, { fetch: retryingFetch, headers: headers(key) }).api;
+}
+
+/** The lexicon Worker's API (lexicon/src/app.ts), through the skolia Worker's /api/lexicon/. */
+export function lexicon() {
+  return hc<LexiconApp>(`${base}/api/lexicon`, { fetch: retryingFetch }).v1;
 }
 
 /** A URL the typed client doesn't describe (text and blobs, which aren't JSON), as the

@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "skolia API",
-    "description": "The API behind skolia.io's reader. Sign in on the reader, and the requests Scalar's page (/api/scalar) tries carry your session cookie. Lists come a page at a time: pass a page's next as ?after= for the page after it. Every offset into a text is in UTF-16 code units, a JavaScript string index.",
+    "description": "The API behind skolia.io's reader. Sign in on the reader, and the requests Scalar's page (/api/scalar) tries carry your session cookie. Lists come a page at a time: pass a page's next as ?after= for the page after it. Every offset into a text is in UTF-16 code units, a JavaScript string index. The lexicon is its own API, served under /api/lexicon/ (its spec at /api/lexicon/v1/openapi.json).",
     "version": "unversioned",
     "license": {
       "name": "Apache 2.0",
@@ -35,10 +35,6 @@
     {
       "name": "Reading",
       "description": "The reading list, and where the user is in each text"
-    },
-    {
-      "name": "Lexicon",
-      "description": "Lexicon entries by lemma id"
     }
   ],
   "components": {
@@ -1486,32 +1482,6 @@
           "bundle"
         ],
         "additionalProperties": false
-      },
-      "Lookup": {
-        "type": "object",
-        "properties": {
-          "entries": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/LexiconEntry"
-            }
-          },
-          "featureSets": {
-            "type": "object",
-            "propertyNames": {
-              "$ref": "#/components/schemas/Lang"
-            },
-            "additionalProperties": {
-              "$ref": "#/components/schemas/FeatureSets"
-            }
-          }
-        },
-        "required": [
-          "entries",
-          "featureSets"
-        ],
-        "additionalProperties": false,
-        "description": "The entries asked for that the lexicon has, and the targets of the relations of those with no senses of their own, which take their meaning from them (zgolić from golić)."
       },
       "IngestOverview": {
         "type": "object",
@@ -3765,62 +3735,6 @@
                   "newLemmasPerDay",
                   "newFormsPerDay",
                   "formsWithWords"
-                ]
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/lexicon/entries": {
-      "post": {
-        "operationId": "postApiLexiconEntries",
-        "tags": [
-          "Lexicon"
-        ],
-        "summary": "Look up lexicon entries",
-        "description": "A POST so the ids fit in a body.",
-        "security": [],
-        "responses": {
-          "200": {
-            "description": "The entries the lexicon has",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Lookup"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "The request doesn't fit its schema",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        },
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "ids": {
-                    "minItems": 1,
-                    "maxItems": 100,
-                    "type": "array",
-                    "items": {
-                      "$ref": "#/components/schemas/LemmaId"
-                    }
-                  }
-                },
-                "required": [
-                  "ids"
                 ]
               }
             }

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { e2eUserId, e2eUserKey } from "../../src/e2e-keys.ts";
-import { body, expectStatus } from "../../src/testing/responses.ts";
+import { body, expectStatus } from "@skolia/util/responses";
 import { client, runId, systemKey } from "./client.ts";
 
 test("API key authentication", async () => {

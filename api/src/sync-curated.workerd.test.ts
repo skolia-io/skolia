@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { parseCurated, resolveCurated, sync, toCurated, type Change, type Curated } from "./sync-curated.ts";
 import { CURATED_USER } from "./sync-curated-key.ts";
 import { client, listed, local, setup, useLocal, type App } from "./testing/app.ts";
-import { body } from "./testing/responses.ts";
+import { body } from "@skolia/util/responses";
 
 useLocal();
 

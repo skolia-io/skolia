@@ -35,7 +35,7 @@ import {
   walk,
   type App,
 } from "./testing/app.ts";
-import { body, expectStatus } from "./testing/responses.ts";
+import { body, expectStatus } from "@skolia/util/responses";
 
 useLocal();
 
@@ -126,10 +126,6 @@ const DEFAULT_SETTINGS: Settings = { newLemmasPerDay: 20, newFormsPerDay: 20, fo
 
 function saveSettings(app: App, headers: Headers, settings: Partial<Settings>) {
   return client(app, headers).me.settings.$put({ json: { ...DEFAULT_SETTINGS, ...settings } });
-}
-
-function lookUp(app: App, ids: LemmaId[]) {
-  return client(app).lexicon.entries.$post({ json: { ids } });
 }
 
 function answer(cardId: string, rating: Rating, at = NOW): ReviewRequestInput {
@@ -506,81 +502,7 @@ test("settings are saved whole, and kept", async () => {
   assert.deepEqual(await body("bob's settings", client(app, bob).me.settings.$get()), DEFAULT_SETTINGS);
 });
 
-test("a lexicon lookup gives each language's loaded version, leaving out ids it doesn't have", async () => {
-  const app = setup();
-  await loadLexicon("pl", "lex/1", [{ lemmaId: "pl:pies:NOUN", lemma: "pies", upos: "NOUN", gloss: "dog (old)" }]);
-  await loadLexicon("pl", "lex/1", [], [{ Case: "Nom" }, { Case: "Gen" }]);
-  await loadLexicon(
-    "pl",
-    "lex/2",
-    [
-      {
-        lemmaId: "pl:pies:NOUN",
-        lemma: "pies",
-        upos: "NOUN",
-        gloss: "dog",
-        pronunciations: [{ ipa: "/ˈpjɛs/" }],
-        paradigms: [
-          {
-            homonym: "",
-            forms: [
-              ["pies", [0]],
-              ["psa", [1, 2]],
-            ],
-          },
-        ],
-      },
-    ],
-    [
-      { Case: "Nom", Number: "Sing" },
-      { Case: "Gen", Number: "Sing" },
-      { Case: "Acc", Number: "Sing" },
-      { Case: "Dat", Number: "Sing" },
-    ],
-  );
-  await loadLexicon("en", "lex/1", [{ lemmaId: "en:dog:NOUN", lemma: "dog", upos: "NOUN", gloss: "a domesticated canid" }]);
-  const { entries, featureSets } = await body("lookup", lookUp(app, ["pl:pies:NOUN", "en:dog:NOUN", "pl:kot:NOUN"]));
-  assert.deepEqual(entries.map((e) => [e.lemmaId, e.senses[0]?.gloss]).sort(), [
-    ["en:dog:NOUN", "a domesticated canid"],
-    ["pl:pies:NOUN", "dog"],
-  ]);
-  const pies = entries.find((e) => e.lemmaId === "pl:pies:NOUN");
-  assert.deepEqual(pies?.pronunciations, [{ ipa: "/ˈpjɛs/" }]);
-  assert.deepEqual(pies?.paradigms, [
-    {
-      homonym: "",
-      forms: [
-        ["pies", [0]],
-        ["psa", [1, 2]],
-      ],
-    },
-  ]);
-  // Only the sets the paradigms use, from the served version; dog has no paradigm
-  assert.deepEqual(featureSets, {
-    pl: { "0": { Case: "Nom", Number: "Sing" }, "1": { Case: "Gen", Number: "Sing" }, "2": { Case: "Acc", Number: "Sing" } },
-  });
-  assert.equal((await lookUp(app, [])).status, 400);
-  assert.equal(
-    (
-      await lookUp(
-        app,
-        Array.from({ length: 101 }, (_, i): LemmaId => `pl:w${i}:NOUN`),
-      )
-    ).status,
-    400,
-  );
-  assert.equal(
-    (
-      await lookUp(
-        app,
-        Array.from({ length: 100 }, (_, i): LemmaId => `pl:w${i}:NOUN`),
-      )
-    ).status,
-    200,
-  );
-});
-
-test("a word with no senses comes with the entries its relations point at, and a due card with them as related", async () => {
+test("a due card whose word has no senses comes with the entries its relations point at, as related, from the lexicon Worker", async () => {
   const app = setup();
   const headers = await signedIn();
   await loadLexicon("pl", "lex/1", [
@@ -604,21 +526,6 @@ test("a word with no senses comes with the entries its relations point at, and a
       relations: [{ kind: "derived-from", targetId: "pl:golić:VERB" }],
     },
   ]);
-  const { entries } = await body("lookup", lookUp(app, ["pl:zgolić:VERB", "pl:pies:NOUN"]));
-  assert.deepEqual(
-    entries.map((e) => [e.lemmaId, e.relations] as const).sort(([a], [b]) => a.localeCompare(b)),
-    [
-      ["pl:golić:VERB", []],
-      ["pl:pies:NOUN", [{ type: "derived-from", lemma: "golić", lemma_id: "pl:golić:VERB" }]],
-      [
-        "pl:zgolić:VERB",
-        [
-          { type: "derived-from", lemma: "golić", note: "perfective derivative", lemma_id: "pl:golić:VERB", sense_indexes: [0] },
-          { type: "derived-from", lemma: "golnąć" },
-        ],
-      ],
-    ],
-  );
   await learn(app, headers, "pl:zgolić:VERB");
   const [card] = (await due(app, headers, "pl")).cards;
   assert.deepEqual(

@@ -1,8 +1,10 @@
-// skolia-api client, typed by the API's routes (AppType). The analysis and bundle are
-// blobs the API passes through, typed by the Python schemas (shared/schema.gen.ts); the
-// API is ours, so they're trusted to match.
+// skolia-api client, typed by the API's routes (AppType), and the lexicon's, typed by its
+// own (lexicon/src/app.ts), which the API passes through at /api/lexicon/. The analysis
+// and bundle are blobs the API passes through, typed by the Python schemas
+// (shared/schema.gen.ts); the API is ours, so they're trusted to match.
 import { hc } from "hono/client";
 import type { AppType } from "@skolia/api/app";
+import type { AppType as LexiconApp, EntriesBody } from "@skolia/lexicon/app";
 import {
   ANNOTATION_PAGE,
   type Annotation,
@@ -47,6 +49,7 @@ import { allPages, type Cursor } from "@skolia/shared/page";
 import { BUNDLE_SCHEMA, SCHEMA, type Blob, type Bundle } from "@skolia/shared/schema";
 
 const api = hc<AppType>("/").api;
+const lexicon = hc<LexiconApp>("/api/lexicon").v1;
 
 export interface Reading {
   lang: Lang;
@@ -278,12 +281,14 @@ export async function deleteCard(cardId: CardId): Promise<void> {
   if (!response.ok) throw await failure(response);
 }
 
-/** The lexicon's entries for the lemmas, MAX_LOOKUP at most. */
+/** The lexicon's entries for the lemmas, MAX_LOOKUP at most, and the entries those with no
+ * senses take their meaning from, in one list. */
 export async function lookUp(ids: readonly LemmaId[]): Promise<Lookup> {
-  const response = await api.lexicon.entries.$post({ json: { ids: [...ids] } });
+  const response = await lexicon.entries.$get({ query: { id: [...ids] } });
   if (!response.ok) throw await failure(response);
   // Hono's JSON type makes the entries' optional fields `| undefined`; it's the same JSON
-  return (await response.json()) as Lookup;
+  const { entries, related, featureSets } = (await response.json()) as EntriesBody;
+  return { entries: [...entries, ...related], featureSets };
 }
 
 export async function getSettings(): Promise<Settings> {

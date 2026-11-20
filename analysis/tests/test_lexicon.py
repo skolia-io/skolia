@@ -259,7 +259,7 @@ def test_d1_export_has_d1_schema_pronunciations_compact_paradigms_and_feature_ro
         return [{"homonym": "", "forms": forms}]
 
     out = tmp_path / "pl.d1.sqlite"
-    migrations = Path(__file__).resolve().parents[2] / "api" / "lexicon-migrations"
+    migrations = Path(__file__).resolve().parents[2] / "lexicon" / "migrations"
     assert d1_export.build(store.Lexicon(path), paradigms, migrations, out) == 1
     db = sqlite3.connect(out)
     version = f"test/1+d1-{d1_export.EXPORT_VERSION}"
