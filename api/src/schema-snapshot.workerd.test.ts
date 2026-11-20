@@ -24,6 +24,7 @@ test("fresh API and User databases match the checked-in schema snapshots", async
   t.after(() => local.close());
   const { results } = await local.env.DB.prepare(SCHEMA).all<Definition>();
   await snapshot("api", ddl(results.filter((row) => row.name !== "d1_migrations")));
+  assert.deepEqual((await local.env.DB.prepare("PRAGMA foreign_key_check").all()).results, []);
   assert.deepEqual((await local.env.DB.prepare(`SELECT id FROM "user" WHERE role = 'system' ORDER BY id`).all()).results, [
     { id: "curated" },
     { id: "system" },
@@ -32,6 +33,12 @@ test("fresh API and User databases match the checked-in schema snapshots", async
   await local.env.USER.getByName(name).migrationStatus();
   const storage = await local.server.getWorker().getDurableObjectStorage("User", { name });
   await snapshot("user", ddl(await storage.exec<Definition>(SCHEMA)));
+  assert.deepEqual(await storage.exec("PRAGMA foreign_key_check"), []);
+  await assert.rejects(
+    storage.exec(`INSERT INTO review (id, card_id, rating, reviewed_at)
+      VALUES ('fk-test', 'missing-card', 1, '2026-01-01T00:00:00.000Z')`),
+    /FOREIGN KEY constraint failed/,
+  );
   assert.deepEqual(await storage.exec("SELECT name, n FROM row_count ORDER BY name"), [{ name: "card", n: 0 }]);
   assert.equal(
     (await storage.exec<{ new_lemmas_per_day: number }>("SELECT new_lemmas_per_day FROM settings WHERE id = 1"))[0]?.new_lemmas_per_day,
