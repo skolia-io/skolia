@@ -20,6 +20,7 @@ from types import FrameType
 import structlog
 
 from .. import lang
+from ..lexicon.bundle import make as make_bundle
 from ..lexicon.store import Lexicon
 from ..log import configure_logging
 from ..plugin import Options, lexicon_path
@@ -43,10 +44,11 @@ def pipeline(code: str, data: Path) -> Pipeline:
     parser = plugin.parser(plugin.DEFAULT_MODEL)
     analyzer = plugin.analyzer(parser, Options(plugin.DEFAULT_SNAP), data)
     lexicon = Lexicon(lexicon_path(data, code))
+    extras = plugin.extras(data)
     return Pipeline(
         lang=code,
         analyze=analyzer,
-        bundle=plugin.bundler(lexicon, data),
+        bundle=lambda blob: make_bundle(blob, lexicon, extras),
         analyzer=analyzer.name,
         lexicon_version=lexicon.version(),
     )

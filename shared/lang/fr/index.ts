@@ -9,5 +9,4 @@ export const french: Language = {
   uses: () => [],
   partOfWord: () => null,
   // A noun's gender is on the grammar line; its senses are selected by it (livre)
-  grammarTags: new Set(["masculine", "feminine"]),
 };

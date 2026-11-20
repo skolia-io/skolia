@@ -1,5 +1,5 @@
-// The lexicon API's requests and responses. Entries are the shapes the API's cards show
-// (@skolia/shared/schemas LexiconEntry), with what a reuser needs to credit them.
+// The lexicon API's requests and responses. Entries are what the API's cards show and a
+// bundle carries (@skolia/shared/schema Entry), with what a reuser needs to credit them.
 import * as z from "zod";
 import { MAX_LOOKUP } from "@skolia/shared/api";
 import * as schemas from "@skolia/shared/schemas";
@@ -28,29 +28,30 @@ const Incoming = z
   .array(schemas.Relation)
   .describe(
     `With include=incoming, the relations pointing at this entry, ${MAX_INCOMING} at most, by source id: ` +
-      "each one's lemma and lemma_id are its source's, and its sense_indexes are this entry's senses it points at",
+      "each one's lemma and lemma_id are its source's, and the rest is as the source has it",
   );
 
-export const Entry = schemas.LexiconEntry.extend({
-  sourceUrl: z.url().describe("The entry's page on English Wiktionary"),
-  license: License,
-  attribution: z.array(Attribution),
-  incoming: Incoming.optional(),
-  incomingTruncated: z.boolean().optional().describe(`With include=incoming, whether more than ${MAX_INCOMING} point at it`),
-}).meta({
-  id: "Entry",
-  description: 'A lexicon entry. Its paradigms\' forms point into feature sets, ["psa", [50, 51]], which the response carries.',
-});
+export const Entry = z
+  .intersection(
+    schemas.Entry,
+    z.object({
+      sourceUrl: z.url().describe("The entry's page on English Wiktionary"),
+      license: License,
+      attribution: z.array(Attribution),
+      incoming: Incoming.optional(),
+      incomingTruncated: z.boolean().optional().describe(`With include=incoming, whether more than ${MAX_INCOMING} point at it`),
+    }),
+  )
+  .meta({
+    id: "CreditedEntry",
+    description:
+      'A lexicon entry with its credits. Its paradigms\' forms point into feature sets, ["psa", [50, 51]], which the response carries.',
+  });
 
 export const Entries = z
   .object({
     entries: z.array(Entry).describe("The entries asked for that the lexicon has, by id"),
-    related: z
-      .array(Entry)
-      .describe(
-        "The entries their relations point at: with include=related, all of them; otherwise those of an entry with no senses, " +
-          "which takes its meaning from them (zgolić from golić)",
-      ),
+    related: z.array(Entry).describe("With include=related, the entries their relations point at"),
     featureSets: z.partialRecord(schemas.Lang, schemas.FeatureSets),
   })
   .meta({ id: "Entries" });

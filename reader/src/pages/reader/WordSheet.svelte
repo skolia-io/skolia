@@ -5,7 +5,15 @@
   import { LANGUAGES } from "@skolia/shared/lang";
   import type { Piece } from "@skolia/shared/doc";
   import type { LemmaId } from "@skolia/shared/api";
-  import { entryFor, entryIdFor, mainPronunciations, pronunciationsOf, rankSenses, recordingsOf, sensesOf } from "@skolia/shared/lexicon";
+  import {
+    entryFor,
+    entryIdFor,
+    mainPronunciations,
+    pronunciationsOf,
+    rankSenses,
+    recordingsOf,
+    relationLabel,
+  } from "@skolia/shared/lexicon";
   import type { Recording } from "@skolia/shared/schema";
   import { LemmaId as LemmaIdSchema } from "@skolia/shared/schemas";
   import { createForgetCards, createLearnWord, createWordCards, wordState } from "../../lib/words.ts";
@@ -56,10 +64,6 @@
   const language = $derived(LANGUAGES[lang]);
 
   const SHOWN_SENSES = 3;
-
-  function visibleTags(tags: string[]): string[] {
-    return tags.filter((t) => !language.grammarTags.has(t));
-  }
 
   let aside = $state<HTMLElement | null>(null);
   /** The text keeps at least this much of the screen */
@@ -156,20 +160,12 @@
           entry,
           lemmaId: parsedId.success ? parsedId.data : null,
           said,
-          lemmaSaid:
-            said.length === 0 && entry && !sameWord(entry.lemma, w.token.text)
-              ? mainPronunciations(pronunciationsOf(bundle, entry.lemma, entry.upos))
-              : [],
+          lemmaSaid: said.length === 0 && entry && !sameWord(entry.lemma, w.token.text) ? mainPronunciations(entry.pronunciations) : [],
           heard: recordingsOf(bundle, w.token.text, w.token.upos).slice(0, 1),
           partOfWord,
           role: role && head ? { role, head } : null,
           caseWhy: language.explainCase(tokens, w.index),
-          senses: entry
-            ? rankSenses(
-                sensesOf(entry, (id) => bundle.entries[id]),
-                w.token.feats,
-              )
-            : [],
+          senses: entry ? rankSenses(entry.senses, w.token.feats) : [],
           uses: uses.filter((u) => !u.idiom),
           idioms: uses.filter((u) => u.idiom),
           tables: entry && partOfWord === null ? paradigmTables(bundle, entry, w.token, language.paradigm, language.mergeLabels) : [],
@@ -535,8 +531,8 @@
             {#each allSenses ? word.senses : word.senses.slice(0, SHOWN_SENSES) as { sense, fits }, i (i)}
               <li class={{ other: !fits }}>
                 {sense.gloss}
-                {#if visibleTags(sense.tags).length > 0}
-                  <span class="tags">{visibleTags(sense.tags).join(", ")}</span>
+                {#if sense.tags.length > 0}
+                  <span class="tags">{sense.tags.join(", ")}</span>
                 {/if}
                 {#each sense.examples ?? [] as example, j (j)}
                   <div class="example">
@@ -560,9 +556,9 @@
 
         {#if word.entry && word.entry.relations.length > 0}
           <ul class="relations">
-            {#each word.entry.relations as relation (relation.type + relation.lemma)}
+            {#each word.entry.relations as relation (relation.kind + relation.lemma)}
               <li>
-                {language.relationLabel?.(relation) ?? `from (${relation.note ?? "derived"})`}:
+                {relationLabel(relation)}
                 <span {lang}>{relation.lemma}</span>
               </li>
             {/each}

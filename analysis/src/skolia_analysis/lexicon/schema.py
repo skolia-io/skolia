@@ -3,7 +3,7 @@
 from typing import Literal, NotRequired, TypedDict
 
 from ..lang.pl.walenty.model import Schema
-from ..schema import Feats, Upos
+from ..schema import Aspect, Feats, Upos
 
 
 class Example(TypedDict):
@@ -21,24 +21,50 @@ class Sense(TypedDict):
     examples: NotRequired[list[Example]]
 
 
-type RelationType = Literal[
-    "aspect-partner",  # robić <-> zrobić
-    "derived-from",  # pani <- pan (feminine), rubelek <- rubel (diminutive)
+type Derivation = Literal[
+    "agent-noun",  # abolisher <- abolish
+    "augmentative",  # psisko <- pies
+    "diminutive",  # rubelek <- rubel
+    "endearing",  # kotuś <- kot
+    "feminine",  # pani <- pan
+    "frequentative",  # chadzać <- chodzić
+    "iterative",  # pokładać <- kłaść
+    "masculine",  # wdowiec <- wdowa
+    "noun-from-verb",  # pisanie <- pisać
+    "perfective",  # zgolić <- golić
 ]
 
 
-class Relation(TypedDict):
-    type: RelationType
+class AspectPartner(TypedDict):
+    """robić <-> zrobić: the same action, the other aspect."""
+
+    kind: Literal["aspect-partner"]
     lemma: str
-    note: NotRequired[str]
-    """How it's derived: feminine, diminutive, noun-from-verb, ..."""
     lemma_id: NotRequired[str]
-    """The target's entry; absent when the lexicon has the spelling but no entry for it."""
-    sense_indexes: NotRequired[list[int]]
-    """Which of the target's senses the relation is about, by index; absent: all of them.
-    A word with no senses of its own takes these as its meaning (shared/lexicon.ts
-    sensesOf), so a bundle or lookup carries the targets of such a word's relations:
-    zgolić, which Wiktionary only lists as golić's perfective, means what golić does."""
+    """The target's entry; absent when the lexicon has no entry with that lemma."""
+    aspect: Aspect
+    """The partner's."""
+
+
+class DerivedFrom(TypedDict):
+    kind: Literal["derived-from"]
+    lemma: str
+    lemma_id: NotRequired[str]
+    how: Derivation
+
+
+class VariantOf(TypedDict):
+    """Another form of the same word: niechże, emphatic niech; bzikać, regional bzykać."""
+
+    kind: Literal["variant-of"]
+    lemma: str
+    lemma_id: NotRequired[str]
+    tags: list[str]
+    """Wiktionary's labels for the variant, like a sense's: emphatic, regional, rare."""
+
+
+type Relation = AspectPartner | DerivedFrom | VariantOf
+type RelationKind = Literal["aspect-partner", "derived-from", "variant-of"]
 
 
 class Form(TypedDict):
@@ -90,10 +116,22 @@ class Recording(TypedDict):
 
 
 class Entry(TypedDict):
+    """A word as the lexicon serves it, whole: what the API's lookup returns, D1 stores
+    and a bundle carries, built once by lexicon/entry.py."""
+
+    lemma_id: str
     lemma: str
     upos: Upos
+    grammar: Feats
+    """What every form of the word has, from its paradigm and Wiktionary's tags: a verb's
+    aspect, a noun's gender. Those tags are taken off its senses."""
     senses: list[Sense]
+    """Its own, or for a word Wiktionary only names in another's entry, the senses of
+    the words it's derived from (zgolić, a perfective of golić, means what golić does),
+    without their examples or selectors."""
     relations: list[Relation]
+    pronunciations: list[Pronunciation]
+    """How the lemma is said."""
     paradigms: list[BundleParadigm]
     frames: list[Schema]
     """How the word combines with others (Walenty valency schemata), for a verb both
@@ -108,13 +146,15 @@ type Match = Literal[
 ]
 
 
-BUNDLE_SCHEMA = 1
-"""The bundle's JSON shape. Documents keep their bundle until ingest redoes them, so the
-reader has to read every schema still stored. Add a field as NotRequired and bump
-BUNDLER_VERSION instead (pronunciations). Bump this only when the shape changes, and
-keep reading the older schema in the reader until a batch re-ingest retires it."""
+BUNDLE_SCHEMA = 2
+"""The bundle's JSON shape. Documents keep their bundle until ingest redoes them. Add a
+field as NotRequired and bump BUNDLER_VERSION instead (pronunciations). Bump this only when
+the shape changes; the reader treats a bundle of an older schema as one being redone.
 
-BUNDLER_VERSION = "5"
+2: entries are the lexicon's whole Entry (lemma_id, grammar, pronunciations, typed
+relations, senses resolved), and match is gone."""
+
+BUNDLER_VERSION = "6"
 """The bundle-making code's version (lexicon/bundle.py and the plugins' bundlers). Bump it
 when a change gives different bundles for the same analysis and lexicon (the lookup
 fallbacks, how paradigms are made). It's in every bundle's name, so a bump re-bundles each
@@ -132,20 +172,14 @@ class Bundle(TypedDict):
     """By lemma_id."""
     lookup: dict[str, str]
     """Token lemma_id -> entry lemma_id, only where they differ (other-pos, lowercase)."""
-    match: dict[str, Match]
-    """How each token lemma_id was resolved."""
     feats: list[Feats]
     """Every distinct feature set in the paradigms, referred to by index from FormRow."""
-    pronunciations: NotRequired[dict[str, list[Pronunciation]]]
-    """Absent from bundles made before bundler version 3.
-
-    By pronunciation_key(word, upos), for each token's text and each entry's lemma that
-    Wiktionary has one for. Words spelled alike can differ by part of speech (lead, the
+    pronunciations: dict[str, list[Pronunciation]]
+    """By pronunciation_key(word, upos), for each token's text Wiktionary has one for (a
+    lemma's are on its entry). Words spelled alike can differ by part of speech (lead, the
     metal, is /lɛd/; the verb is /liːd/)."""
-    recordings: NotRequired[dict[str, list[Recording]]]
-    """Absent from bundles made before bundler version 4.
-
-    By pronunciation_key, like pronunciations. Apart from them because Wiktionary doesn't
+    recordings: dict[str, list[Recording]]
+    """By pronunciation_key, like pronunciations. Apart from them because Wiktionary doesn't
     say which transcription a recording is of."""
 
 

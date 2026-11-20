@@ -35,16 +35,16 @@
           "entries": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/Entry"
+              "$ref": "#/components/schemas/CreditedEntry"
             },
             "description": "The entries asked for that the lexicon has, by id"
           },
           "related": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/Entry"
+              "$ref": "#/components/schemas/CreditedEntry"
             },
-            "description": "The entries their relations point at: with include=related, all of them; otherwise those of an entry with no senses, which takes its meaning from them (zgolić from golić)"
+            "description": "With include=related, the entries their relations point at"
           },
           "featureSets": {
             "type": "object",
@@ -59,17 +59,60 @@
         "required": ["entries", "related", "featureSets"],
         "additionalProperties": false
       },
+      "CreditedEntry": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Entry"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "sourceUrl": {
+                "type": "string",
+                "format": "uri",
+                "description": "The entry's page on English Wiktionary"
+              },
+              "license": {
+                "$ref": "#/components/schemas/License"
+              },
+              "attribution": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Attribution"
+                }
+              },
+              "incoming": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Relation"
+                },
+                "description": "With include=incoming, the relations pointing at this entry, 50 at most, by source id: each one's lemma and lemma_id are its source's, and the rest is as the source has it"
+              },
+              "incomingTruncated": {
+                "description": "With include=incoming, whether more than 50 point at it",
+                "type": "boolean"
+              }
+            },
+            "required": ["sourceUrl", "license", "attribution"],
+            "additionalProperties": false
+          }
+        ],
+        "description": "A lexicon entry with its credits. Its paradigms' forms point into feature sets, [\"psa\", [50, 51]], which the response carries."
+      },
       "Entry": {
         "type": "object",
         "properties": {
-          "lemmaId": {
-            "$ref": "#/components/schemas/LemmaId"
+          "lemma_id": {
+            "type": "string"
           },
           "lemma": {
             "type": "string"
           },
           "upos": {
             "$ref": "#/components/schemas/Upos"
+          },
+          "grammar": {
+            "$ref": "#/components/schemas/Feats"
           },
           "senses": {
             "type": "array",
@@ -87,8 +130,7 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/Pronunciation"
-            },
-            "description": "How the lemma is said"
+            }
           },
           "paradigms": {
             "type": "array",
@@ -96,46 +138,15 @@
               "$ref": "#/components/schemas/BundleParadigm"
             }
           },
-          "sourceUrl": {
-            "type": "string",
-            "format": "uri",
-            "description": "The entry's page on English Wiktionary"
-          },
-          "license": {
-            "$ref": "#/components/schemas/License"
-          },
-          "attribution": {
+          "frames": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/Attribution"
+              "$ref": "#/components/schemas/Schema"
             }
-          },
-          "incoming": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Relation"
-            },
-            "description": "With include=incoming, the relations pointing at this entry, 50 at most, by source id: each one's lemma and lemma_id are its source's, and its sense_indexes are this entry's senses it points at"
-          },
-          "incomingTruncated": {
-            "description": "With include=incoming, whether more than 50 point at it",
-            "type": "boolean"
           }
         },
-        "required": [
-          "lemmaId",
-          "lemma",
-          "upos",
-          "senses",
-          "relations",
-          "pronunciations",
-          "paradigms",
-          "sourceUrl",
-          "license",
-          "attribution"
-        ],
-        "additionalProperties": false,
-        "description": "A lexicon entry. Its paradigms' forms point into feature sets, [\"psa\", [50, 51]], which the response carries."
+        "required": ["lemma_id", "lemma", "upos", "grammar", "senses", "relations", "pronunciations", "paradigms", "frames"],
+        "additionalProperties": false
       },
       "Upos": {
         "type": "string",
@@ -158,34 +169,6 @@
           "VERB",
           "X"
         ]
-      },
-      "Sense": {
-        "type": "object",
-        "properties": {
-          "gloss": {
-            "type": "string"
-          },
-          "tags": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "when": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Feats"
-            }
-          },
-          "examples": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Example"
-            }
-          }
-        },
-        "required": ["gloss", "tags"],
-        "additionalProperties": false
       },
       "Feats": {
         "type": "object",
@@ -415,6 +398,34 @@
         "type": "string",
         "enum": ["Act", "Pass"]
       },
+      "Sense": {
+        "type": "object",
+        "properties": {
+          "gloss": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "when": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Feats"
+            }
+          },
+          "examples": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Example"
+            }
+          }
+        },
+        "required": ["gloss", "tags"],
+        "additionalProperties": false
+      },
       "Example": {
         "type": "object",
         "properties": {
@@ -429,35 +440,95 @@
         "additionalProperties": false
       },
       "Relation": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/AspectPartner"
+          },
+          {
+            "$ref": "#/components/schemas/DerivedFrom"
+          },
+          {
+            "$ref": "#/components/schemas/VariantOf"
+          }
+        ]
+      },
+      "AspectPartner": {
         "type": "object",
         "properties": {
-          "type": {
-            "$ref": "#/components/schemas/RelationType"
+          "kind": {
+            "type": "string",
+            "enum": ["aspect-partner"]
           },
           "lemma": {
-            "type": "string"
-          },
-          "note": {
             "type": "string"
           },
           "lemma_id": {
             "type": "string"
           },
-          "sense_indexes": {
+          "aspect": {
+            "$ref": "#/components/schemas/Aspect"
+          }
+        },
+        "required": ["kind", "lemma", "aspect"],
+        "additionalProperties": false
+      },
+      "DerivedFrom": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": ["derived-from"]
+          },
+          "lemma": {
+            "type": "string"
+          },
+          "lemma_id": {
+            "type": "string"
+          },
+          "how": {
+            "$ref": "#/components/schemas/Derivation"
+          }
+        },
+        "required": ["kind", "lemma", "how"],
+        "additionalProperties": false
+      },
+      "Derivation": {
+        "type": "string",
+        "enum": [
+          "agent-noun",
+          "augmentative",
+          "diminutive",
+          "endearing",
+          "feminine",
+          "frequentative",
+          "iterative",
+          "masculine",
+          "noun-from-verb",
+          "perfective"
+        ]
+      },
+      "VariantOf": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": ["variant-of"]
+          },
+          "lemma": {
+            "type": "string"
+          },
+          "lemma_id": {
+            "type": "string"
+          },
+          "tags": {
             "type": "array",
             "items": {
-              "type": "integer",
-              "minimum": -9007199254740991,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           }
         },
-        "required": ["type", "lemma"],
+        "required": ["kind", "lemma", "tags"],
         "additionalProperties": false
-      },
-      "RelationType": {
-        "type": "string",
-        "enum": ["aspect-partner", "derived-from"]
       },
       "Pronunciation": {
         "type": "object",
@@ -513,6 +584,910 @@
         "items": false,
         "minItems": 2,
         "maxItems": 2
+      },
+      "Schema": {
+        "type": "object",
+        "properties": {
+          "pos": {
+            "$ref": "#/components/schemas/PartOfSpeech"
+          },
+          "lemma": {
+            "type": "string"
+          },
+          "reflexive": {
+            "type": "boolean"
+          },
+          "certainty": {
+            "$ref": "#/components/schemas/Certainty"
+          },
+          "negation": {
+            "$ref": "#/components/schemas/Negation"
+          },
+          "predicative": {
+            "type": "boolean"
+          },
+          "aspect": {
+            "$ref": "#/components/schemas/AspectSpec"
+          },
+          "positions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Position"
+            }
+          }
+        },
+        "required": ["pos", "lemma", "reflexive", "certainty", "negation", "predicative", "aspect", "positions"],
+        "additionalProperties": false
+      },
+      "PartOfSpeech": {
+        "type": "string",
+        "enum": ["verb", "noun", "adj", "adv"]
+      },
+      "Certainty": {
+        "type": "string",
+        "enum": ["certain", "doubtful", "colloquial", "archaic", "vulgar", "wrong"]
+      },
+      "Negation": {
+        "type": "string",
+        "enum": ["aff", "neg", "any"]
+      },
+      "AspectSpec": {
+        "type": "string",
+        "enum": ["perf", "imperf", "any"]
+      },
+      "Position": {
+        "type": "object",
+        "properties": {
+          "labels": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Label"
+            }
+          },
+          "phrases": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Phrase"
+            }
+          }
+        },
+        "required": ["labels", "phrases"],
+        "additionalProperties": false
+      },
+      "Label": {
+        "type": "string",
+        "enum": ["subj", "obj", "controller", "controllee", "controller2", "controllee2", "head"]
+      },
+      "Phrase": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/NounPhrase"
+          },
+          {
+            "$ref": "#/components/schemas/AdjectivePhrase"
+          },
+          {
+            "$ref": "#/components/schemas/NumeralPhrase"
+          },
+          {
+            "$ref": "#/components/schemas/PassiveParticiplePhrase"
+          },
+          {
+            "$ref": "#/components/schemas/ActiveParticiplePhrase"
+          },
+          {
+            "$ref": "#/components/schemas/PrepNounPhrase"
+          },
+          {
+            "$ref": "#/components/schemas/PrepAdjectivePhrase"
+          },
+          {
+            "$ref": "#/components/schemas/PrepNumeralPhrase"
+          },
+          {
+            "$ref": "#/components/schemas/PrepGerundPhrase"
+          },
+          {
+            "$ref": "#/components/schemas/PrepPassiveParticiplePhrase"
+          },
+          {
+            "$ref": "#/components/schemas/ComplexPrepPhrase"
+          },
+          {
+            "$ref": "#/components/schemas/Clause"
+          },
+          {
+            "$ref": "#/components/schemas/NominalClause"
+          },
+          {
+            "$ref": "#/components/schemas/PrepNominalClause"
+          },
+          {
+            "$ref": "#/components/schemas/Infinitive"
+          },
+          {
+            "$ref": "#/components/schemas/Adverbial"
+          },
+          {
+            "$ref": "#/components/schemas/Adverb"
+          },
+          {
+            "$ref": "#/components/schemas/Comparison"
+          },
+          {
+            "$ref": "#/components/schemas/AtomPhrase"
+          },
+          {
+            "$ref": "#/components/schemas/Fixed"
+          },
+          {
+            "$ref": "#/components/schemas/Lex"
+          },
+          {
+            "$ref": "#/components/schemas/LexComparison"
+          }
+        ]
+      },
+      "NounPhrase": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": ["np"]
+          },
+          "case": {
+            "$ref": "#/components/schemas/CaseSpec"
+          }
+        },
+        "required": ["kind", "case"],
+        "additionalProperties": false
+      },
+      "CaseSpec": {
+        "type": "string",
+        "enum": ["nom", "gen", "dat", "acc", "inst", "loc", "str", "part", "agr", "pred", "postp"]
+      },
+      "AdjectivePhrase": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": ["adjp"]
+          },
+          "case": {
+            "$ref": "#/components/schemas/CaseSpec"
+          }
+        },
+        "required": ["kind", "case"],
+        "additionalProperties": false
+      },
+      "NumeralPhrase": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": ["nump"]
+          },
+          "case": {
+            "$ref": "#/components/schemas/CaseSpec"
+          }
+        },
+        "required": ["kind", "case"],
+        "additionalProperties": false
+      },
+      "PassiveParticiplePhrase": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": ["ppasp"]
+          },
+          "case": {
+            "$ref": "#/components/schemas/CaseSpec"
+          }
+        },
+        "required": ["kind", "case"],
+        "additionalProperties": false
+      },
+      "ActiveParticiplePhrase": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": ["pactp"]
+          },
+          "case": {
+            "$ref": "#/components/schemas/CaseSpec"
+          }
+        },
+        "required": ["kind", "case"],
+        "additionalProperties": false
+      },
+      "PrepNounPhrase": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": ["prepnp"]
+          },
+          "prep": {
+            "$ref": "#/components/schemas/Preposition"
+          },
+          "case": {
+            "$ref": "#/components/schemas/CaseSpec"
+          }
+        },
+        "required": ["kind", "prep", "case"],
+        "additionalProperties": false
+      },
+      "Preposition": {
+        "type": "string",
+        "enum": [
+          "na",
+          "z",
+          "w",
+          "do",
+          "o",
+          "za",
+          "dla",
+          "od",
+          "po",
+          "przez",
+          "przed",
+          "co do",
+          "wobec",
+          "nad",
+          "względem",
+          "między",
+          "jako",
+          "przeciw",
+          "pod",
+          "u",
+          "przy",
+          "wskutek",
+          "ku",
+          "wokół",
+          "wśród",
+          "spod",
+          "bez",
+          "śród",
+          "pomiędzy",
+          "dzięki",
+          "pośród",
+          "według",
+          "poza",
+          "wśrzód",
+          "koło",
+          "spośród",
+          "poprzez",
+          "ponad",
+          "spomiędzy",
+          "podczas",
+          "sprzed",
+          "wpośród",
+          "wewnątrz",
+          "zza",
+          "dookoła",
+          "per",
+          "znad",
+          "powyżej",
+          "naokoło",
+          "wkoło",
+          "jak",
+          "poniżej",
+          "obok",
+          "spoza",
+          "dokoła",
+          "mimo",
+          "naprzeciw",
+          "niż",
+          "wzdłuż",
+          "lada",
+          "naokół",
+          "niedaleko",
+          "niedaleko od",
+          "nieopodal",
+          "około",
+          "opodal",
+          "pobocz",
+          "pobok",
+          "podal",
+          "podle",
+          "popod",
+          "pośrodku",
+          "skroś",
+          "sponad",
+          "spopod",
+          "via",
+          "vis-à-vis",
+          "wedle",
+          "wokoło",
+          "wskroś",
+          "wskróś",
+          "z dala od",
+          "z daleka od"
+        ]
+      },
+      "PrepAdjectivePhrase": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": ["prepadjp"]
+          },
+          "prep": {
+            "$ref": "#/components/schemas/Preposition"
+          },
+          "case": {
+            "$ref": "#/components/schemas/CaseSpec"
+          }
+        },
+        "required": ["kind", "prep", "case"],
+        "additionalProperties": false
+      },
+      "PrepNumeralPhrase": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": ["prepnump"]
+          },
+          "prep": {
+            "$ref": "#/components/schemas/Preposition"
+          },
+          "case": {
+            "$ref": "#/components/schemas/CaseSpec"
+          }
+        },
+        "required": ["kind", "prep", "case"],
+        "additionalProperties": false
+      },
+      "PrepGerundPhrase": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": ["prepgerp"]
+          },
+          "prep": {
+            "$ref": "#/components/schemas/Preposition"
+          },
+          "case": {
+            "$ref": "#/components/schemas/CaseSpec"
+          }
+        },
+        "required": ["kind", "prep", "case"],
+        "additionalProperties": false
+      },
+      "PrepPassiveParticiplePhrase": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": ["prepppasp"]
+          },
+          "prep": {
+            "$ref": "#/components/schemas/Preposition"
+          },
+          "case": {
+            "$ref": "#/components/schemas/CaseSpec"
+          }
+        },
+        "required": ["kind", "prep", "case"],
+        "additionalProperties": false
+      },
+      "ComplexPrepPhrase": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": ["comprepnp"]
+          },
+          "prep": {
+            "type": "string"
+          }
+        },
+        "required": ["kind", "prep"],
+        "additionalProperties": false
+      },
+      "Clause": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": ["cp"]
+          },
+          "complementizer": {
+            "$ref": "#/components/schemas/Complementizer"
+          },
+          "words": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WhWord"
+            }
+          }
+        },
+        "required": ["kind", "complementizer", "words"],
+        "additionalProperties": false
+      },
+      "Complementizer": {
+        "type": "string",
+        "enum": ["że", "żeby", "żeby2", "int", "rel", "jak", "kiedy", "gdy", "jakoby", "jeśli", "bo", "aż", "jakby", "zanim", "dopóki"]
+      },
+      "WhWord": {
+        "type": "string",
+        "enum": [
+          "co",
+          "czemu",
+          "czy",
+          "czyj",
+          "dlaczego",
+          "dokąd",
+          "gdzie",
+          "ile",
+          "jak",
+          "jaki",
+          "kiedy",
+          "kto",
+          "którędy",
+          "który",
+          "odkąd",
+          "skąd",
+          "jakoby",
+          "jakby"
+        ]
+      },
+      "NominalClause": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": ["ncp"]
+          },
+          "case": {
+            "$ref": "#/components/schemas/CaseSpec"
+          },
+          "complementizer": {
+            "$ref": "#/components/schemas/Complementizer"
+          },
+          "words": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WhWord"
+            }
+          }
+        },
+        "required": ["kind", "case", "complementizer", "words"],
+        "additionalProperties": false
+      },
+      "PrepNominalClause": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": ["prepncp"]
+          },
+          "prep": {
+            "$ref": "#/components/schemas/Preposition"
+          },
+          "case": {
+            "$ref": "#/components/schemas/CaseSpec"
+          },
+          "complementizer": {
+            "$ref": "#/components/schemas/Complementizer"
+          },
+          "words": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WhWord"
+            }
+          }
+        },
+        "required": ["kind", "prep", "case", "complementizer", "words"],
+        "additionalProperties": false
+      },
+      "Infinitive": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": ["infp"]
+          },
+          "aspect": {
+            "$ref": "#/components/schemas/AspectSpec"
+          }
+        },
+        "required": ["kind", "aspect"],
+        "additionalProperties": false
+      },
+      "Adverbial": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": ["xp"]
+          },
+          "category": {
+            "$ref": "#/components/schemas/AdverbialCategory"
+          },
+          "realisations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Phrase"
+            }
+          }
+        },
+        "required": ["kind", "category", "realisations"],
+        "additionalProperties": false
+      },
+      "AdverbialCategory": {
+        "type": "string",
+        "enum": ["locat", "adl", "abl", "perl", "temp", "dur", "mod", "caus", "instr", "dest", "misc", "pron"]
+      },
+      "Adverb": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": ["advp"]
+          },
+          "category": {
+            "$ref": "#/components/schemas/AdverbialCategory"
+          }
+        },
+        "required": ["kind", "category"],
+        "additionalProperties": false
+      },
+      "Comparison": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": ["compar"]
+          },
+          "comparator": {
+            "$ref": "#/components/schemas/Comparator"
+          }
+        },
+        "required": ["kind", "comparator"],
+        "additionalProperties": false
+      },
+      "Comparator": {
+        "type": "string",
+        "enum": ["jak", "jako", "niż", "co"]
+      },
+      "AtomPhrase": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/Atom"
+          }
+        },
+        "required": ["kind"],
+        "additionalProperties": false
+      },
+      "Atom": {
+        "type": "string",
+        "enum": ["possp", "refl", "recip", "or", "nonch", "E", "distrp", "qub"]
+      },
+      "Fixed": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": ["fixed"]
+          },
+          "phrase": {
+            "$ref": "#/components/schemas/Phrase"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": ["kind", "phrase", "text"],
+        "additionalProperties": false
+      },
+      "Lex": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": ["lex"]
+          },
+          "phrase": {
+            "$ref": "#/components/schemas/Phrase"
+          },
+          "form": {
+            "$ref": "#/components/schemas/LexForm"
+          },
+          "lemmas": {
+            "$ref": "#/components/schemas/LemmaChoice"
+          },
+          "modification": {
+            "$ref": "#/components/schemas/Modification"
+          }
+        },
+        "required": ["kind", "phrase", "form", "lemmas", "modification"],
+        "additionalProperties": false
+      },
+      "LexForm": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/NominalForm"
+          },
+          {
+            "$ref": "#/components/schemas/AdjectivalForm"
+          },
+          {
+            "$ref": "#/components/schemas/ParticipialForm"
+          },
+          {
+            "$ref": "#/components/schemas/VerbalForm"
+          },
+          {
+            "$ref": "#/components/schemas/GerundForm"
+          },
+          {
+            "$ref": "#/components/schemas/NumeralForm"
+          },
+          {
+            "$ref": "#/components/schemas/AdverbialForm"
+          },
+          {
+            "$ref": "#/components/schemas/ParticleForm"
+          }
+        ]
+      },
+      "NominalForm": {
+        "type": "object",
+        "properties": {
+          "shape": {
+            "type": "string",
+            "enum": ["nominal"]
+          },
+          "number": {
+            "$ref": "#/components/schemas/NumberSpec"
+          }
+        },
+        "required": ["shape", "number"],
+        "additionalProperties": false
+      },
+      "NumberSpec": {
+        "type": "string",
+        "enum": ["sg", "pl", "agr", "any"]
+      },
+      "AdjectivalForm": {
+        "type": "object",
+        "properties": {
+          "shape": {
+            "type": "string",
+            "enum": ["adjectival"]
+          },
+          "number": {
+            "$ref": "#/components/schemas/NumberSpec"
+          },
+          "genders": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GenderSpec"
+            }
+          },
+          "degree": {
+            "$ref": "#/components/schemas/DegreeSpec"
+          }
+        },
+        "required": ["shape", "number", "genders", "degree"],
+        "additionalProperties": false
+      },
+      "GenderSpec": {
+        "type": "string",
+        "enum": ["m1", "m2", "m3", "f", "n", "agr", "any"]
+      },
+      "DegreeSpec": {
+        "type": "string",
+        "enum": ["pos", "com", "sup", "agr", "any"]
+      },
+      "ParticipialForm": {
+        "type": "object",
+        "properties": {
+          "shape": {
+            "type": "string",
+            "enum": ["participial"]
+          },
+          "number": {
+            "$ref": "#/components/schemas/NumberSpec"
+          },
+          "genders": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GenderSpec"
+            }
+          },
+          "negation": {
+            "$ref": "#/components/schemas/Negation"
+          },
+          "reflexive": {
+            "type": "boolean"
+          }
+        },
+        "required": ["shape", "number", "genders", "negation", "reflexive"],
+        "additionalProperties": false
+      },
+      "VerbalForm": {
+        "type": "object",
+        "properties": {
+          "shape": {
+            "type": "string",
+            "enum": ["verbal"]
+          },
+          "negation": {
+            "$ref": "#/components/schemas/Negation"
+          },
+          "reflexive": {
+            "type": "boolean"
+          }
+        },
+        "required": ["shape", "negation", "reflexive"],
+        "additionalProperties": false
+      },
+      "GerundForm": {
+        "type": "object",
+        "properties": {
+          "shape": {
+            "type": "string",
+            "enum": ["gerund"]
+          },
+          "number": {
+            "$ref": "#/components/schemas/NumberSpec"
+          },
+          "negation": {
+            "$ref": "#/components/schemas/Negation"
+          },
+          "reflexive": {
+            "type": "boolean"
+          }
+        },
+        "required": ["shape", "number", "negation", "reflexive"],
+        "additionalProperties": false
+      },
+      "NumeralForm": {
+        "type": "object",
+        "properties": {
+          "shape": {
+            "type": "string",
+            "enum": ["numeral"]
+          },
+          "numeral": {
+            "$ref": "#/components/schemas/LemmaChoice"
+          }
+        },
+        "required": ["shape", "numeral"],
+        "additionalProperties": false
+      },
+      "LemmaChoice": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/One"
+          },
+          {
+            "$ref": "#/components/schemas/Xor"
+          },
+          {
+            "$ref": "#/components/schemas/Or"
+          }
+        ]
+      },
+      "One": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": ["one"]
+          },
+          "lemma": {
+            "type": "string"
+          }
+        },
+        "required": ["kind", "lemma"],
+        "additionalProperties": false
+      },
+      "Xor": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": ["xor"]
+          },
+          "lemmas": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": ["kind", "lemmas"],
+        "additionalProperties": false
+      },
+      "Or": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": ["or"]
+          },
+          "lemmas": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": ["kind", "lemmas"],
+        "additionalProperties": false
+      },
+      "AdverbialForm": {
+        "type": "object",
+        "properties": {
+          "shape": {
+            "type": "string",
+            "enum": ["adverbial"]
+          },
+          "degree": {
+            "$ref": "#/components/schemas/DegreeSpec"
+          }
+        },
+        "required": ["shape", "degree"],
+        "additionalProperties": false
+      },
+      "ParticleForm": {
+        "type": "object",
+        "properties": {
+          "shape": {
+            "type": "string",
+            "enum": ["particle"]
+          }
+        },
+        "required": ["shape"],
+        "additionalProperties": false
+      },
+      "Modification": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/Modifiability"
+          },
+          "positions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Position"
+            }
+          }
+        },
+        "required": ["kind", "positions"],
+        "additionalProperties": false
+      },
+      "Modifiability": {
+        "type": "string",
+        "enum": ["natr", "atr", "atr1", "ratr", "ratr1"]
+      },
+      "LexComparison": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": ["lexcompar"]
+          },
+          "phrase": {
+            "$ref": "#/components/schemas/Phrase"
+          },
+          "parts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Lex"
+            }
+          }
+        },
+        "required": ["kind", "phrase", "parts"],
+        "additionalProperties": false
       },
       "License": {
         "type": "object",

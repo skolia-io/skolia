@@ -1,7 +1,7 @@
 // What the app needs of the lexicon and the edge cache, without Workers types, so the
 // reader and the API can import the app's types (AppType) and the RPC's.
-import type { FeatureSets, Lang, LemmaId, LexiconEntry } from "@skolia/shared/api";
-import type { Relation } from "@skolia/shared/schema";
+import type { FeatureSets, Lang, LemmaId } from "@skolia/shared/api";
+import type { Entry, Relation } from "@skolia/shared/schema";
 
 /** Entries that share a spelling, at most: one per part of speech, so a handful. */
 export const MAX_HOMOGRAPHS = 20;
@@ -10,8 +10,7 @@ export const MAX_HOMOGRAPHS = 20;
 export const MAX_INCOMING = 50;
 
 /** What a lookup brings besides the entries asked for. related: the entries their
- * relations point at (those of an entry with no senses always come, since it takes its
- * meaning from them); incoming: the relations that point at each, MAX_INCOMING at most. */
+ * relations point at; incoming: the relations that point at each, MAX_INCOMING at most. */
 export type Include = { readonly related: boolean; readonly incoming: boolean };
 
 export const NOTHING_MORE: Include = { related: false, incoming: false };
@@ -22,8 +21,8 @@ export type Incoming = { readonly relations: readonly Relation[]; readonly trunc
 
 /** One language's part of a lookup, all from one version. */
 export type Found = {
-  readonly entries: readonly LexiconEntry[];
-  readonly related: readonly LexiconEntry[];
+  readonly entries: readonly Entry[];
+  readonly related: readonly Entry[];
   readonly incoming: ReadonlyMap<LemmaId, Incoming>;
   readonly featureSets: FeatureSets | null;
 };

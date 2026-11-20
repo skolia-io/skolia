@@ -2,36 +2,31 @@
 D1's own schema, made by applying lexicon/migrations in order, plus a meta table with the
 language and version. infra/load-lexicon.py copies the rows into D1.
 
-Entries and relations are the lexicon's graph: a spelling a relation points at that has no
-entry is a node with no upos. Each entry has its lemma's pronunciations and its paradigms in
-the bundle's compact form,
-whose forms are ["psa", [1, 3]]: psa is feature sets 1 and 3, genitive and accusative
-singular. Set 1 is the rows (1, Case, Gen), (1, Number, Sing), ... in featureset.
+Each entry's data is the whole Entry the API serves (lexicon/entry.py), its paradigms'
+forms ["psa", [1, 3]]: psa is feature sets 1 and 3, genitive and accusative singular. Set
+1 is the rows (1, Case, Gen), (1, Number, Sing), ... in featureset. The relation rows are
+the lexicon's graph, for finding what points at a word.
 """
 
 import json
 import sqlite3
-from collections.abc import Callable
 from pathlib import Path
 
-from ..schema import Feats, Upos
-from .bundle import FeatsTable, compact, pronounce
-from .schema import Paradigm
+from ..schema import Feats
+from . import entry
+from .entry import Extras, FeatsTable
 from .store import Lexicon
 
-EXPORT_VERSION = 2
+EXPORT_VERSION = 3
 """Goes up when what this adds to an entry changes, so every environment loads it again."""
-
-type Paradigms = Callable[[str, Upos], list[Paradigm]]
 
 
 def version(lexicon: Lexicon) -> str:
     return f"{lexicon.version()}+d1-{EXPORT_VERSION}"
 
 
-def build(lexicon: Lexicon, paradigms: Paradigms | None, migrations: Path, out: Path) -> int:
-    """paradigms generates a lemma's, for a language whose lexicon stores none (Polish).
-    migrations is lexicon/migrations."""
+def build(lexicon: Lexicon, extras: Extras, migrations: Path, out: Path) -> int:
+    """migrations is lexicon/migrations."""
     table: list[Feats] = []
     feats = FeatsTable(table)
     built = version(lexicon)
@@ -43,39 +38,25 @@ def build(lexicon: Lexicon, paradigms: Paradigms | None, migrations: Path, out: 
         db.execute("CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
         meta = {**lexicon.meta(), "version": built}
         db.executemany("INSERT INTO meta VALUES (?, ?)", meta.items())
-        insert = """
-            INSERT INTO entry (lemma_id, version, lemma, upos, senses, pronunciations, paradigms)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """
         for row in lexicon.rows():
-            found = paradigms(row.lemma, row.upos) if paradigms else row.paradigms
             db.execute(
-                insert,
+                "INSERT INTO entry (lemma_id, version, lemma, upos, data) VALUES (?, ?, ?, ?, ?)",
                 (
                     row.lemma_id,
                     built,
                     row.lemma,
                     row.upos,
-                    _json(row.senses),
-                    _json(pronounce(lexicon, row.lemma, row.upos)),
-                    _json([compact(p, feats) for p in found]),
+                    _json(entry.make(lexicon, row, extras, feats)),
                 ),
             )
             count += 1
         db.executemany(
-            insert,
-            (
-                (lemma_id, built, lemma, None, "[]", "[]", "[]")
-                for lemma_id, lemma in lexicon.spellings()
-            ),
-        )
-        db.executemany(
             """
-            INSERT INTO relation (source_id, version, ord, target_id, kind, note, target_senses)
+            INSERT INTO relation (source_id, version, ord, target_lemma, target_id, kind, data)
             VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                (e.source_id, built, e.ord, e.target_id, e.kind, e.note, e.target_senses)
+                (e.source_id, built, e.ord, e.target_lemma, e.target_id, e.kind, e.data)
                 for e in lexicon.edges()
             ),
         )

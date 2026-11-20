@@ -139,25 +139,17 @@ type Cell = str | int | None
 
 
 def sampled(db: sqlite3.Connection, lang: str, sample: int) -> frozenset[str]:
-    """The nodes a preview loads: every entry of wordfreq's sample most common words (run
-    the noun and the verb), not proper nouns, and the nodes their relations point at."""
+    """The entries a preview loads: every entry of wordfreq's sample most common words (run
+    the noun and the verb), not proper nouns. Each is whole, its senses already resolved,
+    so what its relations point at needn't come along."""
     words = frozenset(wordfreq.top_n_list(lang, sample))
-    sources = frozenset(
+    return frozenset(
         lemma_id
         for lemma_id, lemma, upos in cast(
-            Iterable[tuple[str, str, str | None]],
-            db.execute("SELECT lemma_id, lemma, upos FROM entry WHERE upos IS NOT NULL"),
+            Iterable[tuple[str, str, str]], db.execute("SELECT lemma_id, lemma, upos FROM entry")
         )
         if upos != "PROPN" and lemma.lower() in words
     )
-    targets = frozenset(
-        target_id
-        for source_id, target_id in cast(
-            Iterable[tuple[str, str]], db.execute("SELECT source_id, target_id FROM relation")
-        )
-        if source_id in sources
-    )
-    return sources | targets
 
 
 def statements(db: sqlite3.Connection, lang: str, version: str, sample: int | None) -> list[str]:
@@ -173,8 +165,8 @@ def statements(db: sqlite3.Connection, lang: str, version: str, sample: int | No
             lemma_id = columns.index("lemma_id")
             rows = (row for row in rows if row[lemma_id] in keep)
         if keep is not None and table == "relation":
-            source, target = columns.index("source_id"), columns.index("target_id")
-            rows = (row for row in rows if row[source] in keep and row[target] in keep)
+            source = columns.index("source_id")
+            rows = (row for row in rows if row[source] in keep)
         at = columns.index("version")
         out += inserts(
             f"INSERT INTO {table} ({', '.join(columns)}) VALUES",

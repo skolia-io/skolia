@@ -21,11 +21,13 @@ import {
   type Settings,
 } from "@skolia/shared/api";
 import { allPages, type Cursor } from "@skolia/shared/page";
+import type { Entry } from "@skolia/shared/schema";
 import {
   ALICE,
   NOW,
   client,
   importSentences,
+  glossed,
   loadLexicon,
   local,
   raw,
@@ -138,7 +140,7 @@ test("a word's recognition and production cards are new and due now, with its le
   await loadLexicon(
     "pl",
     "lex/1",
-    [{ lemmaId: "pl:pies:NOUN", lemma: "pies", upos: "NOUN", gloss: "dog", paradigms: [{ homonym: "", forms: [["psa", [1]]] }] }],
+    [glossed("pl:pies:NOUN", "dog", { paradigms: [{ homonym: "", forms: [["psa", [1]]] }] })],
     [{ Case: "Nom" }, { Case: "Gen" }],
   );
   await learn(app, headers, "pl:pies:NOUN");
@@ -502,36 +504,27 @@ test("settings are saved whole, and kept", async () => {
   assert.deepEqual(await body("bob's settings", client(app, bob).me.settings.$get()), DEFAULT_SETTINGS);
 });
 
-test("a due card whose word has no senses comes with the entries its relations point at, as related, from the lexicon Worker", async () => {
+test("a due card carries its entry whole, as the lexicon built it, from the lexicon Worker", async () => {
   const app = setup();
   const headers = await signedIn();
-  await loadLexicon("pl", "lex/1", [
-    {
-      lemmaId: "pl:zgolić:VERB",
-      lemma: "zgolić",
-      upos: "VERB",
-      gloss: null,
-      relations: [
-        { kind: "derived-from", targetId: "pl:golić:VERB", note: "perfective derivative", targetSenses: [0] },
-        { kind: "derived-from", targetId: "pl:golnąć:" },
-      ],
-    },
-    { lemmaId: "pl:golić:VERB", lemma: "golić", upos: "VERB", gloss: "to down" },
-    { lemmaId: "pl:golnąć:", lemma: "golnąć", upos: null, gloss: null },
-    {
-      lemmaId: "pl:pies:NOUN",
-      lemma: "pies",
-      upos: "NOUN",
-      gloss: "dog",
-      relations: [{ kind: "derived-from", targetId: "pl:golić:VERB" }],
-    },
-  ]);
+  const zgolić: Entry = {
+    lemma_id: "pl:zgolić:VERB",
+    lemma: "zgolić",
+    upos: "VERB",
+    grammar: { Aspect: "Perf" },
+    senses: [{ gloss: "to shave", tags: ["transitive"] }],
+    relations: [
+      { kind: "derived-from", lemma: "golić", lemma_id: "pl:golić:VERB", how: "perfective" },
+      { kind: "aspect-partner", lemma: "golnąć", aspect: "Perf" },
+    ],
+    pronunciations: [],
+    paradigms: [],
+    frames: [],
+  };
+  await loadLexicon("pl", "lex/1", [zgolić, glossed("pl:golić:VERB", "to shave")]);
   await learn(app, headers, "pl:zgolić:VERB");
   const [card] = (await due(app, headers, "pl")).cards;
-  assert.deepEqual(
-    card?.related.map((e) => e.lemmaId),
-    ["pl:golić:VERB"],
-  );
+  assert.deepEqual(card?.entry, zgolić);
 });
 
 test("a language's cards, of every kind, are listed newest first, a page at a time", async () => {

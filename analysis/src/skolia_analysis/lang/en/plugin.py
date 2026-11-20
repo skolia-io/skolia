@@ -10,11 +10,10 @@ from collections.abc import Callable, Iterable
 from pathlib import Path
 
 from ...blob import build
-from ...lexicon import bundle
-from ...lexicon.store import Lexicon
+from ...lexicon.entry import Extras
 from ...parsed import ParsedSentence, Parser
 from ...parsers.stanza_parser import StanzaParser
-from ...plugin import Bundler, Options, ParsingAnalyzer
+from ...plugin import Options, ParsingAnalyzer
 from ...schema import Blob
 from .lexicon import Source
 
@@ -71,11 +70,6 @@ def lexicon_source() -> Source:
     return Source()
 
 
-def bundler(lexicon: Lexicon, data: Path | None) -> Bundler:
-    """The paradigms are the lexicon's, from Wiktionary."""
-    return lambda blob: bundle.make(blob, lexicon)
-
-
-def paradigms() -> None:
-    """The lexicon stores them."""
-    return None
+def extras(data: Path | None) -> Extras:
+    """Nothing: the paradigms are the lexicon's, from Wiktionary."""
+    return Extras()

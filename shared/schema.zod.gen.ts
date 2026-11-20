@@ -174,15 +174,37 @@ export const Sense: z.ZodType<types.Sense> = /* @__PURE__ */ (() => z.object({
   examples: z.array(Example).exactOptional(),
 }).meta({ id: "Sense" }))();
 
-export const RelationType: z.ZodType<types.RelationType> = /* @__PURE__ */ (() => z.enum(["aspect-partner", "derived-from"]).meta({ id: "RelationType" }))();
-
-export const Relation: z.ZodType<types.Relation> = /* @__PURE__ */ (() => z.object({
-  type: RelationType,
+export const AspectPartner: z.ZodType<types.AspectPartner> = /* @__PURE__ */ (() => z.object({
+  kind: z.enum(["aspect-partner"]),
   lemma: z.string(),
-  note: z.string().exactOptional(),
   lemma_id: z.string().exactOptional(),
-  sense_indexes: z.array(z.number().int()).exactOptional(),
-}).meta({ id: "Relation" }))();
+  aspect: Aspect,
+}).meta({ id: "AspectPartner" }))();
+
+export const Derivation: z.ZodType<types.Derivation> = /* @__PURE__ */ (() => z.enum(["agent-noun", "augmentative", "diminutive", "endearing", "feminine", "frequentative", "iterative", "masculine", "noun-from-verb", "perfective"]).meta({ id: "Derivation" }))();
+
+export const DerivedFrom: z.ZodType<types.DerivedFrom> = /* @__PURE__ */ (() => z.object({
+  kind: z.enum(["derived-from"]),
+  lemma: z.string(),
+  lemma_id: z.string().exactOptional(),
+  how: Derivation,
+}).meta({ id: "DerivedFrom" }))();
+
+export const VariantOf: z.ZodType<types.VariantOf> = /* @__PURE__ */ (() => z.object({
+  kind: z.enum(["variant-of"]),
+  lemma: z.string(),
+  lemma_id: z.string().exactOptional(),
+  tags: z.array(z.string()),
+}).meta({ id: "VariantOf" }))();
+
+export const Relation: z.ZodType<types.Relation> = /* @__PURE__ */ (() => z.union([AspectPartner, DerivedFrom, VariantOf]).meta({ id: "Relation" }))();
+
+export const Accent: z.ZodType<types.Accent> = /* @__PURE__ */ (() => z.enum(["UK", "US"]).meta({ id: "Accent" }))();
+
+export const Pronunciation: z.ZodType<types.Pronunciation> = /* @__PURE__ */ (() => z.object({
+  ipa: z.string(),
+  accents: z.array(Accent).exactOptional(),
+}).meta({ id: "Pronunciation" }))();
 
 export const FormRow: z.ZodType<types.FormRow> = /* @__PURE__ */ (() => z.tuple([z.string(), z.array(z.number().int())]).meta({ id: "FormRow" }))();
 
@@ -439,22 +461,16 @@ export const Schema: z.ZodType<types.Schema> = /* @__PURE__ */ (() => z.object({
 }).meta({ id: "Schema" }))();
 
 export const Entry: z.ZodType<types.Entry> = /* @__PURE__ */ (() => z.object({
+  lemma_id: z.string(),
   lemma: z.string(),
   upos: Upos,
+  grammar: Feats,
   senses: z.array(Sense),
   relations: z.array(Relation),
+  pronunciations: z.array(Pronunciation),
   paradigms: z.array(BundleParadigm),
   frames: z.array(Schema),
 }).meta({ id: "Entry" }))();
-
-export const Match: z.ZodType<types.Match> = /* @__PURE__ */ (() => z.enum(["exact", "other-pos", "lowercase", "none"]).meta({ id: "Match" }))();
-
-export const Accent: z.ZodType<types.Accent> = /* @__PURE__ */ (() => z.enum(["UK", "US"]).meta({ id: "Accent" }))();
-
-export const Pronunciation: z.ZodType<types.Pronunciation> = /* @__PURE__ */ (() => z.object({
-  ipa: z.string(),
-  accents: z.array(Accent).exactOptional(),
-}).meta({ id: "Pronunciation" }))();
 
 export const Recording: z.ZodType<types.Recording> = /* @__PURE__ */ (() => z.object({
   audio: z.string(),
@@ -469,10 +485,9 @@ export const Bundle: z.ZodType<types.Bundle> = /* @__PURE__ */ (() => z.object({
   attribution: z.string(),
   entries: z.record(z.string(), Entry),
   lookup: z.record(z.string(), z.string()),
-  match: z.record(z.string(), Match),
   feats: z.array(Feats),
-  pronunciations: z.record(z.string(), z.array(Pronunciation)).exactOptional(),
-  recordings: z.record(z.string(), z.array(Recording)).exactOptional(),
+  pronunciations: z.record(z.string(), z.array(Pronunciation)),
+  recordings: z.record(z.string(), z.array(Recording)),
 }).meta({ id: "Bundle" }))();
 
 export const IngestJob: z.ZodType<types.IngestJob> = /* @__PURE__ */ (() => z.object({

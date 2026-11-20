@@ -15,7 +15,6 @@
     type User,
   } from "@skolia/shared/api";
   import { LANGUAGES } from "@skolia/shared/lang";
-  import { aspectOf, sensesOf } from "@skolia/shared/lexicon";
   import type { Sense } from "@skolia/shared/schema";
   import { formTables, lemmaTables, type Table } from "@skolia/shared/paradigm";
   import { featureWords, UPOS_LABEL } from "@skolia/shared/ud";
@@ -157,31 +156,12 @@
   }
 
   function sensesFor(c: DueCard): Sense[] {
-    return c.entry ? sensesOf(c.entry, (id) => c.related.find((e) => e.lemmaId === id)) : [];
+    return c.entry?.senses ?? [];
   }
 
-  function glosses(c: DueCard): { gloss: string; tags: string[] }[] {
-    const lang = langOf(c);
-    const hidden = lang ? LANGUAGES[lang].grammarTags : new Set<string>();
-    return sensesFor(c)
-      .slice(0, SHOWN_SENSES)
-      .map((s) => ({ gloss: s.gloss, tags: s.tags.filter((t) => !hidden.has(t)) }));
-  }
-
-  /** Aspect tells apart verbs a clue can't, like pisać and napisać ("to write"). */
-  const ASPECTS = new Set(["perfective", "imperfective"]);
-
-  /** From the paradigm, since a borrowed meaning (zgolić's, from golić) has the lender's
-   * aspect tags stripped; otherwise from the first sense's tags. */
-  function aspectWords(c: DueCard): string[] {
-    const sets = due?.featureSets;
-    const aspect = c.entry && sets ? aspectOf(c.entry, (id) => sets[String(id)]) : undefined;
-    if (aspect !== undefined) return featureWords({ Aspect: aspect });
-    return sensesFor(c)[0]?.tags.filter((t) => ASPECTS.has(t)) ?? [];
-  }
-
+  /** The grammar tells apart words a clue can't, like pisać and napisać ("to write"). */
   function hintOf(c: DueCard): string {
-    return [UPOS_LABEL[c.entry?.upos ?? "X"], ...aspectWords(c)].join(" · ");
+    return [UPOS_LABEL[c.entry?.upos ?? "X"], ...featureWords(c.entry?.grammar ?? {})].join(" · ");
   }
 
   function tablesOf(c: DueCard): Table[] {
@@ -282,7 +262,7 @@
 {/snippet}
 
 {#snippet meanings(c: DueCard)}
-  {@const senses = glosses(c)}
+  {@const senses = sensesFor(c).slice(0, SHOWN_SENSES)}
   {#if c.kind === "cloze"}
     <p class="muted">{UPOS_LABEL[c.entry?.upos ?? "X"]}</p>
   {/if}

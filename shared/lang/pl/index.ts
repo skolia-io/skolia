@@ -20,17 +20,4 @@ export const polish: Language = {
       here: frame.here,
     })),
   partOfWord: (token) => ((token.xpos ?? "").startsWith(PERSON_ENDING) ? "person ending" : null),
-  grammarTags: new Set([
-    "masculine",
-    "feminine",
-    "neuter",
-    "animal-not-person",
-    "person",
-    "personal",
-    "inanimate",
-    "animate",
-    "perfective",
-    "imperfective",
-  ]),
-  relationLabel: (relation) => (relation.type === "aspect-partner" ? `${relation.note ?? "aspect"} partner` : null),
 };

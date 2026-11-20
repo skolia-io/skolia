@@ -48,8 +48,6 @@ INFLECTION_TAGS = frozenset(
         "imperative",
     }
 )
-# Tags that say how a form-of sense is derived, kept as the relation's note
-DERIVATION_TAGS = ("diminutive", "augmentative", "feminine", "masculine")
 
 # Forms that aren't an inflection of today's word: spellings, old forms, the extract's
 # own bookkeeping rows

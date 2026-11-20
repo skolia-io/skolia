@@ -34,8 +34,11 @@ const PRES_1SG: Feats = { Mood: "Ind", Number: "Sing", Person: "1", Tense: "Pres
 const PRES_3SG: Feats = { Mood: "Ind", Number: "Sing", Person: "3", Tense: "Pres", VerbForm: "Fin" };
 
 const BE: Entry = {
+  lemma_id: "en:be:VERB",
   lemma: "be",
   upos: "VERB",
+  grammar: {},
+  pronunciations: [],
   senses: [{ gloss: "to exist", tags: [] }],
   relations: [],
   frames: [],
@@ -53,8 +56,11 @@ const BE: Entry = {
 };
 
 const FIRST: Entry = {
+  lemma_id: "en:first:ADJ",
   lemma: "first",
   upos: "ADJ",
+  grammar: {},
+  pronunciations: [],
   senses: [{ gloss: "preceding all others", tags: [] }],
   relations: [],
   frames: [],
@@ -70,14 +76,15 @@ const FIRST: Entry = {
 };
 
 const BUNDLE: Bundle = {
-  schema: 1,
+  schema: 2,
   lang: "en",
   lexicon: "t",
   attribution: "",
   entries: { "en:be:VERB": BE, "en:first:ADJ": FIRST },
   lookup: { "en:be:AUX": "en:be:VERB" },
-  match: {},
   feats: [PRES_1SG, PRES_3SG, { VerbForm: "Inf" }, { Degree: "Pos" }, { Degree: "Sup" }],
+  pronunciations: {},
+  recordings: {},
 };
 
 test("a curly apostrophe matches the lexicon's straight one", () => {
@@ -97,8 +104,11 @@ const PART_PAST: Feats = { Tense: "Past", VerbForm: "Part" };
 const PART_PASS: Feats = { Tense: "Past", VerbForm: "Part", Voice: "Pass" };
 
 const BURN: Entry = {
+  lemma_id: "en:burn:VERB",
   lemma: "burn",
   upos: "VERB",
+  grammar: {},
+  pronunciations: [],
   senses: [{ gloss: "to be on fire", tags: [] }],
   relations: [],
   frames: [],

@@ -1,7 +1,6 @@
 <script lang="ts">
   import { createQuery } from "@tanstack/svelte-query";
   import { LANGS, LANGUAGE_INFO, blankParts, type Card, type Lang, type User } from "@skolia/shared/api";
-  import { sensesOf } from "@skolia/shared/lexicon";
   import { signIn } from "../lib/api.ts";
   import { createCardList, createDeleteCard, type CardPage } from "../lib/cards.ts";
   import { countsQuery } from "../lib/queries.ts";
@@ -34,7 +33,7 @@
 
   function glossOf(card: Card, page: CardPage): string | null {
     const entry = page.entries.get(card.lemmaId);
-    return entry ? (sensesOf(entry, (id) => page.entries.get(id))[0]?.gloss ?? null) : null;
+    return entry?.senses[0]?.gloss ?? null;
   }
 
   async function deleteOne(card: Card): Promise<void> {

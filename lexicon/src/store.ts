@@ -1,36 +1,18 @@
 import * as z from "zod";
-import { LANGS, UPOS, langOf, type FeatureSets, type Lang, type LemmaId, type LexiconEntry, type Lookup } from "@skolia/shared/api";
-import type { BundleParadigm, Pronunciation, Relation, Sense } from "@skolia/shared/schema";
+import { LANGS, langOf, type FeatureSets, type Lang, type LemmaId, type Lookup } from "@skolia/shared/api";
+import type { Entry, Relation } from "@skolia/shared/schema";
 import { sql, type Sql } from "@skolia/util/sql";
 import { prepare } from "@skolia/util/d1";
 import * as schemas from "@skolia/shared/schemas";
 import { MAX_HOMOGRAPHS, MAX_INCOMING, NOTHING_MORE, type Found, type Include, type Incoming, type Lexicon } from "./ports.ts";
 
-const EntryRow = z.object({
-  lemmaId: schemas.LemmaId,
-  lemma: z.string(),
-  upos: z.enum(UPOS),
-  senses: z.string(),
-  pronunciations: z.string(),
-  paradigms: z.string(),
-});
-
-const RelationRow = z.object({
-  sourceId: schemas.LemmaId,
-  targetId: z.string(),
-  kind: schemas.RelationType,
-  note: z.string().nullable(),
-  targetSenses: z.string().nullable(),
-  targetLemma: z.string(),
-  targetUpos: z.enum(UPOS).nullable(),
-});
+const EntryRow = z.object({ data: z.string() });
 
 const IncomingRow = z.object({
   sourceId: schemas.LemmaId,
   sourceLemma: z.string(),
-  kind: schemas.RelationType,
-  note: z.string().nullable(),
-  targetSenses: z.string().nullable(),
+  kind: z.string(),
+  data: z.string(),
 });
 
 const FeatureRow = z.object({ id: z.number().int(), feature: z.string(), value: z.string() });
@@ -82,9 +64,8 @@ export class D1Lexicon implements Lexicon {
     return await this.#find(this.dbs[lang], version, { lemma }, include);
   }
 
-  /** What the API's cards show: the entries, each language's from the version it serves,
-   * with the entries the relations of those with no senses point at, all in one list. Ids
-   * it doesn't have are left out. */
+  /** What the API's cards show: the entries, each language's from the version it serves.
+   * Ids it doesn't have are left out. */
   async entries(ids: readonly LemmaId[]): Promise<Lookup> {
     const found = await Promise.all(
       LANGS.map(async (lang) => {
@@ -94,26 +75,33 @@ export class D1Lexicon implements Lexicon {
       }),
     );
     return {
-      entries: found.flatMap((f) => [...f.entries, ...f.related]),
+      entries: found.flatMap((f) => f.entries),
       featureSets: Object.fromEntries(found.flatMap((f) => (f.featureSets === null ? [] : [[f.lang, f.featureSets]]))),
     };
   }
 
   async #find(db: D1DatabaseSession, version: string, selector: Selector, include: Include): Promise<Found> {
-    const asked = await nodes(db, version, selector);
+    const asked = await entriesOf(db, version, selector);
     if (asked.length === 0) return NONE;
-    const have = new Set(asked.map((e) => e.lemmaId));
-    const targetIds = [
-      ...new Set(
-        asked
-          .filter((e) => include.related || e.senses.length === 0)
-          .flatMap((e) => e.relations.flatMap((r) => (r.lemma_id === undefined ? [] : [schemas.LemmaId.parse(r.lemma_id)])))
-          .filter((id) => !have.has(id)),
-      ),
-    ];
+    const have = new Set(asked.map((e) => e.lemma_id));
+    const targetIds = include.related
+      ? [
+          ...new Set(
+            asked
+              .flatMap((e) => e.relations.flatMap((r) => (r.lemma_id === undefined ? [] : [schemas.LemmaId.parse(r.lemma_id)])))
+              .filter((id) => !have.has(id)),
+          ),
+        ]
+      : [];
     const [related, incoming] = await Promise.all([
-      targetIds.length === 0 ? [] : nodes(db, version, { ids: targetIds }),
-      include.incoming ? incomingOf(db, version, [...have]) : new Map<LemmaId, Incoming>(),
+      targetIds.length === 0 ? [] : entriesOf(db, version, { ids: targetIds }),
+      include.incoming
+        ? incomingOf(
+            db,
+            version,
+            [...have].map((id) => schemas.LemmaId.parse(id)),
+          )
+        : new Map<LemmaId, Incoming>(),
     ]);
     const used = new Set([...asked, ...related].flatMap((e) => e.paradigms.flatMap((p) => p.forms.flatMap(([, sets]) => sets))));
     return { entries: asked, related, incoming, featureSets: used.size === 0 ? null : await featureSets(db, version, used) };
@@ -142,63 +130,26 @@ function idsOf(version: string, selector: Selector): Sql {
 export const QUERIES = {
   /** The ids of the entries spelt lemma, MAX_HOMOGRAPHS at most: entry_lemma. */
   spelt: (version: string, lemma: string) =>
-    sql`(SELECT lemma_id FROM entry WHERE lemma = ${lemma} AND version = ${version} AND upos IS NOT NULL
+    sql`(SELECT lemma_id FROM entry WHERE lemma = ${lemma} AND version = ${version}
        ORDER BY lemma_id LIMIT ${MAX_HOMOGRAPHS})`,
-  entries: (version: string, ids: Sql) =>
-    sql`SELECT lemma_id AS lemmaId, lemma, upos, senses, pronunciations, paradigms
-       FROM entry WHERE version = ${version} AND lemma_id IN ${ids} AND upos IS NOT NULL
-       ORDER BY lemma_id`,
-  /** The entries' relations, with what they point at. */
-  relations: (version: string, ids: Sql) =>
-    sql`SELECT relation.source_id AS sourceId, relation.target_id AS targetId, relation.kind,
-         relation.note, relation.target_senses AS targetSenses, target.lemma AS targetLemma,
-         target.upos AS targetUpos
-       FROM relation
-       JOIN entry AS target ON target.lemma_id = relation.target_id AND target.version = relation.version
-       WHERE relation.version = ${version} AND relation.source_id IN ${ids}
-       ORDER BY relation.source_id, relation.ord`,
+  /** The entries, each whole, as lexicon/entry.py built it. */
+  entries: (version: string, ids: Sql) => sql`SELECT data FROM entry WHERE version = ${version} AND lemma_id IN ${ids} ORDER BY lemma_id`,
   /** The relations pointing at an entry, MAX_INCOMING and one more: relation_target. */
   incoming: (version: string, id: string) =>
-    sql`SELECT relation.source_id AS sourceId, source.lemma AS sourceLemma, relation.kind,
-         relation.note, relation.target_senses AS targetSenses
+    sql`SELECT relation.source_id AS sourceId, source.lemma AS sourceLemma, relation.kind, relation.data
        FROM relation
        JOIN entry AS source ON source.lemma_id = relation.source_id AND source.version = relation.version
-       WHERE relation.target_id = ${id} AND relation.version = ${version} AND source.upos IS NOT NULL
+       WHERE relation.target_id = ${id} AND relation.version = ${version}
        ORDER BY relation.source_id LIMIT ${MAX_INCOMING + 1}`,
   featureSets: (version: string, ids: readonly number[]) =>
     sql`SELECT id, feature, value FROM featureset WHERE version = ${version} AND id IN (SELECT value FROM json_each(${JSON.stringify(ids)}))`,
   served: () => sql`SELECT version FROM loaded`,
 };
 
-/** The selector's entries of version with their relations, in one batch, by id. Spellings
- * with no entry (no upos) are left out. */
-async function nodes(db: D1DatabaseSession, version: string, selector: Selector): Promise<LexiconEntry[]> {
-  const ids = idsOf(version, selector);
-  const [entryRows, relationRows] = await db.batch([
-    prepare(db, QUERIES.entries(version, ids)),
-    prepare(db, QUERIES.relations(version, ids)),
-  ]);
-  const relations = (relationRows?.results ?? []).map((row) => RelationRow.parse(row));
-  return (entryRows?.results ?? []).map((row) => {
-    const { senses, pronunciations, paradigms, ...rest } = EntryRow.parse(row);
-    return {
-      ...rest,
-      senses: JSON.parse(senses) as Sense[],
-      relations: relations.filter((edge) => edge.sourceId === rest.lemmaId).map(relation),
-      pronunciations: JSON.parse(pronunciations) as Pronunciation[],
-      paradigms: JSON.parse(paradigms) as BundleParadigm[],
-    };
-  });
-}
-
-function relation(edge: z.output<typeof RelationRow>): Relation {
-  return {
-    type: edge.kind,
-    lemma: edge.targetLemma,
-    ...(edge.note === null ? {} : { note: edge.note }),
-    ...(edge.targetUpos === null ? {} : { lemma_id: edge.targetId }),
-    ...(edge.targetSenses === null ? {} : { sense_indexes: JSON.parse(edge.targetSenses) as number[] }),
-  };
+/** The selector's entries of version, by id. */
+async function entriesOf(db: D1DatabaseSession, version: string, selector: Selector): Promise<Entry[]> {
+  const { results } = await prepare(db, QUERIES.entries(version, idsOf(version, selector))).all();
+  return results.map((row) => JSON.parse(EntryRow.parse(row).data) as Entry);
 }
 
 /** The relations of version pointing at each entry, by source id, MAX_INCOMING at most:
@@ -214,14 +165,14 @@ async function incomingOf(db: D1DatabaseSession, version: string, ids: readonly 
   );
 }
 
-/** An incoming relation, from its source: lemma and lemma_id are the source's, and
- * sense_indexes the senses of the entry it points at. */
+/** An incoming relation, from its source: lemma and lemma_id are the source's, and the
+ * rest is as the source has it (zgolić's derived-from golić is golić's incoming
+ * derived-from zgolić, how: perfective). */
 function incoming(edge: z.output<typeof IncomingRow>): Relation {
-  return {
-    type: edge.kind,
+  return schemas.Relation.parse({
+    ...(JSON.parse(edge.data) as object),
+    kind: edge.kind,
     lemma: edge.sourceLemma,
     lemma_id: edge.sourceId,
-    ...(edge.note === null ? {} : { note: edge.note }),
-    ...(edge.targetSenses === null ? {} : { sense_indexes: JSON.parse(edge.targetSenses) as number[] }),
-  };
+  });
 }

@@ -6,7 +6,8 @@
 import { Hono, type Context, type MiddlewareHandler } from "hono";
 import { cors } from "hono/cors";
 import { HTTPException } from "hono/http-exception";
-import { langOf, type FeatureSets, type Lang, type LemmaId, type LexiconEntry } from "@skolia/shared/api";
+import { langOf, type FeatureSets, type Lang, type LemmaId } from "@skolia/shared/api";
+import type { Entry } from "@skolia/shared/schema";
 import * as schemas from "@skolia/shared/schemas";
 import { badRequest, describe, json, responses, scalarPage, validator } from "@skolia/util/openapi";
 import { log } from "@skolia/util/log";
@@ -165,7 +166,9 @@ function cacheKey(url: string, etag: string): Request {
 function entries(found: readonly { readonly lang: Lang; readonly found: Found | null }[]): api.EntriesBody {
   const all = found.flatMap(({ lang, found }) => (found === null ? [] : [{ lang, ...found }]));
   return {
-    entries: all.flatMap(({ lang, entries, incoming }) => entries.map((e) => credited(lang, e, incoming.get(e.lemmaId)))),
+    entries: all.flatMap(({ lang, entries, incoming }) =>
+      entries.map((e) => credited(lang, e, incoming.get(schemas.LemmaId.parse(e.lemma_id)))),
+    ),
     related: all.flatMap(({ lang, related }) => related.map((e) => credited(lang, e, undefined))),
     featureSets: Object.fromEntries(
       all.flatMap(({ lang, featureSets }) => (featureSets === null ? [] : [[lang, featureSets] as const])),
@@ -173,7 +176,7 @@ function entries(found: readonly { readonly lang: Lang; readonly found: Found | 
   };
 }
 
-function credited(lang: Lang, entry: LexiconEntry, incoming: Incoming | undefined): api.EntryBody {
+function credited(lang: Lang, entry: Entry, incoming: Incoming | undefined): api.EntryBody {
   return {
     ...entry,
     sourceUrl: wiktionaryUrl(lang, entry.lemma),

@@ -78,6 +78,7 @@ TENSE_TAGS: Mapping[str, Tense] = {"present": "Pres", "past": "Past"}
 
 class Source:
     attribution = ATTRIBUTION
+    grammar_tags: frozenset[str] = frozenset()
     version = ""
 
     def convert(self, entry: KaikkiEntry) -> Converted | None:
@@ -94,7 +95,7 @@ class Source:
         senses = [s for s in found if s is not None]
         if not senses:
             return None
-        relations = list(kaikki_senses.derived_from(entry, INFLECTION_TAGS, kaikki.DERIVATION_TAGS))
+        relations = list(kaikki_senses.relations(entry, INFLECTION_TAGS, self.grammar_tags))
         forms = list(paradigm_forms(word, upos, entry.get("forms", [])))
         # Wiktionary splits a word by etymology, usually with the same forms (bank, the
         # shore and the institution); merge keeps one copy of each table

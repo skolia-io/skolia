@@ -1,6 +1,6 @@
 """What a language gives skolia-build-lexicon: its Kaikki entries in the analyser's terms."""
 
-from collections.abc import Iterable
+from collections.abc import Collection, Iterable
 from dataclasses import dataclass, field
 from typing import Protocol
 
@@ -36,6 +36,12 @@ class LexiconSource(Protocol):
     @property
     def attribution(self) -> str:
         """Where the lexicon's content comes from, with licences; bundles carry it."""
+        ...
+
+    @property
+    def grammar_tags(self) -> Collection[str]:
+        """Wiktionary's tags for what an entry's grammar says (gender, aspect), which the
+        build takes off its senses."""
         ...
 
     @property

@@ -36,9 +36,9 @@ def fake_bundle(blob: Blob) -> Bundle:
         "attribution": "",
         "entries": {},
         "lookup": {},
-        "match": {},
         "feats": [],
         "pronunciations": {},
+        "recordings": {},
     }
 
 

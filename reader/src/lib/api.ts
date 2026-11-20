@@ -188,9 +188,10 @@ export function listAnnotations(id: DocumentId): Promise<readonly Annotation[]> 
   });
 }
 
-/** The reading by name, or "unsupported" when its schema is newer than this reader
- * knows (an API deployed ahead of the reader) or its language isn't one it has. Older
- * schemas are read: documents keep theirs until ingest redoes them. */
+/** The reading by name, or "unsupported" when its analysis schema is newer than this
+ * reader knows (an API deployed ahead of the reader), its bundle isn't this reader's
+ * schema, or its language isn't one it has. An older bundle is redone when the document
+ * is opened (BUNDLER_VERSION), and the text shows as plain text until then. */
 export async function loadReading(id: DocumentId, names: ReadingNames): Promise<Reading | "unsupported"> {
   const doc = api.documents[":id"];
   const [text, analysis, bundle] = await Promise.all([
@@ -201,7 +202,7 @@ export async function loadReading(id: DocumentId, names: ReadingNames): Promise<
   for (const response of [text, analysis, bundle]) if (!response.ok) throw await failure(response);
   const [a, b] = [(await analysis.json()) as Blob, (await bundle.json()) as Bundle];
   const lang = a.lang;
-  if (a.schema > SCHEMA || b.schema > BUNDLE_SCHEMA || !isLang(lang) || b.lang !== lang) return "unsupported";
+  if (a.schema > SCHEMA || b.schema !== BUNDLE_SCHEMA || !isLang(lang) || b.lang !== lang) return "unsupported";
   return { lang, text: await text.text(), analysis: a, bundle: b };
 }
 
@@ -281,14 +282,13 @@ export async function deleteCard(cardId: CardId): Promise<void> {
   if (!response.ok) throw await failure(response);
 }
 
-/** The lexicon's entries for the lemmas, MAX_LOOKUP at most, and the entries those with no
- * senses take their meaning from, in one list. */
+/** The lexicon's entries for the lemmas, MAX_LOOKUP at most. */
 export async function lookUp(ids: readonly LemmaId[]): Promise<Lookup> {
   const response = await lexicon.entries.$get({ query: { id: [...ids] } });
   if (!response.ok) throw await failure(response);
   // Hono's JSON type makes the entries' optional fields `| undefined`; it's the same JSON
-  const { entries, related, featureSets } = (await response.json()) as EntriesBody;
-  return { entries: [...entries, ...related], featureSets };
+  const { entries, featureSets } = (await response.json()) as EntriesBody;
+  return { entries, featureSets };
 }
 
 export async function getSettings(): Promise<Settings> {

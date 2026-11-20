@@ -9,12 +9,11 @@ from pathlib import Path
 
 from ... import reconcile
 from ...blob import CandidateLookup, build
-from ...lexicon import bundle
-from ...lexicon.store import Lexicon
+from ...lexicon.entry import Extras, no_frames
 from ...parsed import ParsedSentence, Parser
 from ...parsers.combo_parser import ComboParser
 from ...parsers.stanza_parser import StanzaParser
-from ...plugin import Bundler, Options, ParsingAnalyzer
+from ...plugin import Options, ParsingAnalyzer
 from ...schema import Blob, ExpressionDef, Reading, Token, Upos
 from . import cases
 from .lexicon import Paradigms, Source
@@ -137,13 +136,7 @@ def lexicon_source() -> Source:
     return Source()
 
 
-def paradigms() -> Paradigms:
-    return Paradigms()
-
-
-def bundler(lexicon: Lexicon, data: Path | None) -> Bundler:
-    """With data, entries carry Walenty's frames."""
-    paradigms = Paradigms()
+def extras(data: Path | None) -> Extras:
+    """Morfeusz's paradigms, and with data, Walenty's frames."""
     walenty = valency(data)
-    frames = walenty.frames if walenty is not None else bundle.no_frames
-    return lambda blob: bundle.make(blob, lexicon, paradigms, frames)
+    return Extras(Paradigms(), walenty.frames if walenty is not None else no_frames)

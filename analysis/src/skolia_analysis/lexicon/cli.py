@@ -8,7 +8,7 @@ from typing import cast
 from .. import lang
 from ..plugin import lexicon_path
 from ..schema import Blob
-from . import build, commons, d1_export
+from . import build, bundle, commons, d1_export
 from .store import Lexicon
 
 
@@ -88,12 +88,20 @@ def d1_export_main() -> None:
         "(infra/load-lexicon.py loads it).",
     )
     parser.add_argument("lang", choices=lang.LANGS)
-    parser.add_argument("lexicon", type=Path, help="{lang}.sqlite from skolia-build-lexicon")
+    parser.add_argument(
+        "data",
+        type=Path,
+        help="the language's data directory: {lang}.sqlite and the plugin's files",
+    )
     parser.add_argument("migrations", type=Path, help="lexicon/migrations")
     parser.add_argument("out", type=Path, help="output .sqlite file (replaced)")
     args = parser.parse_args()
+    data: Path = args.data
     count = d1_export.build(
-        Lexicon(args.lexicon), lang.plugin(args.lang).paradigms(), args.migrations, args.out
+        Lexicon(lexicon_path(data, args.lang)),
+        lang.plugin(args.lang).extras(data),
+        args.migrations,
+        args.out,
     )
     print(f"{count} entries", file=sys.stderr)
 
@@ -114,6 +122,6 @@ def bundle_main() -> None:
     blob = cast(Blob, json.load(sys.stdin))
     data: Path = args.data
     lexicon = Lexicon(lexicon_path(data, blob["lang"]))
-    result = lang.plugin(blob["lang"]).bundler(lexicon, data)(blob)
+    result = bundle.make(blob, lexicon, lang.plugin(blob["lang"]).extras(data))
     json.dump(result, sys.stdout, ensure_ascii=False, indent=args.indent)
     sys.stdout.write("\n")

@@ -51,7 +51,7 @@ async function cards(key: string, lang: Lang): Promise<void> {
   assert.deepEqual(new Set(added.cards.map((c) => c.kind)), new Set(["recognition", "production"]), `${lang}: card kinds`);
   for (const card of added.cards) {
     assert.ok(card.isNew, `${lang}: an added word's card isn't new`);
-    assert.equal(card.entry?.lemmaId, word, `${lang}: a card without its lexicon entry`);
+    assert.equal(card.entry?.lemma_id, word, `${lang}: a card without its lexicon entry`);
   }
   assert.ok(Object.keys(added.featureSets).length > 0, `${lang}: due cards without feature sets`);
 
