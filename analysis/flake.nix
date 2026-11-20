@@ -293,7 +293,7 @@
           ];
           config = {
             Cmd = [ "${venv}/bin/skolia-ingest" ];
-            Env = lib.mapAttrsToList (k: v: "${k}=${v}") (env lang);
+            Env = lib.mapAttrsToList (k: v: "${k}=${v}") (env lang // { LOG_FORMAT = "json"; });
             ExposedPorts."8080/tcp" = { };
           };
         };
