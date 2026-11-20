@@ -1,10 +1,9 @@
 import json
-import logging
-import re
 from pathlib import Path
 
 import brotli
 import pytest
+from structlog.testing import capture_logs
 
 from skolia_analysis.blob import SCHEMA
 from skolia_analysis.ingest.blobs import BlobError, DirBlobs
@@ -76,31 +75,36 @@ def test_job_writes_analysis_and_bundle_but_no_status(tmp_path: Path) -> None:
     assert blobs.get(ready["bundle"]) is not None
 
 
-def test_each_stage_of_a_job_logs_its_time(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture
-) -> None:
+def test_each_stage_of_a_job_logs_its_time(tmp_path: Path) -> None:
     blobs = DirBlobs(tmp_path)
     doc = doc_id("pl", TEXT)
     blobs.put(text_key(doc), TEXT.encode(), "text/plain")
     queue = MemoryQueue()
     queue.send(job(doc))
-    with caplog.at_level(logging.INFO, logger="skolia_analysis.ingest.worker"):
+    with capture_logs() as events:
         Ingester(blobs, pipelines()).run(queue, stop=lambda: not queue.pending)
-    stages = [
-        re.sub(r"[\d.]+ s$", "N s", re.sub(r"\(\d+ bytes\)", "(N bytes)", message))
-        for message in caplog.messages
+
+    assert events[0]["event"] == "ingest started"
+    assert events[0]["lang"] == "pl"
+    assert all(event["doc"] == doc for event in events)
+    stages = events[1:-1]
+    assert all(event["event"] == "ingest stage finished" for event in stages)
+    assert [event["stage"] for event in stages] == [
+        "reading",
+        "analysing",
+        "bundling",
+        "compressing-analysis",
+        "uploading-analysis",
+        "compressing-bundle",
+        "uploading-bundle",
     ]
-    assert stages == [
-        f"ingesting {doc} (pl)",
-        f"{doc}: reading the text took N s",
-        f"{doc} (3 words): analysis took N s",
-        f"{doc} (3 words): bundling took N s",
-        f"{doc} (3 words): compressing the analysis took N s",
-        f"{doc} (3 words): uploading the analysis (N bytes) took N s",
-        f"{doc} (3 words): compressing the bundle took N s",
-        f"{doc} (3 words): uploading the bundle (N bytes) took N s",
-        f"{doc}: ready after N s",
-    ]
+    assert [event["words"] for event in stages] == [None, 3, 3, 3, 3, 3, 3]
+    for event in (stages[4], stages[6]):
+        assert isinstance(event["bytes"], int) and event["bytes"] > 0
+    assert events[-1]["event"] == "ingest finished"
+    assert events[-1]["outcome"] == "ready"
+    for event in events[1:]:
+        assert isinstance(event["ms"], int) and event["ms"] >= 0
 
 
 class Recorded:

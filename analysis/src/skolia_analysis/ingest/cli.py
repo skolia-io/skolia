@@ -7,23 +7,26 @@ wrangler dev and on Cloudflare.
   SKOLIA_DATA          the languages' data directory: {lang}.sqlite (skolia-build-lexicon)
                        and each plugin's own files (pl: pl-valency.json)
   SKOLIA_IMAGE         the container's image, named in each job's attempts; optional
+  LOG_FORMAT           json for JSON Lines, otherwise logfmt
 """
 
-import logging
 import os
 import signal
 import sys
 from pathlib import Path
 from types import FrameType
 
+import structlog
+
 from .. import lang
 from ..lexicon.store import Lexicon
+from ..log import configure_logging
 from ..plugin import Options, lexicon_path
 from .blobs import HttpBlobs
 from .http import HttpJobs, serve
 from .worker import Ingester, Pipeline
 
-log = logging.getLogger("skolia_analysis.ingest")
+log = structlog.get_logger(module=__name__)
 
 
 def env(name: str) -> str:
@@ -35,7 +38,7 @@ def env(name: str) -> str:
 
 def pipeline(code: str, data: Path) -> Pipeline:
     plugin = lang.plugin(code)
-    log.info("loading %s pipeline (model %s)", code, plugin.DEFAULT_MODEL)
+    log.info("loading pipeline", lang=code, model=plugin.DEFAULT_MODEL)
     parser = plugin.parser(plugin.DEFAULT_MODEL)
     analyzer = plugin.analyzer(parser, Options(plugin.DEFAULT_SNAP), data)
     lexicon = Lexicon(lexicon_path(data, code))
@@ -49,7 +52,7 @@ def pipeline(code: str, data: Path) -> Pipeline:
 
 
 def stop_on_sigterm(_signum: int, _frame: FrameType | None) -> None:
-    log.info("SIGTERM: stopping")
+    log.info("stopping", signal="SIGTERM")
     sys.exit(0)
 
 
@@ -59,7 +62,7 @@ def job_source() -> HttpJobs:
     port = int(env("SKOLIA_HTTP_PORT"))
     jobs = HttpJobs(os.environ.get("SKOLIA_IMAGE") or "unknown")
     serve(jobs, "0.0.0.0", port)
-    log.info("accepting jobs on port %s", port)
+    log.info("accepting jobs", port=port)
     return jobs
 
 
@@ -67,7 +70,7 @@ def main() -> None:
     if "--help" in sys.argv or "-h" in sys.argv:
         print(__doc__)
         return
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    configure_logging()
     # In a container ingest is PID 1, which ignores SIGTERM unless it handles it: the
     # Cloudflare container would never stop it
     signal.signal(signal.SIGTERM, stop_on_sigterm)

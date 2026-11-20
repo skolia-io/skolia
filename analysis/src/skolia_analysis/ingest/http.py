@@ -14,7 +14,6 @@ sends again.
 from __future__ import annotations
 
 import json
-import logging
 import threading
 import uuid
 from collections import deque
@@ -23,10 +22,12 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Literal, TypedDict, override
 
+import structlog
+
 from .jobs import InvalidJob, Received, parse_job
 from .schema import IngestJob, JobAnswer, JobAttempt, JobResult, Stage, StageTime
 
-log = logging.getLogger(__name__)
+log = structlog.get_logger(module=__name__)
 
 MAX_BODY_BYTES = 4096
 # An attempt's error is cut to this many code points: at most 2 UTF-16 code units each,
@@ -255,8 +256,12 @@ def serve(jobs: HttpJobs, host: str, port: int) -> ThreadingHTTPServer:
             self.wfile.write(data)
 
         @override
+        def log_request(self, code: int | str = "-", size: int | str = "-") -> None:
+            log.debug("HTTP request", method=self.command, path=self.path, status=code, size=size)
+
+        @override
         def log_message(self, format: str, *args: object) -> None:
-            log.debug(format, *args)
+            log.debug("HTTP server message", message=format % args)
 
     server = ThreadingHTTPServer((host, port), Handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()

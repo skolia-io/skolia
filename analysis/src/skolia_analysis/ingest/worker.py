@@ -2,7 +2,6 @@
 keeps the document's status (ingest/src/workflow.ts), from the job's result."""
 
 import json
-import logging
 import time
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
@@ -10,6 +9,7 @@ from dataclasses import dataclass
 from typing import Literal, cast
 
 import brotli
+import structlog
 
 from ..blob import SCHEMA
 from ..lexicon.schema import BUNDLE_SCHEMA, BUNDLER_VERSION, Bundle
@@ -31,7 +31,7 @@ from .schema import (
     versions_key,
 )
 
-log = logging.getLogger(__name__)
+log = structlog.get_logger(module=__name__)
 
 JSON = "application/json"
 POLL_SECONDS = 5.0
@@ -80,7 +80,7 @@ def compressed_json(value: object) -> bytes:
 
 @contextmanager
 def timed(
-    progress: Progress, doc: str, words: int | None, stage: Stage, label: str
+    progress: Progress, doc: str, words: int | None, stage: Stage, *, size_bytes: int | None = None
 ) -> Generator[None]:
     """Log how long a stage of a job took, failed or not, and tell progress."""
     progress.stage_started(stage)
@@ -88,12 +88,11 @@ def timed(
     try:
         yield
     finally:
-        seconds = time.perf_counter() - start
-        progress.stage_finished(stage, round(seconds * 1000))
-        if words is None:
-            log.info("%s: %s took %.2f s", doc, label, seconds)
-        else:
-            log.info("%s (%d words): %s took %.2f s", doc, words, label, seconds)
+        ms = round((time.perf_counter() - start) * 1000)
+        progress.stage_finished(stage, ms)
+        log.info(
+            "ingest stage finished", doc=doc, stage=stage, words=words, ms=ms, bytes=size_bytes
+        )
 
 
 class Ingester:
@@ -116,7 +115,7 @@ class Ingester:
         except JobError as error:
             return {"outcome": "failed", "analysis": None, "error": str(error)}
         except Exception as error:
-            log.exception("ingest of %s failed", job["doc"])
+            log.exception("ingest failed", doc=job["doc"])
             return {
                 "outcome": "failed",
                 "analysis": None,
@@ -129,7 +128,7 @@ class Ingester:
         pipeline = self._pipelines.get(job["lang"])
         if pipeline is None:
             raise JobError(f"no pipeline for language {job['lang']!r}")
-        with timed(progress, doc, None, "reading", "reading the text"):
+        with timed(progress, doc, None, "reading"):
             raw = self._blobs.get(text_key(doc))
             if raw is None:
                 raise JobError(f"no text at {text_key(doc)}")
@@ -149,23 +148,23 @@ class Ingester:
             # A new bundler or lexicon with the same analyser: only the bundle is remade
             stored = self._blobs.get(a_key)
             if stored is not None:
-                with timed(progress, doc, words, "loading-analysis", "reading the stored analysis"):
+                with timed(progress, doc, words, "loading-analysis"):
                     analysis = cast(Blob, json.loads(brotli.decompress(stored)))
             else:
-                with timed(progress, doc, words, "analysing", "analysis"):
+                with timed(progress, doc, words, "analysing"):
                     analysis = pipeline.analyze(text)
                 if analysis["analyzer"] != pipeline.analyzer:
                     # Otherwise the API would keep finding it out of date and queueing it
                     raise JobError(
                         f"analysed as {analysis['analyzer']!r}, but published {pipeline.analyzer!r}"
                     )
-            with timed(progress, doc, words, "bundling", "bundling"):
+            with timed(progress, doc, words, "bundling"):
                 bundle = pipeline.bundle(analysis)
             if stored is None:
                 self._put_compressed(progress, doc, words, "analysis", a_key, analysis)
             self._put_compressed(progress, doc, words, "bundle", b_key, bundle)
         else:
-            log.info("%s (%d words): bundle %s already made", doc, words, versions["bundle"])
+            log.info("bundle already exists", doc=doc, words=words, bundle=versions["bundle"])
         return {
             "analyzer": pipeline.analyzer,
             "lexicon": pipeline.lexicon_version,
@@ -183,9 +182,9 @@ class Ingester:
         value: object,
     ) -> None:
         compressing, uploading = STORE_STAGES[name]
-        with timed(progress, doc, words, compressing, f"compressing the {name}"):
+        with timed(progress, doc, words, compressing):
             data = compressed_json(value)
-        with timed(progress, doc, words, uploading, f"uploading the {name} ({len(data)} bytes)"):
+        with timed(progress, doc, words, uploading, size_bytes=len(data)):
             self._blobs.put(key, data, JSON, BROTLI)
 
     def run(
@@ -202,13 +201,14 @@ class Ingester:
                 # Queue down or a malformed message: keep the worker alive, back off
                 failures += 1
                 delay = min(MAX_BACKOFF_SECONDS, 2.0**failures)
-                log.exception("receiving a job failed; retrying in %.0f s", delay)
+                log.exception("receiving a job failed", retry_ms=round(delay * 1000))
                 sleep(delay)
                 continue
             failures = 0
             if received is None:
                 continue
-            log.info("ingesting %s (%s)", received.job["doc"], received.job["lang"])
+            job_log = log.bind(doc=received.job["doc"], lang=received.job["lang"])
+            job_log.info("ingest started")
             start = time.perf_counter()
             try:
                 result = self.process(received.job, received.progress)
@@ -216,11 +216,11 @@ class Ingester:
                 # Storage is down: put the job back for later rather than fail the document
                 failures += 1
                 delay = min(MAX_BACKOFF_SECONDS, 2.0**failures)
-                log.exception("storage failed; job back on the queue, waiting %.0f s", delay)
+                job_log.exception("storage failed", retry_ms=round(delay * 1000))
                 queue.release(received, f"{type(error).__name__}: {error}")
                 sleep(delay)
                 continue
             failures = 0
             queue.ack(received, result)
-            elapsed = time.perf_counter() - start
-            log.info("%s: %s after %.2f s", received.job["doc"], result["outcome"], elapsed)
+            ms = round((time.perf_counter() - start) * 1000)
+            job_log.info("ingest finished", outcome=result["outcome"], ms=ms)
