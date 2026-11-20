@@ -203,6 +203,30 @@ uv run skolia-build-lexicon en ../data/kaikki/kaikki.org-dictionary-English.json
 uv run skolia-build-lexicon fr ../data/kaikki/kaikki.org-dictionary-French.jsonl ../data/lexicon/fr.sqlite
 ```
 
+From the repo root, build or reuse the pinned lexicon and look up a lemma:
+
+```sh
+just lexicon-cli pl golić
+just lexicon-cli pl ogolić --incoming
+just lexicon-cli pl
+```
+
+With no lemma, the recipe prints the database path. It uses the Nix cache when
+available. If the pinned inputs need to be fetched from R2, run `wrangler login`
+first.
+
+To inspect an existing SQLite file directly, run from `analysis/`:
+
+```sh
+uv run skolia-lexicon --db result/pl.sqlite golić
+uv run skolia-lexicon --db result/pl.sqlite --incoming ogolić
+```
+
+Use `--db ../data/lexicon/pl.sqlite` for a manual build. The command prints JSON with
+the entries it finds, including their senses, relations, and stored paradigms.
+`--incoming` scans the local lexicon for stored links pointing to the headword,
+even if the headword has no entry of its own.
+
 A document's bundle (the lexicon slice the phone downloads) from its analysis:
 
 ```fish

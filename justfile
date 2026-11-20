@@ -158,6 +158,21 @@ migrate env:
     esac; \
     infra/wrangler.sh {{ env }} d1 migrations apply INGEST_DB -c "$config" --remote
 
+# Build a local lexicon. Pass a lemma to look it up in the build.
+[positional-arguments]
+lexicon-cli lang *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    lang=$1
+    shift
+    analysis/scripts/fetch_inputs.sh "$lang"
+    out=$(nix build --no-link --print-out-paths "./analysis#lexicon-$lang")
+    if [ "$#" -eq 0 ]; then
+      printf '%s\n' "$out/$lang.sqlite"
+    else
+      uv run --project analysis --locked skolia-lexicon --db "$out/$lang.sqlite" "$@"
+    fi
+
 # Load each language's lexicon into its database (staging, production, pr-N or local), from its Nix build for cards.
 # A preview gets each language's entries for wordfreq's 3,000 most common words (infra/load-lexicon.py --sample).
 # A language whose build evaluates to the Nix output D1 last loaded is skipped without building it.

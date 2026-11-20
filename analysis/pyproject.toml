@@ -27,6 +27,7 @@ explicit = true
 
 [project.scripts]
 skolia-analyze = "skolia_analysis.cli:main"
+skolia-lexicon = "skolia_analysis.lexicon.cli:lookup_main"
 skolia-build-lexicon = "skolia_analysis.lexicon.cli:build_main"
 skolia-fetch-commons = "skolia_analysis.lexicon.cli:fetch_commons_main"
 skolia-bundle = "skolia_analysis.lexicon.cli:bundle_main"
