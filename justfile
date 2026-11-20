@@ -279,6 +279,16 @@ deploy-oauth-proxy:
 deploy-ingest env:
     infra/deploy-ingest.sh {{ env }}
 
+# Request a warm-up of the deployed ingest containers and return once it is queued.
+[private]
+[positional-arguments]
+warm-ingest env:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    workflow=skolia-ingest
+    if [ "$1" != production ]; then workflow="$workflow-$1"; fi
+    infra/wrangler.sh "$1" workflows trigger "$workflow" '{"warm":true}'
+
 # Run api/tests/e2e against fresh local state (Docker) or against a deployed environment.
 e2e env="local":
     #!/usr/bin/env bash

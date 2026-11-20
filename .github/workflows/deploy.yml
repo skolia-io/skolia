@@ -182,6 +182,10 @@ jobs:
         uses: ./.github/actions/preview-state
         with:
           env: ${{ inputs.env }}
+      - name: Warm ingest for e2e
+        if: steps.preview.outputs.state == 'open' && vars.WARM_INGEST == 'true' && fromJSON(inputs.plan).e2e
+        continue-on-error: true
+        run: just warm-ingest ${{ inputs.env }}
       - id: deploy
         if: steps.preview.outputs.state == 'open'
         run: |
