@@ -37,85 +37,85 @@ CREATE INDEX entry_lemma_lower ON entry (lemma_lower);
 CREATE TABLE sense (
     id INTEGER PRIMARY KEY,
     lemma_id TEXT NOT NULL REFERENCES entry,
-    position INTEGER NOT NULL,
+    ord INTEGER NOT NULL,
     gloss TEXT NOT NULL,
     has_when INTEGER NOT NULL CHECK (has_when IN (0, 1)),
     has_examples INTEGER NOT NULL CHECK (has_examples IN (0, 1)),
-    UNIQUE (lemma_id, position)
+    UNIQUE (lemma_id, ord)
 );
 CREATE TABLE sense_tag (
     sense_id INTEGER NOT NULL REFERENCES sense,
-    position INTEGER NOT NULL,
+    ord INTEGER NOT NULL,
     tag TEXT NOT NULL,
-    PRIMARY KEY (sense_id, position)
+    PRIMARY KEY (sense_id, ord)
 ) WITHOUT ROWID;
 CREATE TABLE sense_when (
     sense_id INTEGER NOT NULL REFERENCES sense,
-    position INTEGER NOT NULL,
+    ord INTEGER NOT NULL,
     features TEXT NOT NULL CHECK (json_valid(features) AND json_type(features) = 'object'),
-    PRIMARY KEY (sense_id, position)
+    PRIMARY KEY (sense_id, ord)
 ) WITHOUT ROWID;
 CREATE TABLE example (
     sense_id INTEGER NOT NULL REFERENCES sense,
-    position INTEGER NOT NULL,
+    ord INTEGER NOT NULL,
     text TEXT NOT NULL,
     translation TEXT,
-    PRIMARY KEY (sense_id, position)
+    PRIMARY KEY (sense_id, ord)
 ) WITHOUT ROWID;
 CREATE TABLE relation (
     source_id TEXT NOT NULL REFERENCES entry,
-    position INTEGER NOT NULL,
+    ord INTEGER NOT NULL,
     target_lemma TEXT NOT NULL,
     kind TEXT NOT NULL,
     note TEXT,
-    PRIMARY KEY (source_id, position)
+    PRIMARY KEY (source_id, ord)
 ) WITHOUT ROWID;
-CREATE INDEX relation_target ON relation (target_lemma, source_id, position);
+CREATE INDEX relation_target ON relation (target_lemma, source_id, ord);
 CREATE TABLE paradigm (
     id INTEGER PRIMARY KEY,
     lemma_id TEXT NOT NULL REFERENCES entry,
-    position INTEGER NOT NULL,
+    ord INTEGER NOT NULL,
     homonym TEXT NOT NULL,
-    UNIQUE (lemma_id, position)
+    UNIQUE (lemma_id, ord)
 );
 CREATE TABLE paradigm_form (
     paradigm_id INTEGER NOT NULL REFERENCES paradigm,
-    position INTEGER NOT NULL,
+    ord INTEGER NOT NULL,
     form TEXT NOT NULL,
     xpos TEXT NOT NULL,
     features TEXT NOT NULL CHECK (json_valid(features) AND json_type(features) = 'object'),
-    PRIMARY KEY (paradigm_id, position)
+    PRIMARY KEY (paradigm_id, ord)
 ) WITHOUT ROWID;
 CREATE TABLE pronunciation (
     id INTEGER PRIMARY KEY,
     word TEXT NOT NULL,
     upos TEXT NOT NULL,
-    position INTEGER NOT NULL,
+    ord INTEGER NOT NULL,
     ipa TEXT NOT NULL,
     has_accents INTEGER NOT NULL CHECK (has_accents IN (0, 1)),
-    UNIQUE (word, upos, position)
+    UNIQUE (word, upos, ord)
 );
 CREATE TABLE pronunciation_accent (
     pronunciation_id INTEGER NOT NULL REFERENCES pronunciation,
-    position INTEGER NOT NULL,
+    ord INTEGER NOT NULL,
     accent TEXT NOT NULL,
-    PRIMARY KEY (pronunciation_id, position)
+    PRIMARY KEY (pronunciation_id, ord)
 ) WITHOUT ROWID;
 CREATE TABLE recording (
     id INTEGER PRIMARY KEY,
     word TEXT NOT NULL,
     upos TEXT,
-    position INTEGER NOT NULL,
+    ord INTEGER NOT NULL,
     audio TEXT NOT NULL,
     mp3_url TEXT NOT NULL,
     has_tags INTEGER NOT NULL CHECK (has_tags IN (0, 1))
 );
-CREATE INDEX recording_word ON recording (word, upos, position);
+CREATE INDEX recording_word ON recording (word, upos, ord);
 CREATE TABLE recording_tag (
     recording_id INTEGER NOT NULL REFERENCES recording,
-    position INTEGER NOT NULL,
+    ord INTEGER NOT NULL,
     tag TEXT NOT NULL,
-    PRIMARY KEY (recording_id, position)
+    PRIMARY KEY (recording_id, ord)
 ) WITHOUT ROWID;
 """
 
@@ -157,13 +157,13 @@ def write(
                 "INSERT INTO entry VALUES (?, ?, ?, ?)",
                 (row.lemma_id, row.lemma, row.lemma.lower(), row.upos),
             )
-            for position, sense in enumerate(row.senses):
+            for index, sense in enumerate(row.senses):
                 sense_id = db.execute(
                     """
-                    INSERT INTO sense (lemma_id, position, gloss, has_when, has_examples)
+                    INSERT INTO sense (lemma_id, ord, gloss, has_when, has_examples)
                     VALUES (?, ?, ?, ?, ?)
                     """,
-                    (row.lemma_id, position, sense["gloss"], "when" in sense, "examples" in sense),
+                    (row.lemma_id, index, sense["gloss"], "when" in sense, "examples" in sense),
                 ).lastrowid
                 db.executemany(
                     "INSERT INTO sense_tag VALUES (?, ?, ?)",
@@ -190,10 +190,10 @@ def write(
                     for index, relation in enumerate(row.relations)
                 ),
             )
-            for position, paradigm in enumerate(row.paradigms):
+            for index, paradigm in enumerate(row.paradigms):
                 paradigm_id = db.execute(
-                    "INSERT INTO paradigm (lemma_id, position, homonym) VALUES (?, ?, ?)",
-                    (row.lemma_id, position, paradigm["homonym"]),
+                    "INSERT INTO paradigm (lemma_id, ord, homonym) VALUES (?, ?, ?)",
+                    (row.lemma_id, index, paradigm["homonym"]),
                 ).lastrowid
                 db.executemany(
                     "INSERT INTO paradigm_form VALUES (?, ?, ?, ?, ?)",
@@ -204,16 +204,16 @@ def write(
                 )
             count += 1
         for found in pronunciations():
-            for position, pronunciation in enumerate(found.pronunciations):
+            for index, pronunciation in enumerate(found.pronunciations):
                 pronunciation_id = db.execute(
                     """
-                    INSERT INTO pronunciation (word, upos, position, ipa, has_accents)
+                    INSERT INTO pronunciation (word, upos, ord, ipa, has_accents)
                     VALUES (?, ?, ?, ?, ?)
                     """,
                     (
                         found.word,
                         found.upos,
-                        position,
+                        index,
                         pronunciation["ipa"],
                         "accents" in pronunciation,
                     ),
@@ -234,13 +234,13 @@ def write(
 def _write_recordings(
     db: sqlite3.Connection, word: str, upos: Upos | None, recordings: Iterable[Recording]
 ) -> None:
-    for position, recording in enumerate(recordings):
+    for index, recording in enumerate(recordings):
         recording_id = db.execute(
             """
-            INSERT INTO recording (word, upos, position, audio, mp3_url, has_tags)
+            INSERT INTO recording (word, upos, ord, audio, mp3_url, has_tags)
             VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (word, upos, position, recording["audio"], recording["mp3_url"], "tags" in recording),
+            (word, upos, index, recording["audio"], recording["mp3_url"], "tags" in recording),
         ).lastrowid
         db.executemany(
             "INSERT INTO recording_tag VALUES (?, ?, ?)",
@@ -292,7 +292,7 @@ class Lexicon:
         for source_id, kind, note in self._db.execute(
             """
             SELECT source_id, kind, note FROM relation
-            WHERE target_lemma = ? ORDER BY source_id, position
+            WHERE target_lemma = ? ORDER BY source_id, ord
             """,
             (lemma,),
         ):
@@ -308,7 +308,7 @@ class Lexicon:
         result: dict[Upos, list[Pronunciation]] = {}
         for upos, id_, ipa, has_accents in self._db.execute(
             "SELECT upos, id, ipa, has_accents FROM pronunciation "
-            "WHERE word = ? ORDER BY upos, position",
+            "WHERE word = ? ORDER BY upos, ord",
             (word,),
         ):
             pronunciation: Pronunciation = {"ipa": ipa}
@@ -317,7 +317,7 @@ class Lexicon:
                     cast(Accent, accent)
                     for (accent,) in self._db.execute(
                         "SELECT accent FROM pronunciation_accent "
-                        "WHERE pronunciation_id = ? ORDER BY position",
+                        "WHERE pronunciation_id = ? ORDER BY ord",
                         (id_,),
                     )
                 ]
@@ -349,7 +349,7 @@ class Lexicon:
         for upos, id_, audio, mp3_url, has_tags in self._db.execute(
             f"""
             SELECT upos, id, audio, mp3_url, has_tags FROM recording
-            WHERE word = ? AND upos {condition} ORDER BY upos, position
+            WHERE word = ? AND upos {condition} ORDER BY upos, ord
             """,
             (word,),
         ):
@@ -358,7 +358,7 @@ class Lexicon:
                 recording["tags"] = [
                     tag
                     for (tag,) in self._db.execute(
-                        "SELECT tag FROM recording_tag WHERE recording_id = ? ORDER BY position",
+                        "SELECT tag FROM recording_tag WHERE recording_id = ? ORDER BY ord",
                         (id_,),
                     )
                 ]
@@ -395,7 +395,7 @@ class Lexicon:
                     _relation(kind, target, note)
                     for kind, target, note in self._db.execute(
                         "SELECT kind, target_lemma, note FROM relation "
-                        "WHERE source_id = ? ORDER BY position",
+                        "WHERE source_id = ? ORDER BY ord",
                         (lemma_id,),
                     )
                 ],
@@ -404,8 +404,7 @@ class Lexicon:
 
     def _senses(self, lemma_id: str) -> Iterator[Sense]:
         for id_, gloss, has_when, has_examples in self._db.execute(
-            "SELECT id, gloss, has_when, has_examples FROM sense "
-            "WHERE lemma_id = ? ORDER BY position",
+            "SELECT id, gloss, has_when, has_examples FROM sense WHERE lemma_id = ? ORDER BY ord",
             (lemma_id,),
         ):
             sense: Sense = {
@@ -413,7 +412,7 @@ class Lexicon:
                 "tags": [
                     tag
                     for (tag,) in self._db.execute(
-                        "SELECT tag FROM sense_tag WHERE sense_id = ? ORDER BY position", (id_,)
+                        "SELECT tag FROM sense_tag WHERE sense_id = ? ORDER BY ord", (id_,)
                     )
                 ],
             }
@@ -421,14 +420,14 @@ class Lexicon:
                 sense["when"] = [
                     cast(Feats, json.loads(features))
                     for (features,) in self._db.execute(
-                        "SELECT features FROM sense_when WHERE sense_id = ? ORDER BY position",
+                        "SELECT features FROM sense_when WHERE sense_id = ? ORDER BY ord",
                         (id_,),
                     )
                 ]
             if has_examples:
                 examples: list[Example] = []
                 for text, translation in self._db.execute(
-                    "SELECT text, translation FROM example WHERE sense_id = ? ORDER BY position",
+                    "SELECT text, translation FROM example WHERE sense_id = ? ORDER BY ord",
                     (id_,),
                 ):
                     example: Example = {"text": text}
@@ -440,14 +439,14 @@ class Lexicon:
 
     def _paradigms(self, lemma_id: str) -> Iterator[Paradigm]:
         for id_, homonym in self._db.execute(
-            "SELECT id, homonym FROM paradigm WHERE lemma_id = ? ORDER BY position", (lemma_id,)
+            "SELECT id, homonym FROM paradigm WHERE lemma_id = ? ORDER BY ord", (lemma_id,)
         ):
             forms: list[Form] = [
                 {"form": form, "xpos": xpos, "feats": json.loads(features)}
                 for form, xpos, features in self._db.execute(
                     """
                     SELECT form, xpos, features FROM paradigm_form
-                    WHERE paradigm_id = ? ORDER BY position
+                    WHERE paradigm_id = ? ORDER BY ord
                     """,
                     (id_,),
                 )
