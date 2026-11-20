@@ -1,4 +1,4 @@
-// Structured logs for the scripts run from a shell or CI (sync-curated.ts, tests/e2e), as
+// Structured logs for the scripts run from a shell or CI (sync-curated.ts, e2e/tests), as
 // logfmt lines, or JSON Lines with LOG_FORMAT=json. Their loggers are under skolia-script,
 // which the Workers' log.ts doesn't configure, so a test that calls a script's functions
 // stays quiet.

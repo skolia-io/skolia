@@ -1,4 +1,4 @@
-// Checking the typed client's (hono/client) responses, for the API's and the lexicon's tests and the end-to-end tests (api/tests/e2e).
+// Checking the typed client's (hono/client) responses, for the API's and the lexicon's tests and the end-to-end tests (e2e/tests).
 import type { ClientResponse } from "hono/client";
 
 type Sent = ClientResponse<unknown, number, string>;

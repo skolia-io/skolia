@@ -11,7 +11,7 @@ _default:
     @just --list
 
 # Typecheck and lint everything
-check: (lint "api") (lint "ingest") (lint "lexicon") (lint "oauth-proxy") (lint "reader") (lint "shared") (lint "util") (lint "analysis") (lint "terraform")
+check: (lint "api") (lint "e2e") (lint "ingest") (lint "lexicon") (lint "oauth-proxy") (lint "reader") (lint "shared") (lint "util") (lint "analysis") (lint "terraform")
 
 # One project's checks and tests, CI's check job for it: a workspace package's directory, analysis or terraform (infra/plan.py projects)
 check-project project: (lint project) && (unit project)
@@ -67,7 +67,7 @@ lint-rust manifest="Cargo.toml":
     cargo clippy --manifest-path "$1" --workspace --all-targets --all-features -- -D warnings -D clippy::pedantic
 
 # Unit tests, and the built Worker's Durable Object in workerd
-test: build (unit "api") (unit "ingest") (unit "lexicon") (unit "oauth-proxy") (unit "reader") (unit "shared") (unit "util") (unit "analysis")
+test: build (unit "api") (unit "e2e") (unit "ingest") (unit "lexicon") (unit "oauth-proxy") (unit "reader") (unit "shared") (unit "util") (unit "analysis")
 
 # Screenshots of the reader's pages (reader/screenshots) in Playwright's Linux image, so they come
 # out the same on a Mac and in CI. --update-snapshots accepts what changed. --ipc=host, as
@@ -183,7 +183,7 @@ lexicon-cli lang *args:
 # A preview gets each language's entries for wordfreq's 3,000 most common words (infra/load-lexicon.py --sample).
 # A language whose build evaluates to the Nix output D1 last loaded is skipped without building it.
 # With CACHIX_AUTH_TOKEN set (CI), a build is pushed to Cachix, so the next environment substitutes it.
-# flags go to infra/load-lexicon.py (api/scripts/e2e.sh: --sample, --persist-to).
+# flags go to infra/load-lexicon.py (e2e/e2e.sh: --sample, --persist-to).
 load-lexicon env *flags:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -311,13 +311,13 @@ warm-ingest env:
     if [ "$1" != production ]; then workflow="$workflow-$1"; fi
     infra/wrangler.sh "$1" workflows trigger "$workflow" '{"warm":true}'
 
-# Run api/tests/e2e against fresh local state (Docker) or against a deployed environment.
+# Run e2e/tests against fresh local state (Docker) or against a deployed environment.
 e2e env="local":
     #!/usr/bin/env bash
     set -euo pipefail
     if [ {{ env }} = local ]; then
       just install build images
-      exec api/scripts/e2e.sh {{ langs }}
+      exec e2e/e2e.sh {{ langs }}
     fi
     just e2e-tests {{ env }} "$(just url {{ env }})" "$(infra/plan.py version)"
     infra/plan.py deployed {{ env }} e2e
@@ -328,7 +328,7 @@ e2e-tests env url version persist="":
     #!/usr/bin/env bash
     set -euo pipefail
     export E2E_URL="$2" E2E_VERSION="$3"
-    node api/tests/e2e/ready.ts
+    node e2e/tests/ready.ts
     E2E_RUN_ID=$(openssl rand -hex 16)
     E2E_API_KEY=$(openssl rand -hex 32)
     E2E_USER_KEY=$(openssl rand -hex 32)
@@ -337,7 +337,7 @@ e2e-tests env url version persist="":
     started=$SECONDS
     just d1-sql "$1" api/src/e2e-keys.ts "$4"
     echo "Provisioned e2e credentials in $((SECONDS - started))s"
-    node --test --test-concurrency=4 api/tests/e2e/*.test.ts
+    node --test --test-concurrency=4 e2e/tests/*.test.ts
 
 # Make the curated user's documents match curated/ (api/src/sync-curated.ts); with --check, only list what that takes.
 # A preview gets 5 of the texts (--sample), spread over languages, kinds and annotations.

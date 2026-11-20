@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, test, type TestContext } from "node:test";
 import { LANGS, type DocumentId, type ImportRequest, type Lang } from "@skolia/shared/api";
-import { since } from "../../src/script-log.ts";
+import { since } from "@skolia/api/script-log";
 import { body, expectStatus } from "@skolia/util/responses";
 import { type Api, base, client, fetchOk, log, retryingFetch, runId, sleep, systemKey } from "./client.ts";
 

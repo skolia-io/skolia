@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { e2eUserId, e2eUserKey } from "../../src/e2e-keys.ts";
+import { e2eUserId, e2eUserKey } from "@skolia/api/e2e-keys";
 import { body, expectStatus } from "@skolia/util/responses";
 import { client, runId, systemKey } from "./client.ts";
 

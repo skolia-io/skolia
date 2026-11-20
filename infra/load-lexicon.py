@@ -15,7 +15,7 @@ already serves that version. The new version's rows go in beside the old ones, t
 loaded points at it and the old rows are deleted in batches (lexicon/migrations), so a
 load that stops part way leaves the old version serving and can be run again. local is wrangler
 dev's database (api/.wrangler/state, just dev-api), or with --persist-to, the one in DIR
-(api/scripts/e2e.sh).
+(e2e/e2e.sh).
 For previews, --sample loads entries for wordfreq's N most common words and adds +sampleN
 to their version. --built-from OUT, the Nix output sqlite is in, is
 recorded in loaded once the old rows are deleted; without sqlite, it prints current if D1 last

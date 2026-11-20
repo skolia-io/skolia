@@ -1,9 +1,9 @@
 import { setTimeout as sleep } from "node:timers/promises";
 import { hc } from "hono/client";
-import type { AppType } from "../../src/app.ts";
+import type { AppType } from "@skolia/api/app";
 import type { AppType as LexiconApp } from "@skolia/lexicon/app";
-import { API_KEY_HEADER } from "../../src/auth.ts";
-import { configureScriptLog, scriptLog } from "../../src/script-log.ts";
+import { API_KEY_HEADER } from "@skolia/api/auth";
+import { configureScriptLog, scriptLog } from "@skolia/api/script-log";
 
 configureScriptLog();
 export const log = scriptLog("e2e");

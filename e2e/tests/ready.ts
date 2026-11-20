@@ -1,5 +1,5 @@
 import type { Version } from "@skolia/shared/api";
-import { since } from "../../src/script-log.ts";
+import { since } from "@skolia/api/script-log";
 import { base, log, sleep, VERSION_TIMEOUT_MS } from "./client.ts";
 
 // A new preview may take time to start serving the deployed version.

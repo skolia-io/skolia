@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Local end to end: wrangler dev with all four Workers, the ingest containers and empty local
 # D1, R2 and queue, each language's lexicon sample (as a preview has) loaded, then the
-# end-to-end tests (tests/e2e) and the curated texts' sync (src/sync-curated.ts, twice: the second run must find
+# end-to-end tests (e2e/tests) and the curated texts' sync (api/src/sync-curated.ts, twice: the second run must find
 # nothing to do) against it. Needs Docker, the reader build and the ingest images (just
 # images). Port 8787 must be free: api/.env points the containers at it.
 # usage: e2e.sh <lang>...
@@ -11,7 +11,8 @@ if [ $# -eq 0 ]; then
   echo "usage: e2e.sh <lang>..." >&2
   exit 2
 fi
-api=$(cd "$(dirname "$0")/.." && pwd)
+# Runs in api/, whose .env and wrangler state wrangler dev uses
+api=$(cd "$(dirname "$0")/../api" && pwd)
 cd "$api"
 state=.wrangler/e2e
 log=.wrangler/e2e.log
