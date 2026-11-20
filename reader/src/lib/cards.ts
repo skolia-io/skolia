@@ -15,7 +15,7 @@ import {
 import { langOf, type Card, type CardId, type CardKey, type Lang, type LemmaId, type Paginated } from "@skolia/shared/api";
 import type { Entry } from "@skolia/shared/schema";
 import type { Cursor } from "@skolia/shared/page";
-import { deleteCard, lexiconVersion, LexiconVersionChanged, listCards, lookUp } from "./api.ts";
+import { deleteCard, lexiconVersion, LexiconVersionChanged, listCards, lookup } from "./api.ts";
 import { cardsChanged, userQuery } from "./queries.ts";
 
 const LISTS_KEY = ["me", "cards", "list"] as const;
@@ -32,7 +32,7 @@ async function cardEntries(client: QueryClient, ids: readonly LemmaId[]) {
       if (version == null) return null;
       return client.fetchQuery({
         queryKey: ["lexicon", "entry", id, version],
-        queryFn: () => lookUp(id, version),
+        queryFn: () => lookup(id, version),
         // The version is discovered fresh for each page. Missing entries also belong to that version.
         staleTime: Infinity,
         retry: false,

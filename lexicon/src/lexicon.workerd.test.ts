@@ -24,7 +24,7 @@ const ZGOLIC: readonly TestEntry[] = [
   glossed("pl:pies:NOUN", "dog", { relations: [{ kind: "derived-from", lemma: "golić", lemma_id: "pl:golić:VERB", how: "diminutive" }] }),
 ];
 
-function lookUp(app: ReturnType<typeof setup>, id: LemmaId, include?: string) {
+function lookup(app: ReturnType<typeof setup>, id: LemmaId, include?: string) {
   return client(app).entries[":id"].$get({ param: { id: lemmaParam(id) }, query: { include } });
 }
 
@@ -61,7 +61,7 @@ test("an entry and its feature sets come from the loaded version", async () => {
     entries: [pies],
     related,
     featureSets,
-  } = await body("lookup", lookUp(app, "pl:pies:NOUN"));
+  } = await body("lookup", lookup(app, "pl:pies:NOUN"));
   assert.equal(pies?.senses[0]?.gloss, "dog");
   assert.deepEqual(related, []);
   assert.deepEqual(pies?.pronunciations, [{ ipa: "/ˈpjɛs/" }]);
@@ -84,7 +84,7 @@ test("an entry says its licence, whom to credit and its Wiktionary page, and eve
   const app = setup();
   await loadLexicon(env, "pl", "lex/1", [glossed("pl:pies:NOUN", "dog")]);
   await loadLexicon(env, "en", "lex/1", [glossed("en:dog:NOUN", "a domesticated canid")]);
-  const response = await lookUp(app, "pl:pies:NOUN");
+  const response = await lookup(app, "pl:pies:NOUN");
   assert.equal(response.headers.get("link"), '<https://creativecommons.org/licenses/by-sa/4.0/>; rel="license"');
   const { entries } = await body("lookup", Promise.resolve(response));
   const pies = entries.find((e) => e.lemma_id === "pl:pies:NOUN");
@@ -99,7 +99,7 @@ test("an entry says its licence, whom to credit and its Wiktionary page, and eve
   );
   const {
     entries: [dog],
-  } = await body("English lookup", lookUp(app, "en:dog:NOUN"));
+  } = await body("English lookup", lookup(app, "en:dog:NOUN"));
   assert.deepEqual(
     dog?.attribution.map((a) => [a.author, a.url, a.via]),
     [["Wiktionary contributors", "https://en.wiktionary.org/wiki/dog#English", "https://kaikki.org"]],
@@ -116,18 +116,18 @@ test("an entry says its licence, whom to credit and its Wiktionary page, and eve
 test("a language with no lexicon loaded has no version and no entries", async () => {
   const app = setup();
   assert.equal((await body("about", client(app).lexicons[":lang"].$get({ param: { lang: "fr" } }))).version, null);
-  await expectStatus("no lexicon", lookUp(app, "fr:chien:NOUN"), 404);
+  await expectStatus("no lexicon", lookup(app, "fr:chien:NOUN"), 404);
 });
 
 test("an entry is served whole, as the lexicon built it; include=related brings what its relations point at", async () => {
   const app = setup();
   await loadLexicon(env, "pl", "lex/1", ZGOLIC);
-  const plain = await body("lookup", lookUp(app, "pl:zgolić:VERB"));
+  const plain = await body("lookup", lookup(app, "pl:zgolić:VERB"));
   const [zgolic] = plain.entries;
   assert.deepEqual(zgolic?.grammar, { Aspect: "Perf" });
   assert.deepEqual(zgolic?.relations, ZGOLIC[0]?.relations);
   assert.deepEqual(plain.related, []);
-  const related = await body("zgolić, related", lookUp(app, "pl:zgolić:VERB", "related"));
+  const related = await body("zgolić, related", lookup(app, "pl:zgolić:VERB", "related"));
   assert.deepEqual(
     related.related.map((e) => e.lemma_id),
     ["pl:golić:VERB"],
@@ -161,7 +161,7 @@ test(`at most ${MAX_INCOMING} incoming relations come, by source id, and the ent
       }),
   );
   await loadLexicon(env, "pl", "lex/1", [glossed("pl:golić:VERB", "to shave"), ...sources]);
-  const { entries } = await body("golić", lookUp(app, "pl:golić:VERB", "incoming"));
+  const { entries } = await body("golić", lookup(app, "pl:golić:VERB", "incoming"));
   const incoming = entries[0]?.incoming ?? [];
   assert.equal(incoming.length, MAX_INCOMING);
   assert.equal(incoming[0]?.lemma_id, "pl:w000:NOUN");
@@ -211,7 +211,7 @@ test("discovery and misses stay fresh while successful pinned lookups can be cac
   await loadLexicon(env, "pl", version, [glossed(id, "dog")]);
 
   assert.equal((await about()).headers.get("cache-control"), "no-store");
-  assert.equal((await lookUp(app, id)).headers.get("cache-control"), "no-store");
+  assert.equal((await lookup(app, id)).headers.get("cache-control"), "no-store");
   const missing = await client(app).entries[":id"].$get({ param: { id: lemmaParam("pl:kot:NOUN") }, query: { version } });
   assert.equal(missing.status, 404);
   assert.equal(missing.headers.get("cache-control"), "no-store");

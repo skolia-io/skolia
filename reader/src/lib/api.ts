@@ -290,7 +290,7 @@ export async function lexiconVersion(lang: Lang): Promise<string | null> {
 
 export class LexiconVersionChanged extends Error {}
 
-export async function lookUp(id: LemmaId, version: string): Promise<EntriesBody | null> {
+export async function lookup(id: LemmaId, version: string): Promise<EntriesBody | null> {
   const response: Response = await lexicon.entries[":id"].$get(
     { param: { id: lemmaParam(id) }, query: { version } },
     { init: { credentials: "omit" } },
