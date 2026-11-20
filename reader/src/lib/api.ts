@@ -279,7 +279,7 @@ export async function deleteCard(cardId: CardId): Promise<void> {
 export class LexiconVersionChanged extends Error {}
 
 export async function getEntry(id: LemmaId, version: string | null): Promise<EntriesBody | null> {
-  const response = await lexicon.entries[":id"].$get(
+  const response: Response = await lexicon.entries[":id"].$get(
     { param: { id: lemmaParam(id) }, query: version === null ? {} : { version } },
     { init: { credentials: "omit" } },
   );
@@ -290,7 +290,7 @@ export async function getEntry(id: LemmaId, version: string | null): Promise<Ent
 }
 
 export async function getFormAudio(lang: Lang, form: string, upos: Upos, version: string | null): Promise<FormAudio> {
-  const response = await lexicon.lexicons[":lang"].forms[":form"].$get(
+  const response: Response = await lexicon.lexicons[":lang"].forms[":form"].$get(
     { param: { lang, form: encodeURIComponent(form) }, query: { upos, ...(version === null ? {} : { version }) } },
     { init: { credentials: "omit" } },
   );
