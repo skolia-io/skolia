@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ReadingPosition } from "@skolia/shared/api";
 import { ALICE, NOW, client, importText, importer, local, raw, setup, useLocal, type App } from "./testing/app.ts";
-import { body, expectStatus } from "./testing/responses.ts";
+import { body, expectStatus } from "@skolia/util/responses";
 
 useLocal();
 

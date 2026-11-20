@@ -6,7 +6,7 @@ import { SYSTEM_USER, e2eCleanupSql, e2eKeysSql, e2eUserId, e2eUserKey } from ".
 import { CURATED_USER, syncCuratedKeySql } from "./sync-curated-key.ts";
 import { ALICE, TEXT, client, importText, importer, local, raw, setup, useLocal } from "./testing/app.ts";
 import { ORIGIN, authConfig } from "./testing/harness.ts";
-import { body, expectStatus } from "./testing/responses.ts";
+import { body, expectStatus } from "@skolia/util/responses";
 
 useLocal();
 

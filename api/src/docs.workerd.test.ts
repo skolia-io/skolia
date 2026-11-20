@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { client, setup, useLocal } from "./testing/app.ts";
-import { body, expectStatus } from "./testing/responses.ts";
+import { body, expectStatus } from "@skolia/util/responses";
 
 useLocal();
 

@@ -11,16 +11,17 @@ import { createApp, type AppType } from "../app.ts";
 import type { Auth } from "../ports/auth.ts";
 import type { IngestJobs, JobQueue } from "../ports/ingest.ts";
 import type { IngestParams } from "@skolia/ingest/rpc";
-import { sql } from "@skolia/util/sql";
 import { IngestRuns, type JobsOf } from "../worker/adapters/ingest.ts";
 import { D1Documents } from "../worker/adapters/documents.ts";
-import { D1Lexicon, lexiconsOf } from "../worker/adapters/lexicon.ts";
+import { RpcLexicon } from "../worker/adapters/lexicon.ts";
+import { loadLexicon as load, type TestEntry } from "@skolia/lexicon/testing";
+
+export type { TestEntry } from "@skolia/lexicon/testing";
 import { DurableObjectUsers } from "../worker/adapters/users.ts";
 import { R2Blobs } from "../worker/adapters/blobs.ts";
-import { prepare } from "@skolia/util/d1";
 import { D1IngestHistory } from "@skolia/ingest/history";
 import { ORIGIN, startLocal, type Local } from "./harness.ts";
-import { body, expectStatus } from "./responses.ts";
+import { body, expectStatus } from "@skolia/util/responses";
 
 export let local: Local;
 
@@ -48,7 +49,7 @@ export function setup({ auth = local.auth, at = NOW, jobsOf = async () => null }
   return createApp({
     auth,
     users: new DurableObjectUsers(env.USER),
-    lexicon: new D1Lexicon(lexiconsOf(env)),
+    lexicon: new RpcLexicon(env.LEXICON),
     documents: new D1Documents(env.DB.withSession("first-primary")),
     blobs: new R2Blobs(env.BLOBS),
     queue: new RecordingStarts(new IngestRuns(env.INGEST_WORKFLOW, jobsOf), local.started),
@@ -109,66 +110,14 @@ export function raw(app: App, method: string, path: string, headers: Headers | u
   return app.request(`${ORIGIN}${path}`, { method, headers: allHeaders, body: typeof body === "string" ? body : JSON.stringify(body) });
 }
 
-/** Lexicon rows as infra/load-lexicon.py loads them, and the version that serves. */
-export interface TestEntry {
-  lemmaId: string;
-  lemma: string;
-  /** null: a spelling relations point at, with no entry */
-  upos: string | null;
-  /** null: no senses */
-  gloss: string | null;
-  pronunciations?: unknown[];
-  /** Compact, as in D1: [{ homonym, forms: [["psa", [0, 1]]] }] */
-  paradigms?: unknown[];
-  relations?: { kind: string; targetId: string; note?: string; targetSenses?: number[] }[];
-}
-
-/** Loads a lexicon version with its feature sets, by id, and makes it the one served. */
+/** Loads a lexicon version into the lexicon Worker, by id, and makes it the one served. */
 export async function loadLexicon(
   lang: Lang,
   version: string,
-  entries: TestEntry[],
-  featureSets: Record<string, string>[] = [],
+  entries: readonly TestEntry[],
+  featureSets: readonly Record<string, string>[] = [],
 ): Promise<void> {
-  const db = lexiconsOf(local.env)[lang];
-  await db.batch([
-    ...entries.map((e) =>
-      prepare(
-        db,
-        sql`INSERT INTO entry (lemma_id, version, lemma, upos, senses, pronunciations, paradigms) VALUES ${sql.tuple([
-          e.lemmaId,
-          version,
-          e.lemma,
-          e.upos,
-          JSON.stringify(e.gloss === null ? [] : [{ gloss: e.gloss, tags: [] }]),
-          JSON.stringify(e.pronunciations ?? []),
-          JSON.stringify(e.paradigms ?? []),
-        ])}`,
-      ),
-    ),
-    ...entries.flatMap((e) =>
-      (e.relations ?? []).map((r, ord) =>
-        prepare(
-          db,
-          sql`INSERT INTO relation (source_id, version, ord, target_id, kind, note, target_senses) VALUES ${sql.tuple([
-            e.lemmaId,
-            version,
-            ord,
-            r.targetId,
-            r.kind,
-            r.note ?? null,
-            r.targetSenses === undefined ? null : JSON.stringify(r.targetSenses),
-          ])}`,
-        ),
-      ),
-    ),
-    ...featureSets.flatMap((set, id) =>
-      Object.entries(set).map(([feature, value]) =>
-        prepare(db, sql`INSERT INTO featureset (version, id, feature, value) VALUES ${sql.tuple([version, id, feature, value])}`),
-      ),
-    ),
-    prepare(db, sql`INSERT INTO loaded (id, version) VALUES (1, ${version}) ON CONFLICT (id) DO UPDATE SET version = excluded.version`),
-  ]);
+  await load(local.lexicon, lang, version, entries, featureSets);
 }
 
 export function importText(

@@ -3,7 +3,10 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./app": "./src/app.ts"
+    "./app": "./src/app.ts",
+    "./auth": "./src/auth.ts",
+    "./e2e-keys": "./src/e2e-keys.ts",
+    "./script-log": "./src/script-log.ts"
   },
   "scripts": {
     "check": "tsc --noEmit && tsc --noEmit -p src/worker && tsc --noEmit -p tsconfig.workerd-test.json",
@@ -15,6 +18,7 @@
     "@hono/standard-validator": "0.4.1",
     "@logtape/logtape": "2.4.2",
     "@skolia/ingest": "workspace:*",
+    "@skolia/lexicon": "workspace:*",
     "@skolia/shared": "workspace:*",
     "@skolia/util": "workspace:*",
     "better-auth": "catalog:",

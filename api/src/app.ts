@@ -3,10 +3,9 @@
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { HTTPException } from "hono/http-exception";
-import type { Context, Env, TypedResponse } from "hono";
+import type { Context, TypedResponse } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import type { JSONParsed } from "hono/utils/types";
-import type { StandardSchemaV1 } from "@standard-schema/spec";
 import * as z from "zod";
 import { ANNOTATION_BATCH, LANGS, MAX_TEXT_LENGTH, type ApiError, type User, type Version } from "@skolia/shared/api";
 import * as schemas from "@skolia/shared/schemas";
@@ -25,6 +24,7 @@ import {
   SCALAR_PAGE,
   SIGNED_IN,
   TAGS,
+  badRequest,
   describe,
   error,
   json,
@@ -292,13 +292,6 @@ export function createApp(deps: Deps) {
       responds({ 204: NO_BODY, 401: NOT_SIGNED_IN }),
       (c) => signedIn(c, (user) => cards.setSettings(deps, user, c.req.valid("json"))),
     )
-    .post(
-      "/api/lexicon/entries",
-      describe({ tags: [TAGS.lexicon], summary: "Look up lexicon entries", description: "A POST so the ids fit in a body.", security: [] }),
-      validator("json", schemas.LookupRequest, badRequest()),
-      responds({ 200: json(schemas.Lookup, "The entries the lexicon has") }),
-      async (c) => send(c, await cards.lookUp(deps, c.req.valid("json").ids)),
-    )
     .get(
       "/api/documents",
       anyone(
@@ -532,15 +525,4 @@ export function acceptsEncoding(header: string | undefined, encoding: string): b
     const q = params.map((p) => p.trim()).find((p) => p.startsWith("q="));
     return q === undefined || Number(q.slice(2)) > 0;
   });
-}
-
-/** A 400 with the first problem the schema found, or `message` in its place. */
-function badRequest(message?: string) {
-  return <E extends Env, P extends string>(
-    result: { success: true } | { success: false; error: readonly StandardSchemaV1.Issue[] },
-    c: Context<E, P>,
-  ) => {
-    if (result.success) return undefined;
-    return c.json({ error: message ?? result.error[0]?.message ?? "invalid request" } satisfies ApiError, 400);
-  };
 }

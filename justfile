@@ -4,14 +4,14 @@
 
 set shell := ["bash", "-euo", "pipefail", "-c"]
 
-# Each has its own lexicon database, LEXICON_{LANG} (shared/api.ts LANGS)
+# Each has its own lexicon database, LEXICON_{LANG} in lexicon/wrangler.jsonc (shared/api.ts LANGS)
 langs := "en fr pl"
 
 _default:
     @just --list
 
 # Typecheck and lint everything
-check: (lint "api") (lint "ingest") (lint "oauth-proxy") (lint "reader") (lint "shared") (lint "util") (lint "analysis") (lint "terraform")
+check: (lint "api") (lint "e2e") (lint "ingest") (lint "lexicon") (lint "oauth-proxy") (lint "reader") (lint "shared") (lint "util") (lint "analysis") (lint "terraform")
 
 # One project's checks and tests, CI's check job for it: a workspace package's directory, analysis or terraform (infra/plan.py projects)
 check-project project: (lint project) && (unit project)
@@ -40,7 +40,7 @@ lint project:
       *)
         pnpm exec biome ci {{ project }} package.json biome.json
         pnpm --filter ./{{ project }} run --if-present check
-        if [ {{ project }} = api ]; then redocly lint api/openapi.json; fi
+        case {{ project }} in api | lexicon) redocly lint {{ project }}/openapi.json ;; esac
         ;;
     esac
 
@@ -67,7 +67,7 @@ lint-rust manifest="Cargo.toml":
     cargo clippy --manifest-path "$1" --workspace --all-targets --all-features -- -D warnings -D clippy::pedantic
 
 # Unit tests, and the built Worker's Durable Object in workerd
-test: build (unit "api") (unit "ingest") (unit "oauth-proxy") (unit "reader") (unit "shared") (unit "util") (unit "analysis")
+test: build (unit "api") (unit "e2e") (unit "ingest") (unit "lexicon") (unit "oauth-proxy") (unit "reader") (unit "shared") (unit "util") (unit "analysis")
 
 # Screenshots of the reader's pages (reader/screenshots) in Playwright's Linux image, so they come
 # out the same on a Mac and in CI. --update-snapshots accepts what changed. --ipc=host, as
@@ -84,11 +84,13 @@ build:
     pnpm --filter @skolia/reader build
     pnpm --dir api exec wrangler deploy --dry-run --outdir dist --env=''
 
-# Write the API's OpenAPI spec (api/openapi.json) from its routes; src/openapi.test.ts fails until you do
+# Write the API's and the lexicon's OpenAPI specs (api/openapi.json, lexicon/openapi.json) from their routes;
+# api/src/openapi.test.ts and lexicon/src/spec.test.ts fail until you do
 openapi:
     node api/src/spec.ts
+    node lexicon/src/spec.ts
 
-# wrangler dev (all three Workers, the ingest container, local D1/R2/queue) and the reader's Vite server,
+# wrangler dev (all four Workers, the ingest container, local D1/R2/queue) and the reader's Vite server,
 # with the curated texts in curated/ synced once the API is up
 [parallel]
 dev: dev-api dev-reader dev-sync-curated
@@ -113,10 +115,10 @@ dev-sync-curated:
 dev-api: install images env-local
     pnpm --filter @skolia/reader build
     pnpm exec wrangler d1 migrations apply DB --local --env='' </dev/null
-    for lang in {{ langs }}; do pnpm exec wrangler d1 migrations apply "LEXICON_$(tr a-z A-Z <<<"$lang")" --local --env='' </dev/null; done
+    for lang in {{ langs }}; do pnpm exec wrangler d1 migrations apply "LEXICON_$(tr a-z A-Z <<<"$lang")" -c ../lexicon/wrangler.jsonc --local --persist-to .wrangler/state --env='' </dev/null; done
     pnpm exec wrangler d1 migrations apply INGEST_DB -c ../ingest/wrangler.jsonc --local --persist-to .wrangler/state --env='' </dev/null
     just load-lexicon local
-    pnpm exec wrangler dev -c wrangler.jsonc -c wrangler.internal.jsonc -c ../ingest/wrangler.jsonc --port 8787
+    pnpm exec wrangler dev -c wrangler.jsonc -c wrangler.internal.jsonc -c ../ingest/wrangler.jsonc -c ../lexicon/wrangler.jsonc --port 8787
 
 # The Node packages, as pnpm-lock.yaml has them
 install:
@@ -151,7 +153,11 @@ plan env:
 # Apply D1 migrations
 migrate env:
     infra/wrangler.sh {{ env }} d1 migrations apply DB --remote
-    for lang in {{ langs }}; do infra/wrangler.sh {{ env }} d1 migrations apply "LEXICON_$(tr a-z A-Z <<<"$lang")" --remote; done
+    case {{ env }} in \
+      pr-*) config=../lexicon/wrangler.{{ env }}.json ;; \
+      *) config=../lexicon/wrangler.jsonc ;; \
+    esac; \
+    for lang in {{ langs }}; do infra/wrangler.sh {{ env }} d1 migrations apply "LEXICON_$(tr a-z A-Z <<<"$lang")" -c "$config" --remote; done
     case {{ env }} in \
       pr-*) config=../ingest/wrangler.{{ env }}.json ;; \
       *) config=../ingest/wrangler.jsonc ;; \
@@ -177,7 +183,7 @@ lexicon-cli lang *args:
 # A preview gets each language's entries for wordfreq's 3,000 most common words (infra/load-lexicon.py --sample).
 # A language whose build evaluates to the Nix output D1 last loaded is skipped without building it.
 # With CACHIX_AUTH_TOKEN set (CI), a build is pushed to Cachix, so the next environment substitutes it.
-# flags go to infra/load-lexicon.py (api/scripts/e2e.sh: --sample, --persist-to).
+# flags go to infra/load-lexicon.py (e2e/e2e.sh: --sample, --persist-to).
 load-lexicon env *flags:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -215,8 +221,8 @@ migrate-ci:
 apply env:
     infra/tf.sh {{ env }} apply -input=false
 
-# Storage, private API capabilities, ingest, then the public API: dependencies before callers
-deploy env: (deploy-infra env) (deploy-internal env) (deploy-ingest env) (deploy-web env)
+# Storage, private API capabilities, ingest, the lexicon, then the public API: dependencies before callers
+deploy env: (deploy-infra env) (deploy-internal env) (deploy-ingest env) (deploy-lexicon env) (deploy-web env)
 
 # Terraform, then D1 migrations; for a preview, its wrangler configs in between
 deploy-infra env: (deploying env "infra") (apply env) && (migrate env) (deployed env "infra")
@@ -236,6 +242,22 @@ deploy-internal env:
     infra/plan.py deploying {{ env }} internal
     infra/wrangler.sh {{ env }} deploy -c "$config"
     infra/plan.py deployed {{ env }} internal
+
+# The lexicon Worker (lexicon/): its public API, and the LexiconService the skolia Worker binds, so before it.
+# Its databases' rows are just load-lexicon's.
+deploy-lexicon env:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    config="$PWD/lexicon/wrangler.jsonc"
+    case {{ env }} in
+      pr-*)
+        config="$PWD/lexicon/wrangler.{{ env }}.json"
+        [ -f "$config" ] || infra/preview.py config {{ env }}
+        ;;
+    esac
+    infra/plan.py deploying {{ env }} lexicon-worker
+    infra/wrangler.sh {{ env }} deploy -c "$config"
+    infra/plan.py deployed {{ env }} lexicon-worker
 
 # The skolia Worker (reader and API) with wrangler, with Terraform's BETTER_AUTH_SECRET and, if set,
 # GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and OAUTH_PROXY_SECRET from the environment (GitHub's, in CI) as its secrets.
@@ -289,13 +311,13 @@ warm-ingest env:
     if [ "$1" != production ]; then workflow="$workflow-$1"; fi
     infra/wrangler.sh "$1" workflows trigger "$workflow" '{"warm":true}'
 
-# Run api/tests/e2e against fresh local state (Docker) or against a deployed environment.
+# Run e2e/tests against fresh local state (Docker) or against a deployed environment.
 e2e env="local":
     #!/usr/bin/env bash
     set -euo pipefail
     if [ {{ env }} = local ]; then
       just install build images
-      exec api/scripts/e2e.sh {{ langs }}
+      exec e2e/e2e.sh {{ langs }}
     fi
     just e2e-tests {{ env }} "$(just url {{ env }})" "$(infra/plan.py version)"
     infra/plan.py deployed {{ env }} e2e
@@ -306,7 +328,7 @@ e2e-tests env url version persist="":
     #!/usr/bin/env bash
     set -euo pipefail
     export E2E_URL="$2" E2E_VERSION="$3"
-    node api/tests/e2e/ready.ts
+    node e2e/tests/ready.ts
     E2E_RUN_ID=$(openssl rand -hex 16)
     E2E_API_KEY=$(openssl rand -hex 32)
     E2E_USER_KEY=$(openssl rand -hex 32)
@@ -315,7 +337,7 @@ e2e-tests env url version persist="":
     started=$SECONDS
     just d1-sql "$1" api/src/e2e-keys.ts "$4"
     echo "Provisioned e2e credentials in $((SECONDS - started))s"
-    node --test --test-concurrency=4 api/tests/e2e/*.test.ts
+    node --test --test-concurrency=4 e2e/tests/*.test.ts
 
 # Make the curated user's documents match curated/ (api/src/sync-curated.ts); with --check, only list what that takes.
 # A preview gets 5 of the texts (--sample), spread over languages, kinds and annotations.

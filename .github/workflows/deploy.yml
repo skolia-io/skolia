@@ -1,8 +1,8 @@
 name: Deploy
 
 # One environment, as ci.yml's plan (infra/plan.py) says: the images and the skolia
-# Worker's build it says are missing, beside Terraform and migrations; then the ingest Worker
-# and the lexicon; then the skolia Worker (reader and API); then, side by side, the end-to-end
+# Worker's build it says are missing, beside Terraform and migrations; then the ingest Worker,
+# the lexicon Worker and the lexicon's rows; then the skolia Worker (reader and API); then, side by side, the end-to-end
 # tests (e2e) and the curated texts in curated/ (sync-curated, sync-curated.yml). The ingest
 # Worker consumes the queue the skolia Worker feeds, so it goes first. Each job runs only if
 # the plan says its key isn't what the environment has, and records its key once it's done.
@@ -151,9 +151,27 @@ jobs:
       - if: steps.preview.outputs.state == 'open'
         run: .github/uninterruptible.sh infra/deploy-ingest.sh ${{ inputs.env }} deploy
 
+  # The lexicon Worker, whose databases deploy-infra made and migrated; the skolia Worker
+  # binds it, so before deploy-web.
+  deploy-lexicon:
+    needs: deploy-infra
+    if: ${{ !cancelled() && !failure() && fromJSON(inputs.plan)['lexicon-worker'] }}
+    runs-on: ubuntu-24.04
+    environment: ${{ startsWith(inputs.env, 'pr-') && 'preview' || inputs.env }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
+      - uses: ./.github/actions/pnpm
+      - id: preview
+        uses: ./.github/actions/preview-state
+        with:
+          env: ${{ inputs.env }}
+      - if: steps.preview.outputs.state == 'open'
+        run: .github/uninterruptible.sh just deploy-lexicon ${{ inputs.env }}
+
   # After the lexicon is loaded: the end-to-end tests' card and lexicon journeys read it
   deploy-web:
-    needs: [build-web, deploy-infra, deploy-internal, deploy-ingest, load-lexicon]
+    needs: [build-web, deploy-infra, deploy-internal, deploy-ingest, deploy-lexicon, load-lexicon]
     if: ${{ !cancelled() && !failure() && fromJSON(inputs.plan).web }}
     runs-on: ubuntu-24.04
     environment: ${{ startsWith(inputs.env, 'pr-') && 'preview' || inputs.env }}

@@ -198,6 +198,7 @@ jobs:
           esac
           .github/preview-comment.sh ${{ github.event.number }} <<EOF
           **Preview:** $URL
+          **Lexicon API:** $URL/api/lexicon/v1/docs
 
           Deployed from $SHA; its end-to-end tests $tests ([run]($RUN)). It's torn down when this pull request closes.
           EOF

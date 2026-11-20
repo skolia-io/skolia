@@ -32,23 +32,11 @@
       "binding": "DB",
       "database_name": "skolia",
       "migrations_dir": "migrations"
-    },
-    {
-      "binding": "LEXICON_EN",
-      "database_name": "skolia-lexicon-en",
-      "migrations_dir": "lexicon-migrations"
-    },
-    {
-      "binding": "LEXICON_FR",
-      "database_name": "skolia-lexicon-fr",
-      "migrations_dir": "lexicon-migrations"
-    },
-    {
-      "binding": "LEXICON_PL",
-      "database_name": "skolia-lexicon-pl",
-      "migrations_dir": "lexicon-migrations"
     }
   ],
+  // LEXICON: the lexicon Worker (lexicon/wrangler.jsonc), whose LexiconService the cards
+  // use and whose API is passed through at /api/lexicon/
+  "services": [{ "binding": "LEXICON", "service": "skolia-lexicon", "entrypoint": "LexiconService" }],
   "r2_buckets": [{ "binding": "BLOBS", "bucket_name": "skolia-documents" }],
   // wrangler dev takes BASE_URL from api/.env, and the auth secrets from api/.env.local (DEVELOP.md); deployed, they're wrangler secrets.
   "vars": { "BASE_URL": "https://skolia.io" },
@@ -72,23 +60,9 @@
           "binding": "DB",
           "database_name": "skolia-staging",
           "migrations_dir": "migrations"
-        },
-        {
-          "binding": "LEXICON_EN",
-          "database_name": "skolia-lexicon-en-staging",
-          "migrations_dir": "lexicon-migrations"
-        },
-        {
-          "binding": "LEXICON_FR",
-          "database_name": "skolia-lexicon-fr-staging",
-          "migrations_dir": "lexicon-migrations"
-        },
-        {
-          "binding": "LEXICON_PL",
-          "database_name": "skolia-lexicon-pl-staging",
-          "migrations_dir": "lexicon-migrations"
         }
       ],
+      "services": [{ "binding": "LEXICON", "service": "skolia-lexicon-staging", "entrypoint": "LexiconService" }],
       "r2_buckets": [{ "binding": "BLOBS", "bucket_name": "skolia-documents-staging" }],
       "vars": { "BASE_URL": "https://staging.skolia.io" },
       "workflows": [

@@ -230,14 +230,20 @@
             '';
       };
 
-      # The API's D1 lexicon as a SQLite file in D1's schema (api/lexicon-migrations), which
-      # infra/load-lexicon.py copies into D1. Not in the images.
+      # The lexicon Worker's D1 lexicon as a SQLite file in D1's schema (lexicon/migrations),
+      # which infra/load-lexicon.py copies into D1. Not in the images. The migrations keep the
+      # store name they had under api/, so moving them changed no export.
       d1Export =
         lang:
         pkgs.runCommand "skolia-d1-export-${lang}" { nativeBuildInputs = [ venv ]; } ''
           mkdir $out
           skolia-build-d1-export ${lang} ${lexicon.${lang}}/${lang}.sqlite \
-            ${../api/lexicon-migrations} $out/${lang}.d1.sqlite
+            ${
+              builtins.path {
+                path = ../lexicon/migrations;
+                name = "lexicon-migrations";
+              }
+            } $out/${lang}.d1.sqlite
         '';
 
       env =

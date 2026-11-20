@@ -3,7 +3,7 @@ import { test } from "node:test";
 import type { DocumentId, ReadingKey } from "@skolia/shared/api";
 import type { Cursor } from "@skolia/shared/page";
 import { ALICE, client, local, setup, useLocal, walk, importer, raw } from "./testing/app.ts";
-import { body, expectStatus } from "./testing/responses.ts";
+import { body, expectStatus } from "@skolia/util/responses";
 
 useLocal();
 

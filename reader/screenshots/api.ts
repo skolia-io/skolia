@@ -9,6 +9,7 @@ import { extname, join } from "node:path";
 import { brotliCompressSync, brotliDecompressSync } from "node:zlib";
 import type { Page, Route } from "@playwright/test";
 import { createApp } from "@skolia/api/app";
+import { createApp as createLexiconApp, type Found, type Lexicon } from "@skolia/lexicon/app";
 import {
   blankOut,
   matchesTags,
@@ -226,6 +227,21 @@ function entry(lemmaId: LemmaIdType): LexiconEntry | null {
 }
 
 const featureSets = Object.fromEntries(bundle.feats.map((feats, id) => [String(id), feats]));
+
+/** The lexicon Worker's (lexicon/src/app.ts), on the bundle's Polish entries. */
+const lexicon: Lexicon = {
+  served: async () => "lex/1",
+  byIds: async (_lang, _version, ids) => found(ids.flatMap((id) => entry(id) ?? [])),
+  byLemma: async (_lang, _version, lemma) =>
+    found(Object.keys(bundle.entries).flatMap((id) => (bundle.entries[id]?.lemma === lemma ? (entry(LemmaId.parse(id)) ?? []) : []))),
+};
+
+function found(entries: readonly LexiconEntry[]): Found {
+  return { entries, related: [], incoming: new Map(), featureSets };
+}
+
+/** What forward hands requests to: the API's app or the lexicon's. */
+type Requestable = { request(url: string, init: RequestInit): Response | Promise<Response> };
 
 /** A cloze card for a token of the text, as the word sheet makes it. */
 function clozeOf(sentence: number, index: number): Cloze {
@@ -592,10 +608,12 @@ const CONTENT_TYPES: Readonly<Record<string, string>> = {
 /** Hands the request to the app. The browser adds Accept-Encoding after interception, so
  * it's added here; a Brotli body is decompressed here, as the browser would, since a
  * fulfilled response's body is taken as already decoded. */
-async function forward(route: Route, app: ReturnType<typeof createApp>, failed: string[]): Promise<void> {
+async function forward(route: Route, app: Requestable, failed: string[], prefix = ""): Promise<void> {
   const request = route.request();
   const body = request.postDataBuffer();
-  const response = await app.request(request.url(), {
+  const url = new URL(request.url());
+  url.pathname = url.pathname.slice(prefix.length);
+  const response = await app.request(url.href, {
     method: request.method(),
     headers: { "accept-encoding": "gzip, deflate, br", ...(await request.allHeaders()) },
     ...(body ? { body: new Uint8Array(body) } : {}),
@@ -617,6 +635,7 @@ export async function serve(
   { signedIn, annotations = narration }: { signedIn: boolean; annotations?: readonly Annotation[] },
 ): Promise<string[]> {
   const app = createApp(deps(signedIn, annotations));
+  const lexiconApp = createLexiconApp({ lexicon, cache: null, checkResponses: true });
   const failed: string[] = [];
   await page.clock.setFixedTime(NOW);
   // The review's shuffle (lib/review.ts) keeps the cards in the order the API sends them
@@ -626,6 +645,7 @@ export async function serve(
   });
   await page.route("https://skolia.test/**", async (route) => {
     const { pathname } = new URL(route.request().url());
+    if (pathname.startsWith("/api/lexicon/")) return forward(route, lexiconApp, failed, "/api/lexicon");
     if (pathname.startsWith("/api/")) return forward(route, app, failed);
     const file = pathname === "/" ? "index.html" : pathname.slice(1);
     const type = CONTENT_TYPES[extname(file)] ?? "application/octet-stream";

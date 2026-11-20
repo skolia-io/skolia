@@ -25,6 +25,7 @@ flowchart LR
       BA["Better Auth"]
     end
     INT["skolia-internal Worker: status publication"]
+    LXW["skolia-lexicon Worker: public lexicon API, /v1"]
     UDO["User DO, one per user: word, card, cloze, review, settings"]
     DB[("D1 skolia: document, auth tables")]
     LX[("D1 skolia-lexicon-{lang}, one per language: entry, featureset, loaded")]
@@ -45,6 +46,7 @@ flowchart LR
   RD -->|"set a word's status"| API
   RD -->|"cards due, reviews"| API
   RD -->|"import"| API
+  RD -->|"look up entries, /api/lexicon/"| API
   RD -->|"GET /api/ingest, every 5 s"| API
   API --> BA
   BA -->|"users, sessions, API keys"| DB
@@ -53,7 +55,8 @@ flowchart LR
   API -->|"text, status, analysis, bundle"| R2
   API -->|"start a run"| WF
   API -->|"RPC: words, cards, clozes, reviews, settings"| UDO
-  API -->|"entries for due cards"| LX
+  API -->|"RPC: entries for due cards; /api/lexicon/* passed on"| LXW
+  LXW -->|"entries, relations, feature sets"| LX
   API -->|"RPC: a document's place in the queue, each container's jobs"| IDO
   API -->|"RPC: recent jobs"| IDO
   IDO -->|"recent jobs"| IDB
@@ -91,7 +94,7 @@ sequenceDiagram
 - Status is a discriminated union: ready requires complete artifacts, failed requires an error, and queued or failed may retain the previous artifacts. D1 stores `state` and `updated_at` as columns and puts only variant fields in `data`; R2 stores the complete status. `document_status` has no foreign key because an import publishes queued status and starts ingest before inserting the document. Analysing is live queue information, not a persisted state.
 - **Open a document:** D1 has its metadata and R2's `status.json` the names of its current analysis and bundle, which the reader then fetches from R2 through the API, as stored. Browsers cache them by HTTP (`no-cache` with the blob's key as its ETag), asking before each use, so the API checks the viewer may still see the text and answers 304 without reading R2; there's no IndexedDB yet.
 - **Tap a word:** local, from the bundle already loaded (`shared/lexicon`, `shared/paradigm`). Setting a word's status goes to the User DO.
-- **Review:** the User DO gives the due cards and the API adds their entries from its language's lexicon D1. The DO never reads the lexicon, and the reader's word sheet never reads the lexicon D1s, so the two can show different lexicon versions until a document is re-bundled.
+- **Review:** the User DO gives the due cards and the API adds their entries from the lexicon Worker (RPC, `LexiconService.entries`), which reads its language's lexicon D1. The DO never reads the lexicon, and the reader's word sheet never reads the lexicon D1s, so the two can show different lexicon versions until a document is re-bundled.
 - **Import:** the API puts the text in R2, the metadata in D1 and a queued `status.json`, then starts a run of the ingest Worker's `IngestWorkflow` (`ingest/src/workflow.ts`), named for the document and the bundle version it's to make, so a run asked for twice is one run. The run asks the Ingester named after its language's image to analyse it, so a deploy that changes an image starts a new container, and the Ingester's `POST /jobs` is answered once the job has had its turn and run. A container that goes away first fails the request, and the step is tried again, up to 3 times, after 1, 2 and 4 minutes; one that doesn't answer within the hour times out the same way. While it waits, the importer's summary says where it is: the API asks the language's Ingester (a Durable Object binding to the ingest Worker), which asks a running container for its jobs (`GET /jobs`) and never starts one.
 - The ingest Worker's only D1 is `skolia-ingest`, and its R2 binding serves the containers' blobs: they have no R2 credentials.
 - **Analysis page:** each container reports its running and waiting jobs' stages (`GET /jobs`), and each run stores its job's attempts in `skolia-ingest`, its own D1 so the main one stays small. The API shows both, without the texts the viewer can't see.
@@ -99,7 +102,7 @@ sequenceDiagram
 
 Locally, `wrangler dev` runs all three Workers and the ingest containers, with local D1, R2 and Workflows. The API reaches them through small interfaces (`api/src/ports/`, faked in the tests); ingest reaches the local bucket through the same `blobs.internal` intercept. The API writes `doc/{doc}/status.json` and its D1 projection as queued before it starts a run; the run publishes ready or failed through the API's internal RPC entrypoint from then on. Opening a document reads the blob; listing reads the projection. The container writes no status: its answer gives the analysis it made. The importer sees analysing while the container runs the job, from its `GET /jobs`.
 
-On Cloudflare: Terraform (`infra/`) manages what wrangler doesn't: R2, D1, the queues (unused, until they're deleted) and billing alerts. All three Workers are deployed with wrangler: `skolia` with the reader as static assets on workers.dev and skolia.io (`api/wrangler.jsonc`), `skolia-ingest` with its containers, one per language (`ingest/wrangler.jsonc`), and the API-owned `skolia-internal` (`api/wrangler.internal.jsonc`) with no public route. The internal Worker publishes status; it binds only the main D1 and R2, with no dependency on ingest or the public API. It deploys after schema migrations and before ingest, avoiding a circular service-binding dependency in fresh environments. Background data migrations run on the public API's cron, which deploys last: new backfills start only after their status publishers are live. Wrangler also applies their Durable Object migrations, which the Terraform provider can't do on an update (it resends the first migration and Cloudflare refuses it). A run hands each job to its language's container over HTTP and waits for the answer. The container keeps jobs in memory, sleeps when idle (the Durable Object asks ingest whether it's busy before stopping it), and has the models and lexicon in its image. It has no internet access or R2 credentials: the Durable Object intercepts its requests to `blobs.internal` and serves them from the ingest Worker's R2 binding (`Blobs` in `ingest/src/main.ts`). A job lost with its container is handed over again by its run's retry.
+On Cloudflare: Terraform (`infra/`) manages what wrangler doesn't: R2, D1, the queues (unused, until they're deleted) and billing alerts. All four Workers are deployed with wrangler: `skolia` with the reader as static assets on workers.dev and skolia.io (`api/wrangler.jsonc`), `skolia-ingest` with its containers, one per language (`ingest/wrangler.jsonc`), the API-owned `skolia-internal` (`api/wrangler.internal.jsonc`) with no public route, and `skolia-lexicon` (`lexicon/wrangler.jsonc`) on lexicon.skolia.io, which owns the lexicon D1s and serves them as a public API of its own; the skolia Worker binds it and passes `/api/lexicon/*` on to it, so previews, which have no lexicon hostname, read it there. It deploys after migrations and before the skolia Worker. The internal Worker publishes status; it binds only the main D1 and R2, with no dependency on ingest or the public API. It deploys after schema migrations and before ingest, avoiding a circular service-binding dependency in fresh environments. Background data migrations run on the public API's cron, which deploys last: new backfills start only after their status publishers are live. Wrangler also applies their Durable Object migrations, which the Terraform provider can't do on an update (it resends the first migration and Cloudflare refuses it). A run hands each job to its language's container over HTTP and waits for the answer. The container keeps jobs in memory, sleeps when idle (the Durable Object asks ingest whether it's busy before stopping it), and has the models and lexicon in its image. It has no internet access or R2 credentials: the Durable Object intercepts its requests to `blobs.internal` and serves them from the ingest Worker's R2 binding (`Blobs` in `ingest/src/main.ts`). A job lost with its container is handed over again by its run's retry.
 
 ```mermaid
 flowchart TB
@@ -108,6 +111,7 @@ flowchart TB
     SH["shared/ (types, schemas, paradigm, lexicon)"]
     RDR["reader/"]
     APIS["api/"]
+    LXS["lexicon/ (Worker, migrations)"]
     TFS["infra/*.tf"]
   end
   subgraph Nix["analysis/flake.nix"]
@@ -125,6 +129,7 @@ flowchart TB
     LL["load-lexicon"]
     DINT["deploy-internal: private status publication"]
     DGI["deploy-ingest"]
+    DLX["deploy-lexicon"]
     BW["build-web: skolia-worker"]
     DW["deploy-web, e2e"]
   end
@@ -136,6 +141,7 @@ flowchart TB
     LXDB[("D1 skolia-lexicon-{lang}")]
     INTD["skolia-internal Worker, no public route"]
     INGD["skolia-ingest Worker, containers"]
+    LXWD["skolia-lexicon Worker, lexicon.skolia.io"]
     WEBD["skolia Worker, reader assets"]
   end
 
@@ -147,7 +153,7 @@ flowchart TB
   INP --> LEXN
   VENV --> LEXN
   LEXN --> D1X
-  APIS -- "lexicon-migrations" --> D1X
+  LXS -- "migrations" --> D1X
   MOD --> IMG
   VENV --> IMG
   LEXN --> IMG
@@ -177,13 +183,17 @@ flowchart TB
   REG -->|"pinned by digest"| DGI
   DGI --> INGD
   DW --> WEBD
+  DI --> DLX
+  DLX --> DW
+  DLX --> LXWD
+  LXWD -.-> LXDB
 ```
 
 - D1 is bound by name. If Terraform hasn't made a database, `wrangler deploy` creates one outside Terraform, so `deploy-infra` goes first.
 - The ingest image has `lexicon-{lang}` but not the cards lexicon. The cards lexicon is built from the lexicon, with Morfeusz's paradigms for Polish.
 - `load-lexicon` only substitutes from Cachix and never fetches the inputs, so it needs the lexicon there; `build-ingest-image` pushes it only when an image is rebuilt.
-- `deploy-web` waits for `load-lexicon` and `deploy-ingest`: the end-to-end tests read the lexicon.
-- Deploys don't wait for `check`. `infra/plan.py` has a dependency graph of projects (each pnpm package by its `package.json`, `analysis/`, `infra/`, `curated/`) and the targets CI builds, checks and deploys, each node keyed by a hash of its Nix content and its build and test dependencies' keys. CI skips each one whose key `skolia-ci` has a row for: in `build` for an image, the skolia Worker's bundle or a check, done once for every environment, and as the environment's last row in `deployment` for Terraform, the ingest Worker, the lexicon, the skolia Worker, the end-to-end tests and the curated sync. Both tables only grow.
+- `deploy-web` waits for `deploy-lexicon`, which it binds, and for `load-lexicon` and `deploy-ingest`: the end-to-end tests read the lexicon.
+- Deploys don't wait for `check`. `infra/plan.py` has a dependency graph of projects (each pnpm package by its `package.json`, `analysis/`, `infra/`, `curated/`) and the targets CI builds, checks and deploys, each node keyed by a hash of its Nix content and its build and test dependencies' keys. CI skips each one whose key `skolia-ci` has a row for: in `build` for an image, the skolia Worker's bundle or a check, done once for every environment, and as the environment's last row in `deployment` for Terraform, the ingest Worker, the lexicon, the lexicon Worker, the skolia Worker, the end-to-end tests and the curated sync. Both tables only grow.
 - `schema.gen.ts` is generated from analysis; the blob keys in `shared/keys.ts` are kept in step by hand.
 - A preview loads each language's entries for wordfreq's 3,000 most common words only, and accepts 20 imports a day.
 

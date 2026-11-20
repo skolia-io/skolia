@@ -16,9 +16,7 @@ import {
   type Due,
   type FeatureSets,
   type Lang,
-  type LemmaId,
   type LexiconEntry,
-  type Lookup,
   type NewCard,
   type Reviewed,
   type ReviewRequest,
@@ -132,10 +130,6 @@ export async function settings(deps: { users: UserSettings }, user: User): Promi
 export async function setSettings(deps: { users: UserSettings }, user: User, settings: Settings): Promise<NoContent> {
   await deps.users.setSettings(user.id, settings);
   return NO_CONTENT;
-}
-
-export async function lookUp(deps: { lexicon: Lexicon }, ids: LemmaId[]): Promise<Ok<Lookup>> {
-  return ok(await deps.lexicon.entries(ids));
 }
 
 function stored(time: string): Timestamp {

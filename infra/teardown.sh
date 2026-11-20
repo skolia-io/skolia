@@ -18,6 +18,7 @@ wrangler() { "$root/infra/wrangler.sh" account "$@"; }
 web=skolia-$env
 ingest=skolia-ingest-$env
 internal=skolia-internal-$env
+lexicon=skolia-lexicon-$env
 queue=skolia-ingest-$env
 events=skolia-ingest-events-$env
 bucket=skolia-documents-$env
@@ -34,9 +35,13 @@ buckets=$(r2_buckets "$bucket")
 
 "$root/infra/plan.py" torn-down "$env"
 # A Worker can't be deleted while another binds it: the skolia Worker binds ingest's
-# Ingester and workflow, and ingest binds the internal Worker's DocumentStatus.
+# Ingester and workflow and the lexicon's LexiconService, and ingest binds the internal
+# Worker's DocumentStatus.
 if grep -qx "$web" <<<"$workers"; then
   wrangler delete "$web" </dev/null
+fi
+if grep -qx "$lexicon" <<<"$workers"; then
+  wrangler delete "$lexicon" </dev/null
 fi
 if grep -qx "$ingest" <<<"$consumers"; then
   wrangler queues consumer remove "$queue" "$ingest" </dev/null

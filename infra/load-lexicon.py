@@ -3,7 +3,7 @@
 # requires-python = ">=3.12"
 # dependencies = ["wordfreq==3.1.1"]
 # ///
-"""Loads a language's lexicon into its D1 database (LEXICON_{LANG} in api/wrangler.jsonc):
+"""Loads a language's lexicon into its D1 database (LEXICON_{LANG} in lexicon/wrangler.jsonc):
   load-lexicon.py <staging|production|pr-N|local> <sqlite>
       [--sample N] [--persist-to DIR] [--built-from OUT]
   load-lexicon.py <staging|production|pr-N|local> --lang LANG --built-from OUT
@@ -12,9 +12,10 @@ sqlite is analysis's {lang}.d1.sqlite (skolia-build-d1-export, or the Nix output
 analysis#d1-export-{lang}), which has D1's schema; its meta table gives the language and
 version. Skipped if D1
 already serves that version. The new version's rows go in beside the old ones, then
-loaded points at it and the old rows are deleted in batches (api/lexicon-migrations), so a
+loaded points at it and the old rows are deleted in batches (lexicon/migrations), so a
 load that stops part way leaves the old version serving and can be run again. local is wrangler
-dev's database, or with --persist-to, the one in DIR (api/scripts/e2e.sh).
+dev's database (api/.wrangler/state, just dev-api), or with --persist-to, the one in DIR
+(e2e/e2e.sh).
 For previews, --sample loads entries for wordfreq's N most common words and adds +sampleN
 to their version. --built-from OUT, the Nix output sqlite is in, is
 recorded in loaded once the old rows are deleted; without sqlite, it prints current if D1 last
@@ -35,7 +36,11 @@ from typing import cast
 
 import wordfreq
 
-WRANGLER = Path(__file__).resolve().parent / "wrangler.sh"
+INFRA = Path(__file__).resolve().parent
+WRANGLER = INFRA / "wrangler.sh"
+LEXICON = INFRA.parent / "lexicon"
+# Where just dev-api's wrangler dev keeps its local state, every Worker's
+DEV_STATE = INFRA.parent / "api" / ".wrangler" / "state"
 # D1's longest statement is 100 KB; the longest row is 35 KB (English)
 MAX_STATEMENT_BYTES = 90_000
 # Old rows deleted per statement, so no one statement deletes a whole language
@@ -52,18 +57,32 @@ class Target:
     persist_to: Path | None = None
 
 
+def config(env: str) -> Path:
+    """The lexicon Worker's wrangler config for env. A preview's is made from staging's
+    (infra/preview.py) if this checkout hasn't one."""
+    if not env.startswith("pr-"):
+        return LEXICON / "wrangler.jsonc"
+    path = LEXICON / f"wrangler.{env}.json"
+    if not path.exists():
+        subprocess.run(
+            [str(INFRA / "preview.py"), "config", env], check=True, stdout=subprocess.DEVNULL
+        )
+    return path
+
+
 def wrangler(target: Target, *args: str) -> str:
     where = ["--remote"]
     if target.env == "local":
-        where = ["--local"]
-        if target.persist_to is not None:
-            where += ["--persist-to", str(target.persist_to.resolve())]
+        persist_to = DEV_STATE if target.persist_to is None else target.persist_to
+        where = ["--local", "--persist-to", str(persist_to.resolve())]
     command = [
         str(WRANGLER),
         "production" if target.env == "local" else target.env,
         "d1",
         "execute",
         f"LEXICON_{target.lang.upper()}",
+        "-c",
+        str(config(target.env)),
         *where,
         *args,
     ]

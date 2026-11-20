@@ -1,0 +1,19 @@
+{
+  "name": "@skolia/e2e",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@skolia/api": "workspace:*",
+    "@skolia/lexicon": "workspace:*",
+    "@skolia/shared": "workspace:*",
+    "@skolia/util": "workspace:*",
+    "hono": "4.13.16"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.5",
+    "typescript": "7.0.2"
+  }
+}

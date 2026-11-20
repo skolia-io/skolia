@@ -4,7 +4,8 @@
 # dependencies = ["json5==0.17.3"]
 # ///
 """Wrangler configs and URL for a preview environment, pr-<N> (one per pull request):
-  preview.py config pr-12   writes api/wrangler.pr-12.json and ingest/wrangler.pr-12.json
+  preview.py config pr-12   writes api/wrangler.pr-12.json, api/wrangler.internal.pr-12.json,
+                            ingest/wrangler.pr-12.json and lexicon/wrangler.pr-12.json
   preview.py url pr-12      prints its workers.dev URL
 Each config is the committed config's env.staging block at the top level, with -pr-12
 for -staging in the names, and no routes: a preview is on
@@ -115,6 +116,8 @@ def config(env: str) -> None:
         f"api/wrangler.{env}.json": web,
         f"api/wrangler.internal.{env}.json": promote("wrangler.internal.jsonc", env),
         f"ingest/wrangler.{env}.json": ingest,
+        # No hostname of its own: read through the preview's skolia Worker, /api/lexicon/
+        f"lexicon/wrangler.{env}.json": promote("../lexicon/wrangler.jsonc", env),
     }
     for file, content in configs.items():
         text = json.dumps(content, indent=2)
