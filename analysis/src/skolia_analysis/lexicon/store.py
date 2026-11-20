@@ -8,7 +8,7 @@ import json
 import sqlite3
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from pathlib import Path
-from typing import NamedTuple, cast
+from typing import NamedTuple, assert_never, cast
 
 from ..schema import Feats, Upos
 from .schema import (
@@ -226,19 +226,25 @@ def _target(db: sqlite3.Connection, source_id: str, relation: Relation) -> str:
     """Use the known part of speech, an unambiguous definition, or a spelling-only node."""
     lang = source_id.split(":", 1)[0]
     lemma = relation["lemma"]
-    upos = "VERB" if relation["type"] == "aspect-partner" else None
-    if upos is None:
-        matches = db.execute(
-            """
-            SELECT entry.lemma_id FROM entry
-            WHERE lemma = ? AND EXISTS (SELECT 1 FROM sense WHERE sense.lemma_id = entry.lemma_id)
-            LIMIT 2
-            """,
-            (lemma,),
-        ).fetchall()
-        if len(matches) == 1:
-            return cast(str, matches[0][0])
-    return _ensure_entry(db, lang, lemma, upos)
+    kind = relation["type"]
+    match kind:
+        case "aspect-partner":
+            return _ensure_entry(db, lang, lemma, "VERB")
+        case "derived-from":
+            matches = db.execute(
+                """
+                SELECT entry.lemma_id FROM entry
+                WHERE lemma = ?
+                    AND EXISTS (SELECT 1 FROM sense WHERE sense.lemma_id = entry.lemma_id)
+                LIMIT 2
+                """,
+                (lemma,),
+            ).fetchall()
+            if len(matches) == 1:
+                return cast(str, matches[0][0])
+            return _ensure_entry(db, lang, lemma, None)
+        case _:
+            assert_never(kind)
 
 
 def _ensure_entry(db: sqlite3.Connection, lang: str, lemma: str, upos: Upos | None) -> str:
