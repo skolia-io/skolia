@@ -44,11 +44,8 @@ type Selector = { readonly ids: readonly LemmaId[] } | { readonly lemma: string 
 export class D1Lexicon implements Lexicon {
   private readonly dbs: Record<Lang, D1DatabaseSession>;
 
-  constructor(dbs: Record<Lang, D1Database>) {
-    this.dbs = Object.fromEntries(LANGS.map((lang) => [lang, dbs[lang].withSession("first-unconstrained")])) as Record<
-      Lang,
-      D1DatabaseSession
-    >;
+  constructor(dbs: Record<Lang, D1Database>, constraint: D1SessionConstraint = "first-unconstrained") {
+    this.dbs = Object.fromEntries(LANGS.map((lang) => [lang, dbs[lang].withSession(constraint)])) as Record<Lang, D1DatabaseSession>;
   }
 
   async served(lang: Lang): Promise<string | null> {

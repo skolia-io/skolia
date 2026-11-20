@@ -15,7 +15,7 @@ const DOCUMENTATION = {
       "Dictionary entries for the languages skolia reads (English, French, Polish): senses, relations between words, " +
       "pronunciations and inflected forms, mostly from Wiktionary. No sign-in. The content is CC BY-SA 4.0: each entry says " +
       "whom to credit (attribution) and links its Wiktionary page (sourceUrl). A lexicon's version changes when a new " +
-      "build is loaded; responses carry the versions they were made from as their ETag. An entry's id is " +
+      "build is loaded. Pass that version as a lookup query parameter to enable edge caching. An entry's id is " +
       "{lang}:{lemma}:{upos}, a lemma with a / percent-encoded in a path (pl:i%2Flub:CCONJ).",
   },
   servers: [{ url: "..", description: "Where this spec is served from" }],

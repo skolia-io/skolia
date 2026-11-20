@@ -13,6 +13,7 @@
   // /api/lexicon/
   "workers_dev": false,
   "preview_urls": false,
+  "cache": { "enabled": true },
   "observability": { "enabled": true },
   // Runs near D1 when that's faster than near the caller. Inherited by env.staging and previews.
   "placement": { "mode": "smart" },

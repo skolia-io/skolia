@@ -4,7 +4,6 @@ import { hc } from "hono/client";
 import { createTestHarness, type TestHarness } from "wrangler";
 import { LANGS } from "@skolia/shared/api";
 import { createApp, type AppType } from "../app.ts";
-import type { ResponseCache } from "../ports.ts";
 import { D1Lexicon } from "../store.ts";
 import { clearLexicons, lexiconBinding, lexiconsOf, type LexiconBindings } from "./load.ts";
 
@@ -26,8 +25,8 @@ export function useLocal(): void {
 }
 
 /** The app on the local databases, each response checked against the spec. */
-export function setup(cache: ResponseCache | null = null) {
-  return createApp({ lexicon: new D1Lexicon(lexiconsOf(env)), cache, checkResponses: true });
+export function setup() {
+  return createApp({ lexicon: new D1Lexicon(lexiconsOf(env), "first-primary"), checkResponses: true });
 }
 
 /** The typed client (hono/client), sending to the app. */
@@ -36,17 +35,4 @@ export function client(app: ReturnType<typeof setup>, headers: Record<string, st
     fetch: (input: string | URL | Request, init?: RequestInit) => app.request(input, init),
     headers,
   }).v1;
-}
-
-/** Responses kept by URL, as caches.default keeps them; workerd's isn't reachable from Node. */
-export class MemoryCache implements ResponseCache {
-  readonly kept = new Map<string, Response>();
-
-  async match(key: Request): Promise<Response | undefined> {
-    return this.kept.get(key.url)?.clone();
-  }
-
-  async put(key: Request, response: Response): Promise<void> {
-    this.kept.set(key.url, response);
-  }
 }
