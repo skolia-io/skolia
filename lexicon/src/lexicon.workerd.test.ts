@@ -109,7 +109,7 @@ test("an entry says its licence, whom to credit and its Wiktionary page, and eve
   assert.equal(about.version, "lex/1");
   assert.deepEqual(
     about.sources.map((s) => s.url),
-    ["https://en.wiktionary.org", "http://morfeusz.sgjp.pl"],
+    ["https://en.wiktionary.org", "http://morfeusz.sgjp.pl", "http://zil.ipipan.waw.pl/Walenty"],
   );
 });
 
