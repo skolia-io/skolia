@@ -353,7 +353,9 @@ GOLIĆ = store.Row(
 )
 
 
-def test_derivative_takes_the_sense_it_was_listed_under(tmp_path: Path) -> None:
+def test_derivative_points_at_its_whole_base_not_the_sense_kaikki_lists_it_under(
+    tmp_path: Path,
+) -> None:
     path = tmp_path / "pl.sqlite"
     glosses = ("to down, to soak (to drink)",)
     store.write(
@@ -372,7 +374,6 @@ def test_derivative_takes_the_sense_it_was_listed_under(tmp_path: Path) -> None:
             "lemma": "golić",
             "note": "perfective derivative",
             "lemma_id": "pl:golić:VERB",
-            "sense_indexes": [1],
         }
     ]
     token: Token = {
@@ -406,14 +407,12 @@ def test_derivative_takes_the_sense_it_was_listed_under(tmp_path: Path) -> None:
     with sqlite3.connect(path) as db:
         assert db.execute("SELECT evidence, target_senses FROM relation").fetchone() == (
             '[["to down, to soak (to drink)"]]',
-            "[1]",
+            None,
         )
         assert db.execute("PRAGMA foreign_key_check").fetchall() == []
 
 
-def test_unmatched_evidence_names_no_senses_and_relations_name_their_targets(
-    tmp_path: Path,
-) -> None:
+def test_relations_name_their_targets(tmp_path: Path) -> None:
     path = tmp_path / "pl.sqlite"
     ogolić = store.Row(
         "pl:ogolić:VERB",

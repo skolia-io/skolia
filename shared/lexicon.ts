@@ -79,9 +79,9 @@ export function lenders<E>(entry: Meaning, find: (lemmaId: string) => E | undefi
 }
 
 /** An entry's senses, or with none of its own, the ones its relations name in their
- * targets: zgolić, which Wiktionary only lists as the perfective of golić's "to down, to
- * soak (to drink)", means that and not "to shave". A borrowed sense keeps its gloss and
- * tags but not aspect tags, examples or selectors, which describe the target. */
+ * targets: zgolić, which Wiktionary only lists as golić's perfective, takes golić's. A
+ * borrowed sense keeps its gloss and tags but not aspect tags, examples or selectors,
+ * which describe the target. */
 export function sensesOf(entry: Meaning, find: (lemmaId: string) => { readonly senses: readonly Sense[] } | undefined): Sense[] {
   if (entry.senses.length > 0) return [...entry.senses];
   return entry.relations.flatMap((relation) => {
