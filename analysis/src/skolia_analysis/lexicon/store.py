@@ -251,12 +251,6 @@ def _write_recordings(
 class Lexicon:
     def __init__(self, path: Path) -> None:
         self._db = sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True)
-        self._legacy = (
-            self._db.execute(
-                "SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = 'relation'"
-            ).fetchone()
-            is None
-        )
 
     def meta(self) -> dict[str, str]:
         return dict(self._db.execute("SELECT key, value FROM meta").fetchall())
@@ -283,12 +277,6 @@ class Lexicon:
 
     def incoming(self, lemma: str) -> Iterator[tuple[str, Relation]]:
         """Stored relations pointing to a spelling, even if it has no entry."""
-        if self._legacy:
-            for row in self.rows():
-                for relation in row.relations:
-                    if relation["lemma"] == lemma:
-                        yield row.lemma_id, relation
-            return
         for source_id, kind, note in self._db.execute(
             """
             SELECT source_id, kind, note FROM relation
@@ -300,11 +288,6 @@ class Lexicon:
 
     def pronunciations(self, word: str) -> dict[Upos, list[Pronunciation]]:
         """By part of speech: lead is /lɛd/ as a noun, /liːd/ as a verb."""
-        if self._legacy:
-            found = self._db.execute(
-                "SELECT upos, pronunciations FROM pronunciation WHERE word = ?", (word,)
-            )
-            return {cast(Upos, upos): json.loads(value) for upos, value in found if value != "[]"}
         result: dict[Upos, list[Pronunciation]] = {}
         for upos, id_, ipa, has_accents in self._db.execute(
             "SELECT upos, id, ipa, has_accents FROM pronunciation "
@@ -325,11 +308,6 @@ class Lexicon:
         return result
 
     def recordings(self, word: str) -> dict[Upos, list[Recording]]:
-        if self._legacy:
-            found = self._db.execute(
-                "SELECT upos, recordings FROM pronunciation WHERE word = ?", (word,)
-            )
-            return {cast(Upos, upos): json.loads(value) for upos, value in found if value != "[]"}
         result: dict[Upos, list[Recording]] = {}
         for upos, recording in self._recordings(word, commons=False):
             result.setdefault(cast(Upos, upos), []).append(recording)
@@ -337,11 +315,6 @@ class Lexicon:
 
     def word_recordings(self, word: str) -> list[Recording]:
         """Commons' recordings of the spelling, whatever its part of speech."""
-        if self._legacy:
-            row = self._db.execute(
-                "SELECT recordings FROM recording WHERE word = ?", (word,)
-            ).fetchone()
-            return cast(list[Recording], json.loads(row[0])) if row else []
         return [recording for _, recording in self._recordings(word, commons=True)]
 
     def _recordings(self, word: str, *, commons: bool) -> Iterator[tuple[Upos | None, Recording]]:
@@ -369,20 +342,6 @@ class Lexicon:
         return self._select("ORDER BY lemma_id")
 
     def _select(self, where: str, *values: str) -> Iterator[Row]:
-        if self._legacy:
-            query = f"SELECT lemma_id, lemma, upos, senses, relations, paradigms FROM entry {where}"
-            for lemma_id, lemma, upos, senses, relations, paradigms in self._db.execute(
-                query, values
-            ):
-                yield Row(
-                    lemma_id,
-                    lemma,
-                    upos,
-                    json.loads(senses),
-                    json.loads(relations),
-                    json.loads(paradigms),
-                )
-            return
         for lemma_id, lemma, upos in self._db.execute(
             f"SELECT lemma_id, lemma, upos FROM entry {where}", values
         ):

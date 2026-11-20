@@ -227,7 +227,7 @@ uv run skolia-lexicon --db result/pl.sqlite --incoming ogolić
 Use `--db ../data/lexicon/pl.sqlite` for a manual build. The command prints JSON with
 the entries it finds, including their senses, relations, and stored paradigms.
 `--incoming` uses the relation target index to find links pointing to a headword,
-even if it has no entry of its own. Older SQLite builds are readable and use a scan.
+even if it has no entry of its own. Rebuild any SQLite files from before this schema change.
 
 The build stores senses, examples, tags, paradigms, forms and audio in ordered
 child tables. Relations have an index for each direction. The bundle and cards
