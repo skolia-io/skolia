@@ -1,8 +1,7 @@
 """The lexicon on the server: one SQLite file per language, one row per lemma_id.
 
-Senses, relations and paradigms are stored as JSON in the row: the lexicon is only ever
-read a whole entry at a time. A language whose paradigms are generated when a bundle is
-made (Polish, by Morfeusz) stores none.
+Ordered child tables store senses, paradigms and audio. Relations are indexed at both
+ends, including references to spellings that have no entry in this lexicon.
 """
 
 import json
@@ -11,30 +10,113 @@ from collections.abc import Callable, Iterable, Iterator, Mapping
 from pathlib import Path
 from typing import NamedTuple, cast
 
-from ..schema import Upos
-from .schema import Paradigm, Pronunciation, Recording, Relation, Sense
+from ..schema import Feats, Upos
+from .schema import (
+    Accent,
+    Example,
+    Form,
+    Paradigm,
+    Pronunciation,
+    Recording,
+    Relation,
+    RelationType,
+    Sense,
+)
 
 SCHEMA = """
+PRAGMA foreign_keys = ON;
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE entry (
     lemma_id TEXT PRIMARY KEY,
     lemma TEXT NOT NULL,
     lemma_lower TEXT NOT NULL,
-    upos TEXT NOT NULL,
-    senses TEXT NOT NULL,
-    relations TEXT NOT NULL,
-    paradigms TEXT NOT NULL
+    upos TEXT NOT NULL
 );
 CREATE INDEX entry_lemma ON entry (lemma);
 CREATE INDEX entry_lemma_lower ON entry (lemma_lower);
+CREATE TABLE sense (
+    id INTEGER PRIMARY KEY,
+    lemma_id TEXT NOT NULL REFERENCES entry,
+    position INTEGER NOT NULL,
+    gloss TEXT NOT NULL,
+    has_when INTEGER NOT NULL CHECK (has_when IN (0, 1)),
+    has_examples INTEGER NOT NULL CHECK (has_examples IN (0, 1)),
+    UNIQUE (lemma_id, position)
+);
+CREATE TABLE sense_tag (
+    sense_id INTEGER NOT NULL REFERENCES sense,
+    position INTEGER NOT NULL,
+    tag TEXT NOT NULL,
+    PRIMARY KEY (sense_id, position)
+) WITHOUT ROWID;
+CREATE TABLE sense_when (
+    sense_id INTEGER NOT NULL REFERENCES sense,
+    position INTEGER NOT NULL,
+    features TEXT NOT NULL CHECK (json_valid(features) AND json_type(features) = 'object'),
+    PRIMARY KEY (sense_id, position)
+) WITHOUT ROWID;
+CREATE TABLE example (
+    sense_id INTEGER NOT NULL REFERENCES sense,
+    position INTEGER NOT NULL,
+    text TEXT NOT NULL,
+    translation TEXT,
+    PRIMARY KEY (sense_id, position)
+) WITHOUT ROWID;
+CREATE TABLE relation (
+    source_id TEXT NOT NULL REFERENCES entry,
+    position INTEGER NOT NULL,
+    target_lemma TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    note TEXT,
+    PRIMARY KEY (source_id, position)
+) WITHOUT ROWID;
+CREATE INDEX relation_target ON relation (target_lemma, source_id, position);
+CREATE TABLE paradigm (
+    id INTEGER PRIMARY KEY,
+    lemma_id TEXT NOT NULL REFERENCES entry,
+    position INTEGER NOT NULL,
+    homonym TEXT NOT NULL,
+    UNIQUE (lemma_id, position)
+);
+CREATE TABLE paradigm_form (
+    paradigm_id INTEGER NOT NULL REFERENCES paradigm,
+    position INTEGER NOT NULL,
+    form TEXT NOT NULL,
+    xpos TEXT NOT NULL,
+    features TEXT NOT NULL CHECK (json_valid(features) AND json_type(features) = 'object'),
+    PRIMARY KEY (paradigm_id, position)
+) WITHOUT ROWID;
 CREATE TABLE pronunciation (
+    id INTEGER PRIMARY KEY,
     word TEXT NOT NULL,
     upos TEXT NOT NULL,
-    pronunciations TEXT NOT NULL,
-    recordings TEXT NOT NULL,
-    PRIMARY KEY (word, upos)
+    position INTEGER NOT NULL,
+    ipa TEXT NOT NULL,
+    has_accents INTEGER NOT NULL CHECK (has_accents IN (0, 1)),
+    UNIQUE (word, upos, position)
 );
-CREATE TABLE recording (word TEXT PRIMARY KEY, recordings TEXT NOT NULL);
+CREATE TABLE pronunciation_accent (
+    pronunciation_id INTEGER NOT NULL REFERENCES pronunciation,
+    position INTEGER NOT NULL,
+    accent TEXT NOT NULL,
+    PRIMARY KEY (pronunciation_id, position)
+) WITHOUT ROWID;
+CREATE TABLE recording (
+    id INTEGER PRIMARY KEY,
+    word TEXT NOT NULL,
+    upos TEXT,
+    position INTEGER NOT NULL,
+    audio TEXT NOT NULL,
+    mp3_url TEXT NOT NULL,
+    has_tags INTEGER NOT NULL CHECK (has_tags IN (0, 1))
+);
+CREATE INDEX recording_word ON recording (word, upos, position);
+CREATE TABLE recording_tag (
+    recording_id INTEGER NOT NULL REFERENCES recording,
+    position INTEGER NOT NULL,
+    tag TEXT NOT NULL,
+    PRIMARY KEY (recording_id, position)
+) WITHOUT ROWID;
 """
 
 
@@ -72,43 +154,109 @@ def write(
         count = 0
         for row in rows:
             db.execute(
-                "INSERT INTO entry VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO entry VALUES (?, ?, ?, ?)",
+                (row.lemma_id, row.lemma, row.lemma.lower(), row.upos),
+            )
+            for position, sense in enumerate(row.senses):
+                sense_id = db.execute(
+                    """
+                    INSERT INTO sense (lemma_id, position, gloss, has_when, has_examples)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (row.lemma_id, position, sense["gloss"], "when" in sense, "examples" in sense),
+                ).lastrowid
+                db.executemany(
+                    "INSERT INTO sense_tag VALUES (?, ?, ?)",
+                    ((sense_id, index, tag) for index, tag in enumerate(sense["tags"])),
+                )
+                db.executemany(
+                    "INSERT INTO sense_when VALUES (?, ?, ?)",
+                    (
+                        (sense_id, index, json.dumps(feats))
+                        for index, feats in enumerate(sense.get("when", []))
+                    ),
+                )
+                db.executemany(
+                    "INSERT INTO example VALUES (?, ?, ?, ?)",
+                    (
+                        (sense_id, index, example["text"], example.get("translation"))
+                        for index, example in enumerate(sense.get("examples", []))
+                    ),
+                )
+            db.executemany(
+                "INSERT INTO relation VALUES (?, ?, ?, ?, ?)",
                 (
-                    row.lemma_id,
-                    row.lemma,
-                    row.lemma.lower(),
-                    row.upos,
-                    json.dumps(row.senses, ensure_ascii=False),
-                    json.dumps(row.relations, ensure_ascii=False),
-                    json.dumps(row.paradigms, ensure_ascii=False),
+                    (row.lemma_id, index, relation["lemma"], relation["type"], relation.get("note"))
+                    for index, relation in enumerate(row.relations)
                 ),
             )
-            count += 1
-        db.executemany(
-            "INSERT INTO pronunciation VALUES (?, ?, ?, ?)",
-            (
-                (
-                    p.word,
-                    p.upos,
-                    json.dumps(p.pronunciations, ensure_ascii=False),
-                    json.dumps(p.recordings, ensure_ascii=False),
+            for position, paradigm in enumerate(row.paradigms):
+                paradigm_id = db.execute(
+                    "INSERT INTO paradigm (lemma_id, position, homonym) VALUES (?, ?, ?)",
+                    (row.lemma_id, position, paradigm["homonym"]),
+                ).lastrowid
+                db.executemany(
+                    "INSERT INTO paradigm_form VALUES (?, ?, ?, ?, ?)",
+                    (
+                        (paradigm_id, index, form["form"], form["xpos"], json.dumps(form["feats"]))
+                        for index, form in enumerate(paradigm["forms"])
+                    ),
                 )
-                for p in pronunciations()
-            ),
-        )
-        db.executemany(
-            "INSERT INTO recording VALUES (?, ?)",
-            (
-                (word, json.dumps(found, ensure_ascii=False))
-                for word, found in sorted((recordings or {}).items())
-            ),
-        )
+            count += 1
+        for found in pronunciations():
+            for position, pronunciation in enumerate(found.pronunciations):
+                pronunciation_id = db.execute(
+                    """
+                    INSERT INTO pronunciation (word, upos, position, ipa, has_accents)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (
+                        found.word,
+                        found.upos,
+                        position,
+                        pronunciation["ipa"],
+                        "accents" in pronunciation,
+                    ),
+                ).lastrowid
+                db.executemany(
+                    "INSERT INTO pronunciation_accent VALUES (?, ?, ?)",
+                    (
+                        (pronunciation_id, index, accent)
+                        for index, accent in enumerate(pronunciation.get("accents", []))
+                    ),
+                )
+            _write_recordings(db, found.word, found.upos, found.recordings)
+        for word, found_recordings in sorted((recordings or {}).items()):
+            _write_recordings(db, word, None, found_recordings)
     return count
+
+
+def _write_recordings(
+    db: sqlite3.Connection, word: str, upos: Upos | None, recordings: Iterable[Recording]
+) -> None:
+    for position, recording in enumerate(recordings):
+        recording_id = db.execute(
+            """
+            INSERT INTO recording (word, upos, position, audio, mp3_url, has_tags)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (word, upos, position, recording["audio"], recording["mp3_url"], "tags" in recording),
+        ).lastrowid
+        db.executemany(
+            "INSERT INTO recording_tag VALUES (?, ?, ?)",
+            ((recording_id, index, tag) for index, tag in enumerate(recording.get("tags", []))),
+        )
 
 
 class Lexicon:
     def __init__(self, path: Path) -> None:
-        self._db = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+        self._db = sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True)
+        self._legacy = (
+            self._db.execute(
+                "SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = 'relation'"
+            ).fetchone()
+            is None
+        )
 
     def meta(self) -> dict[str, str]:
         return dict(self._db.execute("SELECT key, value FROM meta").fetchall())
@@ -133,37 +281,182 @@ class Lexicon:
         rows = self._select("WHERE lemma_lower = ?", lemma.lower())
         return sorted(rows, key=lambda r: -len(r.senses))
 
+    def incoming(self, lemma: str) -> Iterator[tuple[str, Relation]]:
+        """Stored relations pointing to a spelling, even if it has no entry."""
+        if self._legacy:
+            for row in self.rows():
+                for relation in row.relations:
+                    if relation["lemma"] == lemma:
+                        yield row.lemma_id, relation
+            return
+        for source_id, kind, note in self._db.execute(
+            """
+            SELECT source_id, kind, note FROM relation
+            WHERE target_lemma = ? ORDER BY source_id, position
+            """,
+            (lemma,),
+        ):
+            yield source_id, _relation(kind, lemma, note)
+
     def pronunciations(self, word: str) -> dict[Upos, list[Pronunciation]]:
         """By part of speech: lead is /lɛd/ as a noun, /liːd/ as a verb."""
-        found = self._db.execute(
-            "SELECT upos, pronunciations FROM pronunciation WHERE word = ?", (word,)
-        )
-        return {cast(Upos, upos): json.loads(p) for upos, p in found if p != "[]"}
+        if self._legacy:
+            found = self._db.execute(
+                "SELECT upos, pronunciations FROM pronunciation WHERE word = ?", (word,)
+            )
+            return {cast(Upos, upos): json.loads(value) for upos, value in found if value != "[]"}
+        result: dict[Upos, list[Pronunciation]] = {}
+        for upos, id_, ipa, has_accents in self._db.execute(
+            "SELECT upos, id, ipa, has_accents FROM pronunciation "
+            "WHERE word = ? ORDER BY upos, position",
+            (word,),
+        ):
+            pronunciation: Pronunciation = {"ipa": ipa}
+            if has_accents:
+                pronunciation["accents"] = [
+                    cast(Accent, accent)
+                    for (accent,) in self._db.execute(
+                        "SELECT accent FROM pronunciation_accent "
+                        "WHERE pronunciation_id = ? ORDER BY position",
+                        (id_,),
+                    )
+                ]
+            result.setdefault(cast(Upos, upos), []).append(pronunciation)
+        return result
 
     def recordings(self, word: str) -> dict[Upos, list[Recording]]:
-        found = self._db.execute(
-            "SELECT upos, recordings FROM pronunciation WHERE word = ?", (word,)
-        )
-        return {cast(Upos, upos): json.loads(r) for upos, r in found if r != "[]"}
+        if self._legacy:
+            found = self._db.execute(
+                "SELECT upos, recordings FROM pronunciation WHERE word = ?", (word,)
+            )
+            return {cast(Upos, upos): json.loads(value) for upos, value in found if value != "[]"}
+        result: dict[Upos, list[Recording]] = {}
+        for upos, recording in self._recordings(word, commons=False):
+            result.setdefault(cast(Upos, upos), []).append(recording)
+        return result
 
     def word_recordings(self, word: str) -> list[Recording]:
         """Commons' recordings of the spelling, whatever its part of speech."""
-        found = self._db.execute("SELECT recordings FROM recording WHERE word = ?", (word,))
-        row = found.fetchone()
-        return cast(list[Recording], json.loads(row[0])) if row else []
+        if self._legacy:
+            row = self._db.execute(
+                "SELECT recordings FROM recording WHERE word = ?", (word,)
+            ).fetchone()
+            return cast(list[Recording], json.loads(row[0])) if row else []
+        return [recording for _, recording in self._recordings(word, commons=True)]
+
+    def _recordings(self, word: str, *, commons: bool) -> Iterator[tuple[Upos | None, Recording]]:
+        condition = "IS NULL" if commons else "IS NOT NULL"
+        for upos, id_, audio, mp3_url, has_tags in self._db.execute(
+            f"""
+            SELECT upos, id, audio, mp3_url, has_tags FROM recording
+            WHERE word = ? AND upos {condition} ORDER BY upos, position
+            """,
+            (word,),
+        ):
+            recording: Recording = {"audio": audio, "mp3_url": mp3_url}
+            if has_tags:
+                recording["tags"] = [
+                    tag
+                    for (tag,) in self._db.execute(
+                        "SELECT tag FROM recording_tag WHERE recording_id = ? ORDER BY position",
+                        (id_,),
+                    )
+                ]
+            yield upos, recording
 
     def rows(self) -> Iterator[Row]:
         """Every entry, by lemma_id."""
         return self._select("ORDER BY lemma_id")
 
     def _select(self, where: str, *values: str) -> Iterator[Row]:
-        query = f"SELECT lemma_id, lemma, upos, senses, relations, paradigms FROM entry {where}"
-        for lemma_id, lemma, upos, senses, relations, paradigms in self._db.execute(query, values):
+        if self._legacy:
+            query = f"SELECT lemma_id, lemma, upos, senses, relations, paradigms FROM entry {where}"
+            for lemma_id, lemma, upos, senses, relations, paradigms in self._db.execute(
+                query, values
+            ):
+                yield Row(
+                    lemma_id,
+                    lemma,
+                    upos,
+                    json.loads(senses),
+                    json.loads(relations),
+                    json.loads(paradigms),
+                )
+            return
+        for lemma_id, lemma, upos in self._db.execute(
+            f"SELECT lemma_id, lemma, upos FROM entry {where}", values
+        ):
             yield Row(
                 lemma_id,
                 lemma,
-                cast(Upos, upos),
-                cast(list[Sense], json.loads(senses)),
-                cast(list[Relation], json.loads(relations)),
-                cast(list[Paradigm], json.loads(paradigms)),
+                upos,
+                list(self._senses(lemma_id)),
+                [
+                    _relation(kind, target, note)
+                    for kind, target, note in self._db.execute(
+                        "SELECT kind, target_lemma, note FROM relation "
+                        "WHERE source_id = ? ORDER BY position",
+                        (lemma_id,),
+                    )
+                ],
+                list(self._paradigms(lemma_id)),
             )
+
+    def _senses(self, lemma_id: str) -> Iterator[Sense]:
+        for id_, gloss, has_when, has_examples in self._db.execute(
+            "SELECT id, gloss, has_when, has_examples FROM sense "
+            "WHERE lemma_id = ? ORDER BY position",
+            (lemma_id,),
+        ):
+            sense: Sense = {
+                "gloss": gloss,
+                "tags": [
+                    tag
+                    for (tag,) in self._db.execute(
+                        "SELECT tag FROM sense_tag WHERE sense_id = ? ORDER BY position", (id_,)
+                    )
+                ],
+            }
+            if has_when:
+                sense["when"] = [
+                    cast(Feats, json.loads(features))
+                    for (features,) in self._db.execute(
+                        "SELECT features FROM sense_when WHERE sense_id = ? ORDER BY position",
+                        (id_,),
+                    )
+                ]
+            if has_examples:
+                examples: list[Example] = []
+                for text, translation in self._db.execute(
+                    "SELECT text, translation FROM example WHERE sense_id = ? ORDER BY position",
+                    (id_,),
+                ):
+                    example: Example = {"text": text}
+                    if translation is not None:
+                        example["translation"] = translation
+                    examples.append(example)
+                sense["examples"] = examples
+            yield sense
+
+    def _paradigms(self, lemma_id: str) -> Iterator[Paradigm]:
+        for id_, homonym in self._db.execute(
+            "SELECT id, homonym FROM paradigm WHERE lemma_id = ? ORDER BY position", (lemma_id,)
+        ):
+            forms: list[Form] = [
+                {"form": form, "xpos": xpos, "feats": json.loads(features)}
+                for form, xpos, features in self._db.execute(
+                    """
+                    SELECT form, xpos, features FROM paradigm_form
+                    WHERE paradigm_id = ? ORDER BY position
+                    """,
+                    (id_,),
+                )
+            ]
+            yield {"homonym": homonym, "forms": forms}
+
+
+def _relation(kind: RelationType, lemma: str, note: str | None) -> Relation:
+    result: Relation = {"type": kind, "lemma": lemma}
+    if note is not None:
+        result["note"] = note
+    return result

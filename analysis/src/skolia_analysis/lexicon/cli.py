@@ -22,7 +22,7 @@ def lookup_main() -> None:
     parser.add_argument(
         "--incoming",
         action="store_true",
-        help="also scan the local lexicon for relations pointing to this lemma",
+        help="also show relations pointing to this lemma",
     )
     args = parser.parse_args()
     lemma: str = args.lemma
@@ -34,10 +34,8 @@ def lookup_main() -> None:
         }
         if args.incoming:
             result["incoming"] = [
-                {"from": row.lemma_id, "relation": relation}
-                for row in lexicon.rows()
-                for relation in row.relations
-                if relation["lemma"] == lemma
+                {"from": source_id, "relation": relation}
+                for source_id, relation in lexicon.incoming(lemma)
             ]
     except sqlite3.Error as error:
         parser.exit(1, f"{parser.prog}: {args.db}: {error}\n")

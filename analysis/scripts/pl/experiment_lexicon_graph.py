@@ -37,17 +37,31 @@ type Evidence = tuple[str, str, str, str, str, str]
 
 
 def aspect_evidence(lexicon: sqlite3.Connection) -> Iterator[Evidence]:
-    for headword, relations in lexicon.execute(
-        "SELECT lemma, relations FROM entry WHERE upos = 'VERB' AND relations != '[]'"
-    ):
-        for relation in json.loads(relations):
-            if relation["type"] != "aspect-partner":
-                continue
-            partner = relation["lemma"]
-            if relation.get("note") == "perfective":
-                yield headword, partner, "aspect-partner", headword, "forms", ""
-            elif relation.get("note") == "imperfective":
-                yield partner, headword, "aspect-partner", headword, "forms", ""
+    normalized = lexicon.execute(
+        "SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = 'relation'"
+    ).fetchone()
+    if normalized:
+        assertions = lexicon.execute(
+            """
+            SELECT entry.lemma, relation.target_lemma, relation.note
+            FROM relation JOIN entry ON entry.lemma_id = relation.source_id
+            WHERE entry.upos = 'VERB' AND relation.kind = 'aspect-partner'
+            """
+        )
+    else:
+        assertions = lexicon.execute(
+            """
+            SELECT entry.lemma, json_extract(assertion.value, '$.lemma'),
+                json_extract(assertion.value, '$.note')
+            FROM entry, json_each(entry.relations) AS assertion
+            WHERE entry.upos = 'VERB' AND json_extract(assertion.value, '$.type') = 'aspect-partner'
+            """
+        )
+    for headword, partner, note in assertions:
+        if note == "perfective":
+            yield headword, partner, "aspect-partner", headword, "forms", ""
+        elif note == "imperfective":
+            yield partner, headword, "aspect-partner", headword, "forms", ""
 
 
 def derivative_evidence(extract: Path) -> Iterator[Evidence]:

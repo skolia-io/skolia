@@ -270,3 +270,49 @@ def test_cards_lexicon_has_pronunciations_compact_paradigms_and_feature_rows(
         (1, "Case", "Acc"),
         (1, "Number", "Sing"),
     ]
+
+
+def test_normalized_lexicon_preserves_nested_values_and_incoming_links(tmp_path: Path) -> None:
+    path = tmp_path / "lexicon.sqlite"
+    row = store.Row(
+        "fr:finir:VERB",
+        "finir",
+        "VERB",
+        [
+            {
+                "gloss": "to finish",
+                "tags": ["transitive", "formal"],
+                "when": [{"VerbForm": "Inf"}, {"Number": "Sing"}],
+                "examples": [{"text": "finir le travail", "translation": "finish the work"}],
+            },
+            {"gloss": "to end", "tags": [], "examples": []},
+        ],
+        [{"type": "derived-from", "lemma": "missing"}],
+        [
+            {
+                "homonym": "",
+                "forms": [
+                    {"form": "finis", "xpos": "", "feats": {"Number": "Sing"}},
+                    {"form": "finissons", "xpos": "", "feats": {"Number": "Plur"}},
+                ],
+            }
+        ],
+    )
+    said: list[Pronunciation] = [{"ipa": "fi.niʁ", "accents": []}]
+    heard: list[Recording] = [
+        {"audio": "fr-finir.ogg", "mp3_url": "https://example.org/a", "tags": ["France"]}
+    ]
+    store.write(
+        path,
+        [row],
+        {},
+        lambda: [store.PronunciationRow("finir", "VERB", said, heard)],
+        {"finir": heard},
+    )
+    lexicon = store.Lexicon(path)
+    assert lexicon.get(row.lemma_id) == row
+    assert lexicon.pronunciations("finir") == {"VERB": said}
+    assert lexicon.recordings("finir") == {"VERB": heard}
+    assert lexicon.word_recordings("finir") == heard
+    assert lexicon.by_lemma("missing") == []
+    assert list(lexicon.incoming("missing")) == [(row.lemma_id, row.relations[0])]
