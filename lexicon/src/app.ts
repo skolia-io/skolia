@@ -1,18 +1,14 @@
-// The lexicon's public API, under /v1: entries by id or spelling, and each language's
-// lexicon's version and credits. Anyone can read it, from any origin. Every response says
-// its licence (LICENSE_LINK, and each entry's license and attribution). A response is
-// the version's it was made from, and versions don't change, so each is cached at the edge
-// under the versions it read and sent with them as its ETag.
 import { Hono, type Context, type MiddlewareHandler } from "hono";
+import { etag } from "hono/etag";
 import { cors } from "hono/cors";
 import { HTTPException } from "hono/http-exception";
-import { langOf, type FeatureSets, type Lang, type LemmaId } from "@skolia/shared/api";
+import { langOf, type Lang } from "@skolia/shared/api";
 import type { Entry } from "@skolia/shared/schema";
 import * as schemas from "@skolia/shared/schemas";
 import { badRequest, describe, json, responses, scalarPage, validator } from "@skolia/util/openapi";
 import { log } from "@skolia/util/log";
 import { LICENSE, LICENSE_LINK, attribution, sources, wiktionaryUrl } from "./licence.ts";
-import type { Found, Incoming, Lexicon, ResponseCache } from "./ports.ts";
+import type { Found, Incoming, Lexicon } from "./ports.ts";
 import * as api from "./schemas.ts";
 import spec from "../openapi.json" with { type: "json" };
 
@@ -20,23 +16,26 @@ const logger = log("lexicon");
 
 export type Deps = {
   readonly lexicon: Lexicon;
-  readonly cache: ResponseCache | null;
   /** Whether each response is checked against the spec (openapi.ts responses) */
   readonly checkResponses?: boolean;
 };
 
-/** The version each language's lexicon served when the request came, null before one's loaded */
-type Versions = ReadonlyMap<Lang, string | null>;
+type Env = { Variables: { version: string } };
 
-type Env = { Variables: { versions: Versions } };
+const NO_STORE = "no-store";
+const PINNED_CACHE_CONTROL = "public, max-age=0, must-revalidate";
+const EDGE_CACHE_CONTROL = "public, max-age=86400";
 
-/** Browsers and caches revalidate after an hour; the edge keeps a version's for a day. */
-const CACHE_CONTROL = "public, max-age=3600, s-maxage=86400";
+const conditional = etag({
+  weak: true,
+  retainedHeaders: ["Cache-Control", "ETag", "Link", "Access-Control-Allow-Origin", "Access-Control-Expose-Headers", "Vary"],
+});
 
 const TAG = "Lexicon";
 
 const NOT_FOUND = json(schemas.ApiError, "The lexicon has no such entry");
-const NOT_MODIFIED = { description: "The versions are the ones If-None-Match names" } as const;
+const VERSION_CHANGED = json(schemas.ApiError, "The requested version is no longer served");
+const NOT_MODIFIED = { description: "The representation matches If-None-Match" } as const;
 
 export type AppType = ReturnType<typeof createApp>;
 
@@ -46,28 +45,33 @@ export type { Found, Lexicon } from "./ports.ts";
 export function createApp(deps: Deps) {
   const responds = (specs: Parameters<typeof responses>[0]) => responses(specs, deps.checkResponses ?? false);
 
-  /** Reads the versions of the languages the request is about, answers from the edge cache
-   * or with 304 when it can, and caches what the route sends. */
-  function versioned(langsOf: (c: Context<Env>) => readonly Lang[]): MiddlewareHandler<Env> {
+  function versioned(langOfRequest: (c: Context<Env>) => Lang): MiddlewareHandler<Env> {
     return async (c, next) => {
-      const langs = [...new Set(langsOf(c))].sort();
-      const versions = new Map(await Promise.all(langs.map(async (lang) => [lang, await deps.lexicon.served(lang)] as const)));
-      c.set("versions", versions);
-      const etag = `"${[...versions].map(([lang, version]) => `${lang}@${version ?? "none"}`).join(",")}"`;
-      const headers = { ETag: etag, "Cache-Control": CACHE_CONTROL, Link: LICENSE_LINK };
-      if (c.req.header("If-None-Match") === etag) return c.body(null, 304, headers);
-      const key = cacheKey(c.req.url, etag);
-      const hit = deps.cache === null ? undefined : await deps.cache.match(key);
-      if (hit !== undefined) return new Response(hit.body, hit);
+      const lang = langOfRequest(c);
+      const version = await deps.lexicon.served(lang);
+      const requested = c.req.query("version");
+      const changed = () => c.json({ error: "lexicon version changed; fetch the current version and retry" }, 409);
+      if (requested !== undefined && requested !== version) return changed();
+      if (version === null) return c.json({ error: "no lexicon loaded" }, 404);
+      c.set("version", version);
       await next();
-      c.res = new Response(c.res.body, c.res);
-      for (const [name, value] of Object.entries(headers)) c.res.headers.set(name, value);
-      if (c.res.status === 200 && deps.cache !== null) await deps.cache.put(key, c.res.clone());
+      // Once loaded points at a new version, the loader can delete the previous rows.
+      // Discard any lookup that overlapped that switch before publishing it to the cache.
+      if ((await deps.lexicon.served(lang)) !== version) return changed();
+      if (requested !== undefined && (c.res.status === 200 || c.res.status === 304)) {
+        c.header("Cache-Control", PINNED_CACHE_CONTROL);
+        c.header("Cloudflare-CDN-Cache-Control", EDGE_CACHE_CONTROL);
+      }
     };
   }
 
   return new Hono<Env>()
     .basePath("/v1")
+    .use(async (c, next) => {
+      c.header("Cache-Control", NO_STORE);
+      c.header("Link", LICENSE_LINK);
+      await next();
+    })
     .use(cors({ origin: "*", allowMethods: ["GET"], exposeHeaders: ["ETag", "Link"], maxAge: 86400 }))
     .onError((error, c) => {
       if (error instanceof HTTPException && error.status < 500) return c.json({ error: error.message }, error.status);
@@ -77,59 +81,29 @@ export function createApp(deps: Deps) {
     .get("/openapi.json", describe({ hide: true }), (c) => c.json(spec, 200, { Link: LICENSE_LINK }))
     .get("/docs", describe({ hide: true }), (c) => c.html(scalarPage("skolia lexicon", "openapi.json")))
     .get(
-      "/entries",
-      describe({
-        tags: [TAG],
-        summary: "Entries by id",
-        description: "The entries the lexicon has of those asked for. Ids it doesn't have are left out.",
-      }),
-      validator("query", api.EntriesQuery, badRequest()),
-      versioned((c) => c.req.queries("id")?.map((id) => langOf(id as LemmaId)) ?? []),
-      responds({ 200: json(api.Entries, "The entries"), 304: NOT_MODIFIED }),
-      async (c) => {
-        const { id: ids, include } = c.req.valid("query");
-        const found = await Promise.all(
-          [...c.var.versions].map(async ([lang, version]) => ({
-            lang,
-            found:
-              version === null
-                ? null
-                : await deps.lexicon.byIds(
-                    lang,
-                    version,
-                    ids.filter((id) => langOf(id) === lang),
-                    include,
-                  ),
-          })),
-        );
-        return c.json(entries(found), 200);
-      },
-    )
-    .get(
       "/entries/:id",
       describe({ tags: [TAG], summary: "An entry by id" }),
       validator("param", api.IdParam, badRequest()),
       validator("query", api.IncludeQuery, badRequest()),
-      versioned((c) => [langOf(c.req.param("id") as LemmaId)]),
-      responds({ 200: json(api.Entries, "The entry, first in entries"), 304: NOT_MODIFIED, 404: NOT_FOUND }),
+      responds({ 200: json(api.Entries, "The entry, first in entries"), 304: NOT_MODIFIED, 404: NOT_FOUND, 409: VERSION_CHANGED }),
+      versioned((c) => langOf(schemas.LemmaId.parse(c.req.param("id")))),
+      conditional,
       async (c) => {
         const { id } = c.req.valid("param");
         const lang = langOf(id);
-        const version = c.var.versions.get(lang) ?? null;
-        const found = version === null ? null : await deps.lexicon.byIds(lang, version, [id], c.req.valid("query").include);
-        if (found === null || found.entries.length === 0) return c.json({ error: `no entry ${id}` }, 404);
-        return c.json(entries([{ lang, found }]), 200);
+        const found = await deps.lexicon.byIds(lang, c.var.version, [id], c.req.valid("query").include);
+        if (found.entries.length === 0) return c.json({ error: `no entry ${id}` }, 404);
+        return c.json(entries(lang, found), 200);
       },
     )
     .get(
       "/lexicons/:lang",
       describe({ tags: [TAG], summary: "A language's lexicon", description: "The version it serves, its licence and its sources." }),
       validator("param", api.LangParam, badRequest()),
-      versioned((c) => [schemas.Lang.parse(c.req.param("lang"))]),
-      responds({ 200: json(api.About, "The lexicon"), 304: NOT_MODIFIED }),
-      (c) => {
+      responds({ 200: json(api.About, "The lexicon") }),
+      async (c) => {
         const { lang } = c.req.valid("param");
-        return c.json({ lang, version: c.var.versions.get(lang) ?? null, license: LICENSE, sources: [...sources(lang)] }, 200);
+        return c.json({ lang, version: await deps.lexicon.served(lang), license: LICENSE, sources: [...sources(lang)] }, 200);
       },
     )
     .get(
@@ -141,38 +115,23 @@ export function createApp(deps: Deps) {
       }),
       validator("param", api.LemmaParam, badRequest()),
       validator("query", api.IncludeQuery, badRequest()),
-      versioned((c) => [schemas.Lang.parse(c.req.param("lang"))]),
-      responds({ 200: json(api.Entries, "The entries"), 304: NOT_MODIFIED, 404: NOT_FOUND }),
+      responds({ 200: json(api.Entries, "The entries"), 304: NOT_MODIFIED, 404: NOT_FOUND, 409: VERSION_CHANGED }),
+      versioned((c) => schemas.Lang.parse(c.req.param("lang"))),
+      conditional,
       async (c) => {
         const { lang, lemma } = c.req.valid("param");
-        const version = c.var.versions.get(lang) ?? null;
-        const found = version === null ? null : await deps.lexicon.byLemma(lang, version, lemma, c.req.valid("query").include);
-        if (found === null || found.entries.length === 0) return c.json({ error: `no entry is spelt ${lemma}` }, 404);
-        return c.json(entries([{ lang, found }]), 200);
+        const found = await deps.lexicon.byLemma(lang, c.var.version, lemma, c.req.valid("query").include);
+        if (found.entries.length === 0) return c.json({ error: `no entry is spelt ${lemma}` }, 404);
+        return c.json(entries(lang, found), 200);
       },
     );
 }
 
-/** Where the edge cache keeps a response: its path and query, the query's parameters in
- * order of name then value (a lookup's entries come by id, whatever order they're asked
- * in), under the versions it was made from. */
-function cacheKey(url: string, etag: string): Request {
-  const { pathname, searchParams } = new URL(url);
-  const query = new URLSearchParams([...searchParams].sort(([a, x], [b, y]) => (a === b ? (x < y ? -1 : x > y ? 1 : 0) : a < b ? -1 : 1)));
-  return new Request(`https://cache.lexicon.invalid/${encodeURIComponent(etag)}${pathname}?${query}`);
-}
-
-/** Each language's entries, related entries and feature sets, with their credits. */
-function entries(found: readonly { readonly lang: Lang; readonly found: Found | null }[]): api.EntriesBody {
-  const all = found.flatMap(({ lang, found }) => (found === null ? [] : [{ lang, ...found }]));
+function entries(lang: Lang, found: Found): api.EntriesBody {
   return {
-    entries: all.flatMap(({ lang, entries, incoming }) =>
-      entries.map((e) => credited(lang, e, incoming.get(schemas.LemmaId.parse(e.lemma_id)))),
-    ),
-    related: all.flatMap(({ lang, related }) => related.map((e) => credited(lang, e, undefined))),
-    featureSets: Object.fromEntries(
-      all.flatMap(({ lang, featureSets }) => (featureSets === null ? [] : [[lang, featureSets] as const])),
-    ) as Partial<Record<Lang, FeatureSets>>,
+    entries: found.entries.map((entry) => credited(lang, entry, found.incoming.get(schemas.LemmaId.parse(entry.lemma_id)))),
+    related: found.related.map((entry) => credited(lang, entry, undefined)),
+    featureSets: found.featureSets === null ? {} : { [lang]: found.featureSets },
   };
 }
 

@@ -11,6 +11,7 @@ import {
   CARD_PAGE,
   TAG_PAGE,
   isLang,
+  lemmaParam,
   type AnnotationKey,
   type ApiError,
   type Card,
@@ -32,7 +33,6 @@ import {
   type IngestOverview,
   type Lang,
   type LemmaId,
-  type Lookup,
   type NewCardInput,
   type Rating,
   type ReadingListId,
@@ -282,13 +282,24 @@ export async function deleteCard(cardId: CardId): Promise<void> {
   if (!response.ok) throw await failure(response);
 }
 
-/** The lexicon's entries for the lemmas, MAX_LOOKUP at most. */
-export async function lookUp(ids: readonly LemmaId[]): Promise<Lookup> {
-  const response = await lexicon.entries.$get({ query: { id: [...ids] } });
+export async function lexiconVersion(lang: Lang): Promise<string | null> {
+  const response = await lexicon.lexicons[":lang"].$get({ param: { lang } }, { init: { cache: "no-store", credentials: "omit" } });
   if (!response.ok) throw await failure(response);
-  // Hono's JSON type makes the entries' optional fields `| undefined`; it's the same JSON
-  const { entries, featureSets } = (await response.json()) as EntriesBody;
-  return { entries, featureSets };
+  return (await response.json()).version;
+}
+
+export class LexiconVersionChanged extends Error {}
+
+export async function lookUp(id: LemmaId, version: string): Promise<EntriesBody | null> {
+  const response: Response = await lexicon.entries[":id"].$get(
+    { param: { id: lemmaParam(id) }, query: { version } },
+    { init: { credentials: "omit" } },
+  );
+  if (response.status === 404) return null;
+  if (response.status === 409) throw new LexiconVersionChanged("The lexicon changed during lookup");
+  if (!response.ok) throw await failure(response);
+  // Hono's JSON type makes the entries' optional fields `| undefined`.
+  return (await response.json()) as EntriesBody;
 }
 
 export async function getSettings(): Promise<Settings> {

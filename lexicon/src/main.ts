@@ -7,7 +7,7 @@ import { createApp } from "./app.ts";
 import { D1Lexicon, lexiconsOf, type LexiconBindings } from "./store.ts";
 
 function serve(request: Request, env: LexiconBindings, ctx: ExecutionContext): Response | Promise<Response> {
-  return createApp({ lexicon: new D1Lexicon(lexiconsOf(env)), cache: caches.default }).fetch(request, env, ctx);
+  return createApp({ lexicon: new D1Lexicon(lexiconsOf(env), "first-primary") }).fetch(request, env, ctx);
 }
 
 export class LexiconService extends WorkerEntrypoint<LexiconBindings> {

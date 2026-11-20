@@ -8,7 +8,7 @@ import { LICENSE } from "./licence.ts";
 import { MAX_INCOMING } from "./ports.ts";
 import { QUERIES } from "./store.ts";
 import { glossed, loadLexicon, type TestEntry } from "./testing/load.ts";
-import { MemoryCache, client, env, setup, useLocal } from "./testing/local.ts";
+import { client, env, setup, useLocal } from "./testing/local.ts";
 
 useLocal();
 
@@ -24,11 +24,11 @@ const ZGOLIC: readonly TestEntry[] = [
   glossed("pl:pies:NOUN", "dog", { relations: [{ kind: "derived-from", lemma: "golić", lemma_id: "pl:golić:VERB", how: "diminutive" }] }),
 ];
 
-function lookUp(app: ReturnType<typeof setup>, ids: LemmaId[], include?: string) {
-  return client(app).entries.$get({ query: { id: ids, ...(include === undefined ? {} : { include }) } });
+function lookUp(app: ReturnType<typeof setup>, id: LemmaId, include?: string) {
+  return client(app).entries[":id"].$get({ param: { id: lemmaParam(id) }, query: { include } });
 }
 
-test("entries come from each language's loaded version, without the ids it doesn't have", async () => {
+test("an entry and its feature sets come from the loaded version", async () => {
   const app = setup();
   await loadLexicon(env, "pl", "lex/1", [glossed("pl:pies:NOUN", "dog (old)")]);
   await loadLexicon(env, "pl", "lex/1", [], [{ Case: "Nom" }, { Case: "Gen" }]);
@@ -57,14 +57,13 @@ test("entries come from each language's loaded version, without the ids it doesn
       { Case: "Dat", Number: "Sing" },
     ],
   );
-  await loadLexicon(env, "en", "lex/1", [glossed("en:dog:NOUN", "a domesticated canid")]);
-  const { entries, related, featureSets } = await body("lookup", lookUp(app, ["pl:pies:NOUN", "en:dog:NOUN", "pl:kot:NOUN"]));
-  assert.deepEqual(entries.map((e) => [e.lemma_id, e.senses[0]?.gloss]).sort(), [
-    ["en:dog:NOUN", "a domesticated canid"],
-    ["pl:pies:NOUN", "dog"],
-  ]);
+  const {
+    entries: [pies],
+    related,
+    featureSets,
+  } = await body("lookup", lookUp(app, "pl:pies:NOUN"));
+  assert.equal(pies?.senses[0]?.gloss, "dog");
   assert.deepEqual(related, []);
-  const pies = entries.find((e) => e.lemma_id === "pl:pies:NOUN");
   assert.deepEqual(pies?.pronunciations, [{ ipa: "/ˈpjɛs/" }]);
   assert.deepEqual(pies?.paradigms, [
     {
@@ -85,7 +84,7 @@ test("an entry says its licence, whom to credit and its Wiktionary page, and eve
   const app = setup();
   await loadLexicon(env, "pl", "lex/1", [glossed("pl:pies:NOUN", "dog")]);
   await loadLexicon(env, "en", "lex/1", [glossed("en:dog:NOUN", "a domesticated canid")]);
-  const response = await lookUp(app, ["pl:pies:NOUN", "en:dog:NOUN"]);
+  const response = await lookUp(app, "pl:pies:NOUN");
   assert.equal(response.headers.get("link"), '<https://creativecommons.org/licenses/by-sa/4.0/>; rel="license"');
   const { entries } = await body("lookup", Promise.resolve(response));
   const pies = entries.find((e) => e.lemma_id === "pl:pies:NOUN");
@@ -98,7 +97,9 @@ test("an entry says its licence, whom to credit and its Wiktionary page, and eve
       ["Morfeusz 2 and the Grammatical Dictionary of Polish (SGJP)", "http://morfeusz.sgjp.pl", "BSD-2-Clause", "forms"],
     ],
   );
-  const dog = entries.find((e) => e.lemma_id === "en:dog:NOUN");
+  const {
+    entries: [dog],
+  } = await body("English lookup", lookUp(app, "en:dog:NOUN"));
   assert.deepEqual(
     dog?.attribution.map((a) => [a.author, a.url, a.via]),
     [["Wiktionary contributors", "https://en.wiktionary.org/wiki/dog#English", "https://kaikki.org"]],
@@ -115,28 +116,18 @@ test("an entry says its licence, whom to credit and its Wiktionary page, and eve
 test("a language with no lexicon loaded has no version and no entries", async () => {
   const app = setup();
   assert.equal((await body("about", client(app).lexicons[":lang"].$get({ param: { lang: "fr" } }))).version, null);
-  assert.deepEqual((await body("lookup", lookUp(app, ["fr:chien:NOUN"]))).entries, []);
-});
-
-test("a lookup takes 1 to 100 ids, and refuses ids that aren't one", async () => {
-  const app = setup();
-  const many = (n: number) => Array.from({ length: n }, (_, i): LemmaId => `pl:w${i}:NOUN`);
-  await expectStatus("100 ids", lookUp(app, many(100)), 200);
-  await expectStatus("101 ids", lookUp(app, many(101)), 400);
-  await expectStatus("no ids", client(app).entries.$get({ query: { id: [] } }), 400);
-  assert.equal((await app.request("http://lexicon.test/v1/entries?id=pies")).status, 400);
-  await expectStatus("unknown include", lookUp(app, ["pl:pies:NOUN"], "everything"), 400);
+  await expectStatus("no lexicon", lookUp(app, "fr:chien:NOUN"), 404);
 });
 
 test("an entry is served whole, as the lexicon built it; include=related brings what its relations point at", async () => {
   const app = setup();
   await loadLexicon(env, "pl", "lex/1", ZGOLIC);
-  const plain = await body("lookup", lookUp(app, ["pl:zgolić:VERB"]));
+  const plain = await body("lookup", lookUp(app, "pl:zgolić:VERB"));
   const [zgolic] = plain.entries;
   assert.deepEqual(zgolic?.grammar, { Aspect: "Perf" });
   assert.deepEqual(zgolic?.relations, ZGOLIC[0]?.relations);
   assert.deepEqual(plain.related, []);
-  const related = await body("zgolić, related", lookUp(app, ["pl:zgolić:VERB"], "related"));
+  const related = await body("zgolić, related", lookUp(app, "pl:zgolić:VERB", "related"));
   assert.deepEqual(
     related.related.map((e) => e.lemma_id),
     ["pl:golić:VERB"],
@@ -170,7 +161,7 @@ test(`at most ${MAX_INCOMING} incoming relations come, by source id, and the ent
       }),
   );
   await loadLexicon(env, "pl", "lex/1", [glossed("pl:golić:VERB", "to shave"), ...sources]);
-  const { entries } = await body("golić", lookUp(app, ["pl:golić:VERB"], "incoming"));
+  const { entries } = await body("golić", lookUp(app, "pl:golić:VERB", "incoming"));
   const incoming = entries[0]?.incoming ?? [];
   assert.equal(incoming.length, MAX_INCOMING);
   assert.equal(incoming[0]?.lemma_id, "pl:w000:NOUN");
@@ -210,42 +201,41 @@ test("entries by spelling are the lemma's, one per part of speech; 404 for a spe
   );
 });
 
-test("a response's ETag is the versions it read: the same versions are 304, a new one isn't", async () => {
+test("discovery and misses stay fresh while successful pinned lookups can be cached by Cloudflare", async () => {
   const app = setup();
-  await loadLexicon(env, "pl", "lex/1", [glossed("pl:pies:NOUN", "dog")]);
-  const first = await lookUp(app, ["pl:pies:NOUN"]);
-  const etag = first.headers.get("etag") ?? "";
-  assert.equal(etag, '"pl@lex/1"');
-  assert.match(first.headers.get("cache-control") ?? "", /public/);
-  const again = await client(app, { "If-None-Match": etag }).entries.$get({ query: { id: ["pl:pies:NOUN"] } });
-  assert.equal(again.status, 304);
-  await loadLexicon(env, "pl", "lex/2", [glossed("pl:pies:NOUN", "hound")]);
-  const changed = await client(app, { "If-None-Match": etag }).entries.$get({ query: { id: ["pl:pies:NOUN"] } });
-  assert.equal(changed.status, 200);
-  assert.equal(changed.headers.get("etag"), '"pl@lex/2"');
-});
+  const id: LemmaId = "pl:pies:NOUN";
+  const version = "lex/1";
+  const about = () => client(app).lexicons[":lang"].$get({ param: { lang: "pl" } });
+  const pinned = (version: string, headers?: Record<string, string>) =>
+    client(app, headers).entries[":id"].$get({ param: { id: lemmaParam(id) }, query: { version } });
+  await loadLexicon(env, "pl", version, [glossed(id, "dog")]);
 
-test("the edge cache keeps a response under its versions and query, in any order", async () => {
-  const cache = new MemoryCache();
-  const app = setup(cache);
-  await loadLexicon(env, "pl", "lex/1", [glossed("pl:pies:NOUN", "dog"), glossed("pl:kot:NOUN", "cat")]);
-  await body("first", lookUp(app, ["pl:pies:NOUN", "pl:kot:NOUN"]));
-  assert.equal(cache.kept.size, 1);
-  // Rows of a loaded version don't change; this one is changed to see the cache answer
-  await env.LEXICON_PL.prepare("UPDATE entry SET data = json_set(data, '$.senses', json('[]')) WHERE lemma_id = 'pl:pies:NOUN'").run();
-  const cached = await body("ids the other way round", lookUp(app, ["pl:kot:NOUN", "pl:pies:NOUN"]));
-  assert.deepEqual(
-    cached.entries.map((e) => e.senses[0]?.gloss),
-    ["cat", "dog"],
-  );
-  assert.equal(cache.kept.size, 1);
-  await loadLexicon(env, "pl", "lex/2", [glossed("pl:pies:NOUN", "hound")]);
-  const fresh = await body("new version", lookUp(app, ["pl:pies:NOUN", "pl:kot:NOUN"]));
-  assert.deepEqual(
-    fresh.entries.map((e) => e.senses[0]?.gloss),
-    ["hound"],
-  );
-  assert.equal(cache.kept.size, 2);
+  assert.equal((await about()).headers.get("cache-control"), "no-store");
+  assert.equal((await lookUp(app, id)).headers.get("cache-control"), "no-store");
+  const missing = await client(app).entries[":id"].$get({ param: { id: lemmaParam("pl:kot:NOUN") }, query: { version } });
+  assert.equal(missing.status, 404);
+  assert.equal(missing.headers.get("cache-control"), "no-store");
+
+  const first = await pinned(version);
+  const etag = first.headers.get("etag");
+  assert.ok(etag);
+  assert.equal(first.headers.get("cache-control"), "public, max-age=0, must-revalidate");
+  assert.equal(first.headers.get("cloudflare-cdn-cache-control"), "public, max-age=86400");
+  const again = await pinned(version, { "If-None-Match": etag });
+  assert.equal(again.headers.get("etag"), etag);
+  assert.equal(again.headers.get("access-control-allow-origin"), "*");
+  assert.equal(again.headers.get("link"), first.headers.get("link"));
+  assert.equal(again.status, 304);
+
+  await loadLexicon(env, "pl", "lex/2", [glossed(id, "hound")]);
+  assert.equal((await body("current version", about())).version, "lex/2");
+  const stale = await pinned(version);
+  assert.equal(stale.headers.get("cache-control"), "no-store");
+  assert.equal(stale.status, 409);
+  const changed = await pinned("lex/2", { "If-None-Match": etag });
+  assert.equal(changed.status, 200);
+  assert.notEqual(changed.headers.get("etag"), etag);
+  assert.equal((await body("updated entry", Promise.resolve(changed))).entries[0]?.senses[0]?.gloss, "hound");
 });
 
 test("anyone can read it, from any origin", async () => {

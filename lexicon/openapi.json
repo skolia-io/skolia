@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "skolia lexicon",
-    "description": "Dictionary entries for the languages skolia reads (English, French, Polish): senses, relations between words, pronunciations and inflected forms, mostly from Wiktionary. No sign-in. The content is CC BY-SA 4.0: each entry says whom to credit (attribution) and links its Wiktionary page (sourceUrl). A lexicon's version changes when a new build is loaded; responses carry the versions they were made from as their ETag. An entry's id is {lang}:{lemma}:{upos}, a lemma with a / percent-encoded in a path (pl:i%2Flub:CCONJ).",
+    "description": "Dictionary entries for the languages skolia reads (English, French, Polish): senses, relations between words, pronunciations and inflected forms, mostly from Wiktionary. No sign-in. The content is CC BY-SA 4.0: each entry says whom to credit (attribution) and links its Wiktionary page (sourceUrl). A lexicon's version changes when a new build is loaded. Pass that version as a lookup query parameter to enable edge caching. An entry's id is {lang}:{lemma}:{upos}, a lemma with a / percent-encoded in a path (pl:i%2Flub:CCONJ).",
     "version": "v1",
     "license": {
       "name": "CC BY-SA 4.0",
@@ -1591,71 +1591,6 @@
     }
   },
   "paths": {
-    "/v1/entries": {
-      "get": {
-        "operationId": "getV1Entries",
-        "tags": ["Lexicon"],
-        "summary": "Entries by id",
-        "description": "The entries the lexicon has of those asked for. Ids it doesn't have are left out.",
-        "responses": {
-          "200": {
-            "description": "The entries",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Entries"
-                }
-              }
-            }
-          },
-          "304": {
-            "description": "The versions are the ones If-None-Match names"
-          },
-          "400": {
-            "description": "The request doesn't fit its schema",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        },
-        "parameters": [
-          {
-            "in": "query",
-            "name": "id",
-            "schema": {
-              "anyOf": [
-                {
-                  "$ref": "#/components/schemas/LemmaId"
-                },
-                {
-                  "minItems": 1,
-                  "maxItems": 100,
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/LemmaId"
-                  }
-                }
-              ]
-            },
-            "required": true,
-            "description": "An entry's id, {lang}:{lemma}:{upos}; repeat it for up to 100"
-          },
-          {
-            "in": "query",
-            "name": "include",
-            "schema": {
-              "type": "string",
-              "pattern": "^(related|incoming)(,(related|incoming))*$"
-            },
-            "description": "What to bring besides the entries, comma-separated: related, incoming"
-          }
-        ]
-      }
-    },
     "/v1/entries/{id}": {
       "get": {
         "operationId": "getV1EntriesById",
@@ -1673,7 +1608,7 @@
             }
           },
           "304": {
-            "description": "The versions are the ones If-None-Match names"
+            "description": "The representation matches If-None-Match"
           },
           "400": {
             "description": "The request doesn't fit its schema",
@@ -1687,6 +1622,16 @@
           },
           "404": {
             "description": "The lexicon has no such entry",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The requested version is no longer served",
             "content": {
               "application/json": {
                 "schema": {
@@ -1714,6 +1659,15 @@
               "pattern": "^(related|incoming)(,(related|incoming))*$"
             },
             "description": "What to bring besides the entries, comma-separated: related, incoming"
+          },
+          {
+            "in": "query",
+            "name": "version",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "Pin the lookup to the version from GET /v1/lexicons/{lang} to enable edge caching"
           }
         ]
       }
@@ -1734,9 +1688,6 @@
                 }
               }
             }
-          },
-          "304": {
-            "description": "The versions are the ones If-None-Match names"
           },
           "400": {
             "description": "The request doesn't fit its schema",
@@ -1779,7 +1730,7 @@
             }
           },
           "304": {
-            "description": "The versions are the ones If-None-Match names"
+            "description": "The representation matches If-None-Match"
           },
           "400": {
             "description": "The request doesn't fit its schema",
@@ -1793,6 +1744,16 @@
           },
           "404": {
             "description": "The lexicon has no such entry",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The requested version is no longer served",
             "content": {
               "application/json": {
                 "schema": {
@@ -1829,6 +1790,15 @@
               "pattern": "^(related|incoming)(,(related|incoming))*$"
             },
             "description": "What to bring besides the entries, comma-separated: related, incoming"
+          },
+          {
+            "in": "query",
+            "name": "version",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "Pin the lookup to the version from GET /v1/lexicons/{lang} to enable edge caching"
           }
         ]
       }

@@ -1,4 +1,4 @@
-// What the app needs of the lexicon and the edge cache, without Workers types, so the
+// What the app needs of the lexicon, without Workers types, so the
 // reader and the API can import the app's types (AppType) and the RPC's.
 import type { FeatureSets, Lang, LemmaId } from "@skolia/shared/api";
 import type { Entry, Relation } from "@skolia/shared/schema";
@@ -37,10 +37,4 @@ export interface Lexicon {
   byIds(lang: Lang, version: string, ids: readonly LemmaId[], include: Include): Promise<Found>;
   /** The entries spelt lemma, one per part of speech, MAX_HOMOGRAPHS at most, in version. */
   byLemma(lang: Lang, version: string, lemma: string, include: Include): Promise<Found>;
-}
-
-/** The edge cache (caches.default), or null where nothing's cached. */
-export interface ResponseCache {
-  match(key: Request): Promise<Response | undefined>;
-  put(key: Request, response: Response): Promise<void>;
 }

@@ -8,12 +8,14 @@ import {
   keepPreviousData,
   mutationOptions,
   skipToken,
+  useQueryClient,
+  type QueryClient,
   type InfiniteData,
 } from "@tanstack/svelte-query";
-import type { Card, CardId, CardKey, Lang, Paginated } from "@skolia/shared/api";
+import { langOf, type Card, type CardId, type CardKey, type Lang, type LemmaId, type Paginated } from "@skolia/shared/api";
 import type { Entry } from "@skolia/shared/schema";
 import type { Cursor } from "@skolia/shared/page";
-import { deleteCard, listCards, lookUp } from "./api.ts";
+import { deleteCard, lexiconVersion, LexiconVersionChanged, listCards, lookUp } from "./api.ts";
 import { cardsChanged, userQuery } from "./queries.ts";
 
 const LISTS_KEY = ["me", "cards", "list"] as const;
@@ -21,23 +23,49 @@ const LISTS_KEY = ["me", "cards", "list"] as const;
 /** A page of cards, and the lexicon's entries for their lemmas, by lemma id. */
 export type CardPage = Paginated<Card, CardKey> & { readonly entries: ReadonlyMap<string, Entry> };
 
-async function cardPage(lang: Lang, after: Cursor<CardKey> | undefined): Promise<CardPage> {
+async function cardEntries(client: QueryClient, ids: readonly LemmaId[]) {
+  const langs = [...new Set(ids.map(langOf))];
+  const versions = new Map(await Promise.all(langs.map(async (lang) => [lang, await lexiconVersion(lang)] as const)));
+  return await Promise.all(
+    ids.map((id) => {
+      const version = versions.get(langOf(id));
+      if (version == null) return null;
+      return client.fetchQuery({
+        queryKey: ["lexicon", "entry", id, version],
+        queryFn: () => lookUp(id, version),
+        // The version is discovered fresh for each page. Missing entries also belong to that version.
+        staleTime: Infinity,
+        retry: false,
+      });
+    }),
+  );
+}
+
+async function cardPage(client: QueryClient, lang: Lang, after: Cursor<CardKey> | undefined): Promise<CardPage> {
   const page = await listCards(lang, after);
   const ids = [...new Set(page.items.map((c) => c.lemmaId))];
-  const found = ids.length === 0 ? [] : (await lookUp(ids)).entries;
-  return { ...page, entries: new Map(found.map((entry) => [entry.lemma_id, entry])) };
+  const found = await cardEntries(client, ids).catch((error: unknown) => {
+    if (error instanceof LexiconVersionChanged) return cardEntries(client, ids);
+    throw error;
+  });
+  const entries = found.flatMap((lookup) => (lookup === null ? [] : lookup.entries));
+  return { ...page, entries: new Map(entries.map((entry) => [entry.lemma_id, entry])) };
 }
 
 /** A language's cards, newest first. Another language's list shows the last one's until
  * it comes. */
 export function createCardList(lang: () => Lang | null) {
+  const client = useQueryClient();
   const user = createQuery(() => userQuery);
   return createInfiniteQuery(() => {
     const selected = lang();
     return {
       enabled: user.data != null,
       queryKey: [...LISTS_KEY, selected] as const,
-      queryFn: selected === null ? skipToken : ({ pageParam }: { pageParam: Cursor<CardKey> | undefined }) => cardPage(selected, pageParam),
+      queryFn:
+        selected === null
+          ? skipToken
+          : ({ pageParam }: { pageParam: Cursor<CardKey> | undefined }) => cardPage(client, selected, pageParam),
       initialPageParam: undefined as Cursor<CardKey> | undefined,
       getNextPageParam: (page: CardPage) => page.next ?? undefined,
       placeholderData: keepPreviousData,

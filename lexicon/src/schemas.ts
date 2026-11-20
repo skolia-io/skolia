@@ -1,7 +1,6 @@
 // The lexicon API's requests and responses. Entries are what the API's cards show and a
 // bundle carries (@skolia/shared/schema Entry), with what a reuser needs to credit them.
 import * as z from "zod";
-import { MAX_LOOKUP } from "@skolia/shared/api";
 import * as schemas from "@skolia/shared/schemas";
 import { MAX_INCOMING } from "./ports.ts";
 
@@ -77,15 +76,10 @@ export const Include = z
   })
   .describe("What to bring besides the entries, comma-separated: related, incoming");
 
-export const EntriesQuery = z.object({
-  id: z
-    .union([schemas.LemmaId, z.array(schemas.LemmaId).min(1).max(MAX_LOOKUP)])
-    .transform((ids) => (Array.isArray(ids) ? ids : [ids]))
-    .describe(`An entry's id, {lang}:{lemma}:{upos}; repeat it for up to ${MAX_LOOKUP}`),
+export const IncludeQuery = z.object({
   include: Include,
+  version: z.string().min(1).optional().describe("Pin the lookup to the version from GET /v1/lexicons/{lang} to enable edge caching"),
 });
-
-export const IncludeQuery = z.object({ include: Include });
 
 export const LangParam = z.object({ lang: schemas.Lang });
 

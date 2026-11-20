@@ -625,7 +625,7 @@ export async function serve(
   { signedIn, annotations = narration }: { signedIn: boolean; annotations?: readonly Annotation[] },
 ): Promise<string[]> {
   const app = createApp(deps(signedIn, annotations));
-  const lexiconApp = createLexiconApp({ lexicon, cache: null, checkResponses: true });
+  const lexiconApp = createLexiconApp({ lexicon, checkResponses: true });
   const failed: string[] = [];
   await page.clock.setFixedTime(NOW);
   // The review's shuffle (lib/review.ts) keeps the cards in the order the API sends them
