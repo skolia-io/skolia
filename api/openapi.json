@@ -255,6 +255,13 @@
                   }
                 ]
               },
+              "related": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/LexiconEntry"
+                },
+                "description": "The targets of the entry's relations when it has no senses of its own, which take their meaning from them"
+              },
               "kind": {
                 "type": "string",
                 "enum": [
@@ -274,6 +281,7 @@
               "isNew",
               "dueAt",
               "entry",
+              "related",
               "kind",
               "data"
             ],
@@ -303,6 +311,13 @@
                     "type": "null"
                   }
                 ]
+              },
+              "related": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/LexiconEntry"
+                },
+                "description": "The targets of the entry's relations when it has no senses of its own, which take their meaning from them"
               },
               "kind": {
                 "type": "string",
@@ -373,6 +388,7 @@
               "isNew",
               "dueAt",
               "entry",
+              "related",
               "kind",
               "data"
             ],
@@ -877,6 +893,17 @@
           },
           "note": {
             "type": "string"
+          },
+          "lemma_id": {
+            "type": "string"
+          },
+          "sense_indexes": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
           }
         },
         "required": [
@@ -1483,7 +1510,8 @@
           "entries",
           "featureSets"
         ],
-        "additionalProperties": false
+        "additionalProperties": false,
+        "description": "The entries asked for that the lexicon has, and the targets of the relations of those with no senses of their own, which take their meaning from them (zgolić from golić)."
       },
       "IngestOverview": {
         "type": "object",

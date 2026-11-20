@@ -95,7 +95,7 @@ jobs:
       - if: steps.preview.outputs.state == 'open'
         run: .github/uninterruptible.sh just deploy-infra ${{ inputs.env }}
 
-  # The lexicon for cards, built with Nix from the lexicon and venv build-ingest-image put
+  # The API's D1 lexicon, built with Nix from the lexicon and venv build-ingest-image put
   # in Cachix (just load-lexicon), so after it when it runs
   load-lexicon:
     needs: [deploy-infra, build-ingest-image]

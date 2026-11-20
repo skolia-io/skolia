@@ -27,6 +27,7 @@ import {
   type Timestamp,
   type User,
 } from "@skolia/shared/api";
+import { lenders } from "@skolia/shared/lexicon";
 import type { Clock } from "../ports/index.ts";
 import type { DocumentLookup } from "../ports/documents.ts";
 import type { Lexicon } from "../ports/lexicon.ts";
@@ -144,7 +145,7 @@ function stored(time: string): Timestamp {
 /** The cards with their lexicon entries, and the feature sets the entries' paradigms use,
  * looked up MAX_LOOKUP lemmas at a time. */
 async function withEntries(lexicon: Lexicon, lang: Lang, cards: ScheduledCard[]): Promise<Pick<Due, "cards" | "featureSets">> {
-  const entries = new Map<LemmaId, LexiconEntry>();
+  const entries = new Map<string, LexiconEntry>();
   const featureSets: FeatureSets = {};
   const ids = [...new Set(cards.map((card) => card.lemmaId))];
   for (let i = 0; i < ids.length; i += MAX_LOOKUP) {
@@ -152,5 +153,11 @@ async function withEntries(lexicon: Lexicon, lang: Lang, cards: ScheduledCard[])
     for (const entry of found.entries) entries.set(entry.lemmaId, entry);
     Object.assign(featureSets, found.featureSets[lang]);
   }
-  return { cards: cards.map((card) => ({ ...card, entry: entries.get(card.lemmaId) ?? null })), featureSets };
+  return {
+    cards: cards.map((card) => {
+      const entry = entries.get(card.lemmaId) ?? null;
+      return { ...card, entry, related: entry === null ? [] : lenders(entry, (id) => entries.get(id)) };
+    }),
+    featureSets,
+  };
 }

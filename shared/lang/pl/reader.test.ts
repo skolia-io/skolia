@@ -101,7 +101,7 @@ test("a word is pronounced by its text and part of speech", () => {
 
 test("the token's features pick the sense", () => {
   assert.deepEqual(
-    rankSenses(PIES, GEN_SG).map((r) => [r.sense.gloss, r.fits]),
+    rankSenses(PIES.senses, GEN_SG).map((r) => [r.sense.gloss, r.fits]),
     [
       ["dog", true],
       ["cop", false],

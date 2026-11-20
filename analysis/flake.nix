@@ -230,13 +230,14 @@
             '';
       };
 
-      # What review cards read, for the API's D1 lexicon (infra/load-lexicon.py): each entry
-      # with its lemma's pronunciations and compact paradigms. Not in the images.
-      cardsLexicon =
+      # The API's D1 lexicon as a SQLite file in D1's schema (api/lexicon-migrations), which
+      # infra/load-lexicon.py copies into D1. Not in the images.
+      d1Export =
         lang:
-        pkgs.runCommand "skolia-cards-lexicon-${lang}" { nativeBuildInputs = [ venv ]; } ''
+        pkgs.runCommand "skolia-d1-export-${lang}" { nativeBuildInputs = [ venv ]; } ''
           mkdir $out
-          skolia-build-cards ${lang} ${lexicon.${lang}}/${lang}.sqlite $out/${lang}.cards.sqlite
+          skolia-build-d1-export ${lang} ${lexicon.${lang}}/${lang}.sqlite \
+            ${../api/lexicon-migrations} $out/${lang}.d1.sqlite
         '';
 
       env =
@@ -351,8 +352,8 @@
           value = lang: lexicon.${lang};
         }
         // perLang host {
-          prefix = "cards-lexicon";
-          value = cardsLexicon;
+          prefix = "d1-export";
+          value = d1Export;
         }
         // perLang host {
           prefix = "cacheable";

@@ -15,6 +15,8 @@
     type User,
   } from "@skolia/shared/api";
   import { LANGUAGES } from "@skolia/shared/lang";
+  import { sensesOf } from "@skolia/shared/lexicon";
+  import type { Sense } from "@skolia/shared/schema";
   import { formTables, lemmaTables, type Table } from "@skolia/shared/paradigm";
   import { featureWords, UPOS_LABEL } from "@skolia/shared/ud";
   import Button from "../components/Button.svelte";
@@ -154,17 +156,23 @@
     return isLang(lang) ? lang : undefined;
   }
 
+  function sensesFor(c: DueCard): Sense[] {
+    return c.entry ? sensesOf(c.entry, (id) => c.related.find((e) => e.lemmaId === id)) : [];
+  }
+
   function glosses(c: DueCard): { gloss: string; tags: string[] }[] {
     const lang = langOf(c);
     const hidden = lang ? LANGUAGES[lang].grammarTags : new Set<string>();
-    return (c.entry?.senses ?? []).slice(0, SHOWN_SENSES).map((s) => ({ gloss: s.gloss, tags: s.tags.filter((t) => !hidden.has(t)) }));
+    return sensesFor(c)
+      .slice(0, SHOWN_SENSES)
+      .map((s) => ({ gloss: s.gloss, tags: s.tags.filter((t) => !hidden.has(t)) }));
   }
 
   /** Aspect tells apart verbs a clue can't, like pisać and napisać ("to write"). */
   const ASPECTS = new Set(["perfective", "imperfective"]);
 
   function hintOf(c: DueCard): string {
-    const first = c.entry?.senses[0];
+    const first = sensesFor(c)[0];
     return [UPOS_LABEL[c.entry?.upos ?? "X"], ...(first?.tags.filter((t) => ASPECTS.has(t)) ?? [])].join(" · ");
   }
 
@@ -215,7 +223,7 @@
 {/snippet}
 
 {#snippet prompt(c: DueCard)}
-  {@const first = c.entry?.senses[0]}
+  {@const first = sensesFor(c)[0]}
   {#if first}
     <p class="prompt">{clue(first.gloss)}</p>
     <p class="muted">{hintOf(c)}</p>

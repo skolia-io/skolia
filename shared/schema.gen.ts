@@ -176,6 +176,8 @@ export interface Relation {
   type: RelationType;
   lemma: string;
   note?: string;
+  lemma_id?: string;
+  sense_indexes?: number[];
 }
 
 export type FormRow = [string, number[]];

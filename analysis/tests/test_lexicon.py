@@ -3,7 +3,7 @@ import sqlite3
 from pathlib import Path
 
 from skolia_analysis.lang.pl.walenty.parse import parse_schema
-from skolia_analysis.lexicon import build, bundle, cards, commons, pronunciation, store
+from skolia_analysis.lexicon import build, bundle, commons, d1_export, pronunciation, store
 from skolia_analysis.lexicon.kaikki import KaikkiSound
 from skolia_analysis.lexicon.schema import Form, Paradigm, Pronunciation, Recording, Sense
 from skolia_analysis.lexicon.source import Converted
@@ -228,14 +228,23 @@ def test_pronunciations_merge_accents() -> None:
     assert pronunciation.merge([uk], [{"ipa": "/ɹiːd/"}]) == [{"ipa": "/ɹiːd/"}]
 
 
-def test_cards_lexicon_has_pronunciations_compact_paradigms_and_feature_rows(
+def test_d1_export_has_d1_schema_pronunciations_compact_paradigms_and_feature_rows(
     tmp_path: Path,
 ) -> None:
     path = tmp_path / "pl.sqlite"
     said = [store.PronunciationRow("pies", "NOUN", [{"ipa": "/pjɛs/"}], [])]
     store.write(
         path,
-        [store.Row("pl:pies:NOUN", "pies", "NOUN", [DOG], [], [])],
+        [
+            store.Row(
+                "pl:pies:NOUN",
+                "pies",
+                "NOUN",
+                [DOG],
+                [{"type": "derived-from", "lemma": "piesek", "note": "x"}],
+                [],
+            )
+        ],
         {"lang": "pl", "version": "test/1"},
         lambda: said,
     )
@@ -249,21 +258,27 @@ def test_cards_lexicon_has_pronunciations_compact_paradigms_and_feature_rows(
         ]
         return [{"homonym": "", "forms": forms}]
 
-    out = tmp_path / "pl.cards.sqlite"
-    assert cards.build(store.Lexicon(path), paradigms, out) == 1
+    out = tmp_path / "pl.d1.sqlite"
+    migrations = Path(__file__).resolve().parents[2] / "api" / "lexicon-migrations"
+    assert d1_export.build(store.Lexicon(path), paradigms, migrations, out) == 1
     db = sqlite3.connect(out)
-    assert dict(db.execute("SELECT key, value FROM meta")) == {
-        "lang": "pl",
-        "version": f"test/1+cards{cards.CARDS_VERSION}",
-    }
-    lemma_lower, pronunciations, paradigm = db.execute(
-        "SELECT lemma_lower, pronunciations, paradigms FROM entry"
+    version = f"test/1+d1-{d1_export.EXPORT_VERSION}"
+    assert dict(db.execute("SELECT key, value FROM meta")) == {"lang": "pl", "version": version}
+    stored, pronunciations, paradigm = db.execute(
+        "SELECT version, pronunciations, paradigms FROM entry WHERE upos IS NOT NULL"
     ).fetchone()
-    assert lemma_lower == "pies"
+    assert stored == version
+    assert db.execute("SELECT lemma_id, upos, senses FROM entry WHERE upos IS NULL").fetchall() == [
+        ("pl:piesek:", None, "[]")
+    ]
+    assert db.execute("SELECT * FROM relation").fetchall() == [
+        ("pl:pies:NOUN", version, 0, "pl:piesek:", "derived-from", "x", None)
+    ]
     assert json.loads(pronunciations) == [{"ipa": "/pjɛs/"}]
     assert json.loads(paradigm) == [{"homonym": "", "forms": [["psa", [0, 1]]]}]
     assert db.execute(
-        "SELECT id, feature, value FROM featureset ORDER BY id, feature"
+        "SELECT id, feature, value FROM featureset WHERE version = ? ORDER BY id, feature",
+        (version,),
     ).fetchall() == [
         (0, "Case", "Gen"),
         (0, "Number", "Sing"),
@@ -321,20 +336,103 @@ def test_normalized_lexicon_preserves_nested_values_and_incoming_links(tmp_path:
         assert db.execute("PRAGMA foreign_key_check").fetchall() == []
 
 
-def test_derivative_has_a_graph_entry_without_a_definition(tmp_path: Path) -> None:
+GOLIĆ = store.Row(
+    "pl:golić:VERB",
+    "golić",
+    "VERB",
+    [
+        {
+            "gloss": "to shave",
+            "tags": ["imperfective"],
+            "examples": [{"text": "Golę się codziennie rano."}],
+        },
+        {"gloss": "to down, to soak (to drink)", "tags": ["colloquial", "imperfective"]},
+    ],
+    [],
+    [],
+)
+
+
+def test_derivative_takes_the_sense_it_was_listed_under(tmp_path: Path) -> None:
     path = tmp_path / "pl.sqlite"
-    base = store.Row("pl:golić:VERB", "golić", "VERB", [{"gloss": "to shave", "tags": []}], [], [])
+    glosses = ("to down, to soak (to drink)",)
     store.write(
-        path, [base], {}, derivatives=[store.VerbDerivative("pl", "golić", "zgolić", ("evidence",))]
+        path,
+        [GOLIĆ],
+        {"version": "test/1"},
+        derivatives=[store.VerbDerivative("pl", "golić", "zgolić", glosses)],
     )
     lexicon = store.Lexicon(path)
     derived, match = bundle.resolve(lexicon, "pl:zgolić:VERB")
     assert match == "none"
     assert derived is not None and derived.senses == []
     assert derived.relations == [
-        {"type": "derived-from", "lemma": "golić", "note": "perfective derivative"}
+        {
+            "type": "derived-from",
+            "lemma": "golić",
+            "note": "perfective derivative",
+            "lemma_id": "pl:golić:VERB",
+            "sense_indexes": [1],
+        }
     ]
-    assert list(lexicon.incoming("golić")) == [(derived.lemma_id, derived.relations[0])]
+    token: Token = {
+        "start": 0,
+        "end": 6,
+        "text": "zgolił",
+        "lemma": "zgolić",
+        "lemma_id": "pl:zgolić:VERB",
+        "upos": "VERB",
+        "xpos": None,
+        "feats": {},
+        "head": None,
+        "deprel": "root",
+    }
+    blob: Blob = {
+        "schema": 2,
+        "analyzer": "test",
+        "lang": "pl",
+        "hash": "",
+        "sentences": [{"start": 0, "end": 6, "tokens": [token], "expressions": []}],
+    }
+    made = bundle.make(blob, lexicon)
+    assert list(made["entries"]) == ["pl:zgolić:VERB", "pl:golić:VERB"]
+    assert made["entries"]["pl:golić:VERB"]["senses"] == GOLIĆ.senses
+    assert list(lexicon.incoming("golić")) == [
+        (
+            derived.lemma_id,
+            {"type": "derived-from", "lemma": "golić", "note": "perfective derivative"},
+        )
+    ]
     with sqlite3.connect(path) as db:
-        assert db.execute("SELECT evidence FROM relation").fetchone() == ('[["evidence"]]',)
+        assert db.execute("SELECT evidence, target_senses FROM relation").fetchone() == (
+            '[["to down, to soak (to drink)"]]',
+            "[1]",
+        )
         assert db.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
+def test_unmatched_evidence_names_no_senses_and_relations_name_their_targets(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "pl.sqlite"
+    ogolić = store.Row(
+        "pl:ogolić:VERB",
+        "ogolić",
+        "VERB",
+        [{"gloss": "to shave off", "tags": []}],
+        [{"type": "aspect-partner", "lemma": "golić", "note": "imperfective"}],
+        [],
+    )
+    store.write(
+        path,
+        [GOLIĆ, ogolić],
+        {},
+        derivatives=[store.VerbDerivative("pl", "golić", "zgolić", ("elsewhere",))],
+    )
+    lexicon = store.Lexicon(path)
+    derived = lexicon.get("pl:zgolić:VERB")
+    assert derived is not None
+    assert "sense_indexes" not in derived.relations[0]
+    found = lexicon.get("pl:ogolić:VERB")
+    assert found is not None
+    assert found.relations == [{**ogolić.relations[0], "lemma_id": "pl:golić:VERB"}]

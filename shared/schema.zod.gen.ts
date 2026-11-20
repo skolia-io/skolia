@@ -180,6 +180,8 @@ export const Relation: z.ZodType<types.Relation> = /* @__PURE__ */ (() => z.obje
   type: RelationType,
   lemma: z.string(),
   note: z.string().exactOptional(),
+  lemma_id: z.string().exactOptional(),
+  sense_indexes: z.array(z.number().int()).exactOptional(),
 }).meta({ id: "Relation" }))();
 
 export const FormRow: z.ZodType<types.FormRow> = /* @__PURE__ */ (() => z.tuple([z.string(), z.array(z.number().int())]).meta({ id: "FormRow" }))();

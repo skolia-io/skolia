@@ -671,9 +671,25 @@ export const LexiconEntry = z
       'A lexicon entry: what a card shows. Its paradigms\' forms point into feature sets, ["psa", [50, 51]], which the response carries (FeatureSets).',
   });
 
-export const Lookup = z.object({ entries: z.array(LexiconEntry), featureSets: z.partialRecord(Lang, FeatureSets) }).meta({ id: "Lookup" });
+export const RelationType = gen.RelationType;
 
-export const DueCard = z.intersection(ScheduledFields.extend({ entry: LexiconEntry.nullable() }), CardContent).meta({ id: "DueCard" });
+export const Lookup = z.object({ entries: z.array(LexiconEntry), featureSets: z.partialRecord(Lang, FeatureSets) }).meta({
+  id: "Lookup",
+  description:
+    "The entries asked for that the lexicon has, and the targets of the relations of those with no senses of their own, which take their meaning from them (zgolić from golić).",
+});
+
+export const DueCard = z
+  .intersection(
+    ScheduledFields.extend({
+      entry: LexiconEntry.nullable(),
+      related: z
+        .array(LexiconEntry)
+        .describe("The targets of the entry's relations when it has no senses of its own, which take their meaning from them"),
+    }),
+    CardContent,
+  )
+  .meta({ id: "DueCard" });
 
 const Count = z.number().int().min(0);
 

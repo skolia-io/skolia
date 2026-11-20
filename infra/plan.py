@@ -276,7 +276,7 @@ def targets() -> dict[str, Target]:
         ),
         "internal": Target("deploy", ("api",)),
         "ingest": Target("deploy", ("ingest", *(f"./analysis#ingest-{lang}" for lang in LANGS))),
-        "lexicon": Target("deploy", tuple(f"./analysis#cards-lexicon-{lang}" for lang in LANGS)),
+        "lexicon": Target("deploy", tuple(f"./analysis#d1-export-{lang}" for lang in LANGS)),
         "web": Target("deploy", (".#skolia-worker",), content=lambda planner: planner.version()),
         "e2e": Target(
             "deploy",

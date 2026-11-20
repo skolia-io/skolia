@@ -10,15 +10,16 @@ import {
   skipToken,
   type InfiniteData,
 } from "@tanstack/svelte-query";
-import type { Card, CardId, CardKey, Lang, LemmaId, LexiconEntry, Paginated } from "@skolia/shared/api";
+import type { Card, CardId, CardKey, Lang, LexiconEntry, Paginated } from "@skolia/shared/api";
 import type { Cursor } from "@skolia/shared/page";
 import { deleteCard, listCards, lookUp } from "./api.ts";
 import { cardsChanged, userQuery } from "./queries.ts";
 
 const LISTS_KEY = ["me", "cards", "list"] as const;
 
-/** A page of cards, and the lexicon's entries for their lemmas, by lemma id. */
-export type CardPage = Paginated<Card, CardKey> & { readonly entries: ReadonlyMap<LemmaId, LexiconEntry> };
+/** A page of cards, and the lexicon's entries for their lemmas and what those with no senses
+ * point at, by lemma id: a string, as relations give them. */
+export type CardPage = Paginated<Card, CardKey> & { readonly entries: ReadonlyMap<string, LexiconEntry> };
 
 async function cardPage(lang: Lang, after: Cursor<CardKey> | undefined): Promise<CardPage> {
   const page = await listCards(lang, after);
