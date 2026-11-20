@@ -15,3 +15,6 @@ node_modules/
 /ingest/wrangler.pr-*.json
 /reader/test-results/
 /reader/playwright-report/
+.pi
+.pnpm-store
+
