@@ -1,5 +1,6 @@
 // Looking a token up in its document's bundle.
-import type { Bundle, Entry, Feats, Pronunciation, Recording, Relation, Sense, Token, Upos } from "@skolia/shared/schema";
+import type { Bundle, Derivation, Entry, Feats, Pronunciation, Recording, Relation, Sense, Token, Upos } from "@skolia/shared/schema";
+import { featureWords } from "./ud.ts";
 
 /** The sentence decides these, not the form, so paradigms leave them out (see the
  * BundleParadigm docstring in analysis/src/skolia_analysis/lexicon/schema.py). */
@@ -18,10 +19,10 @@ export function entryFor(bundle: Bundle, token: Token): Entry | undefined {
   return id === undefined ? undefined : bundle.entries[id];
 }
 
-/** How a token's text or an entry's lemma is said, keyed as pronunciation_key in
- * analysis/src/skolia_analysis/lexicon/schema.py. */
+/** How a token's text is said, keyed as pronunciation_key in
+ * analysis/src/skolia_analysis/lexicon/schema.py. An entry has its lemma's. */
 export function pronunciationsOf(bundle: Bundle, word: string, upos: Upos): Pronunciation[] {
-  return bundle.pronunciations?.[`${word}:${upos}`] ?? [];
+  return bundle.pronunciations[`${word}:${upos}`] ?? [];
 }
 
 /** The first transcription for each accent: Wiktionary lists the usual one first, then
@@ -36,9 +37,9 @@ export function mainPronunciations(said: Pronunciation[]): Pronunciation[] {
   });
 }
 
-/** Recordings of a token's text or an entry's lemma, keyed like pronunciationsOf. */
+/** Recordings of a token's text, keyed like pronunciationsOf. */
 export function recordingsOf(bundle: Bundle, word: string, upos: Upos): Recording[] {
-  return bundle.recordings?.[`${word}:${upos}`] ?? [];
+  return bundle.recordings[`${word}:${upos}`] ?? [];
 }
 
 /** Every feature the token has (bar contextual ones) has the same value in feats. */
@@ -62,40 +63,32 @@ export function rankSenses(senses: readonly Sense[], token: Feats): RankedSense[
   return [...ranked.filter((r) => r.fits), ...ranked.filter((r) => !r.fits)];
 }
 
-/** A verb's aspect, when every form in its paradigms has the same one: Morfeusz gives
- * zgolić's forms Perf even though Wiktionary gives zgolić no senses to tag. */
-export function aspectOf(entry: Pick<Entry, "paradigms">, featsOf: (id: number) => Feats | undefined): Feats["Aspect"] {
-  const aspects = new Set(entry.paradigms.flatMap((p) => p.forms.flatMap(([, ids]) => ids.map((id) => featsOf(id)?.Aspect))));
-  const [only, ...rest] = aspects;
-  return rest.length === 0 ? only : undefined;
-}
+const DERIVATION_LABEL: Record<Derivation, string> = {
+  "agent-noun": "agent noun of",
+  augmentative: "augmentative of",
+  diminutive: "diminutive of",
+  endearing: "endearing form of",
+  feminine: "feminine of",
+  frequentative: "frequentative of",
+  iterative: "iterative of",
+  masculine: "masculine of",
+  "noun-from-verb": "noun from",
+  perfective: "perfective of",
+};
 
-/** What a word's meaning depends on: a bundle's Entry or the API's LexiconEntry. */
-type Meaning = { readonly senses: readonly Sense[]; readonly relations: readonly Relation[] };
-
-/** Wiktionary's tags for a verb's aspect, which on a borrowed sense describe the target. */
-const ASPECT_TAGS: ReadonlySet<string> = new Set(["perfective", "imperfective"]);
-
-/** The entries a word with no senses of its own takes its meaning from, its relations'
- * targets that find has; none for a word with senses. */
-export function lenders<E>(entry: Meaning, find: (lemmaId: string) => E | undefined): E[] {
-  if (entry.senses.length > 0) return [];
-  return entry.relations.flatMap((relation) => {
-    const target = relation.lemma_id === undefined ? undefined : find(relation.lemma_id);
-    return target === undefined ? [] : [target];
-  });
-}
-
-/** An entry's senses, or with none of its own, the ones its relations name in their
- * targets: zgolić, which Wiktionary only lists as golić's perfective, takes golić's. A
- * borrowed sense keeps its gloss and tags but not aspect tags, examples or selectors,
- * which describe the target. */
-export function sensesOf(entry: Meaning, find: (lemmaId: string) => { readonly senses: readonly Sense[] } | undefined): Sense[] {
-  if (entry.senses.length > 0) return [...entry.senses];
-  return entry.relations.flatMap((relation) => {
-    const target = relation.lemma_id === undefined ? undefined : find(relation.lemma_id);
-    if (target === undefined) return [];
-    const named = relation.sense_indexes?.flatMap((i) => target.senses[i] ?? []) ?? target.senses;
-    return named.map((sense) => ({ gloss: sense.gloss, tags: sense.tags.filter((tag) => !ASPECT_TAGS.has(tag)) }));
-  });
+/** How a word stands to its relation's target, to go before the target: "diminutive of"
+ * rubel, "perfective partner" zrobić, "regional form of" bzykać. */
+export function relationLabel(relation: Relation): string {
+  switch (relation.kind) {
+    case "aspect-partner":
+      return `${featureWords({ Aspect: relation.aspect }).join(" ")} partner`;
+    case "derived-from":
+      return DERIVATION_LABEL[relation.how];
+    case "variant-of":
+      return relation.tags.length > 0 ? `${relation.tags.join(", ")} form of` : "variant of";
+    default: {
+      const unknown: never = relation;
+      return unknown;
+    }
+  }
 }

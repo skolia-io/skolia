@@ -60,8 +60,11 @@ const ACC_SG: Feats = { Case: "Acc", Number: "Sing", Gender: "Masc", Animacy: "N
 const NOM_PL: Feats = { Case: "Nom", Number: "Plur", Gender: "Masc", Animacy: "Nhum" };
 
 const PIES: Entry = {
+  lemma_id: "pl:pies:NOUN",
   lemma: "pies",
   upos: "NOUN",
+  grammar: {},
+  pronunciations: [],
   senses: [
     { gloss: "cop", tags: [], when: [{ Gender: "Masc", Animacy: "Hum" }] },
     { gloss: "dog", tags: [], when: [{ Gender: "Masc", Animacy: "Nhum" }] },
@@ -81,22 +84,20 @@ const PIES: Entry = {
 };
 
 const BUNDLE: Bundle = {
-  schema: 1,
+  schema: 2,
   lang: "pl",
   lexicon: "t",
   attribution: "",
   entries: { "pl:pies:NOUN": PIES },
   lookup: {},
-  match: {},
   feats: [NOM_SG, GEN_SG, ACC_SG, NOM_PL],
   pronunciations: { "psa:NOUN": [{ ipa: "/ˈpsa/" }], "pies:NOUN": [{ ipa: "/ˈpjɛs/" }] },
+  recordings: {},
 };
 
 test("a word is pronounced by its text and part of speech", () => {
   assert.deepEqual(pronunciationsOf(BUNDLE, "psa", "NOUN"), [{ ipa: "/ˈpsa/" }]);
   assert.deepEqual(pronunciationsOf(BUNDLE, "psa", "VERB"), []);
-  const { pronunciations: _, ...older } = BUNDLE;
-  assert.deepEqual(pronunciationsOf(older, "psa", "NOUN"), []);
 });
 
 test("the token's features pick the sense", () => {

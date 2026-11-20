@@ -20,6 +20,7 @@ import {
   client,
   importSentences,
   importer,
+  glossed,
   loadLexicon,
   local,
   raw,
@@ -132,7 +133,7 @@ async function start(app: App, headers: Headers, lemmaId: LemmaId): Promise<void
 test("a cloze card keeps its sentence and blank, is due with its lemma's entry, and is made once per sentence and word", async () => {
   const app = setup();
   const headers = await signedIn();
-  await loadLexicon("pl", "lex/1", [{ lemmaId: "pl:praca:NOUN", lemma: "praca", upos: "NOUN", gloss: "work, job" }]);
+  await loadLexicon("pl", "lex/1", [glossed("pl:praca:NOUN", "work, job")]);
   const json = await pracy(app, headers);
   const { cardId } = await body("made", make(app, headers, json), 201);
   assert.deepEqual(await body("made again", make(app, headers, changed(json, { why: null })), 200), { cardId });

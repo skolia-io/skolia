@@ -1,7 +1,7 @@
 """The lexicon on the server: one SQLite file per language, one row per lemma_id.
 
-Ordered child tables store senses, paradigms and audio. Relations are indexed at both
-ends, including references to spellings that have no entry in this lexicon.
+Ordered child tables store senses, paradigms and audio. A relation names its target's
+spelling, and its entry when the lexicon has one, and is indexed at both ends.
 """
 
 import json
@@ -19,7 +19,7 @@ from .schema import (
     Pronunciation,
     Recording,
     Relation,
-    RelationType,
+    RelationKind,
     Sense,
 )
 
@@ -30,7 +30,9 @@ CREATE TABLE entry (
     lemma_id TEXT PRIMARY KEY,
     lemma TEXT NOT NULL,
     lemma_lower TEXT NOT NULL,
-    upos TEXT
+    upos TEXT NOT NULL,
+    -- What every sense's selector says (pani: Fem), as UD features
+    grammar TEXT NOT NULL CHECK (json_valid(grammar) AND json_type(grammar) = 'object')
 );
 CREATE INDEX entry_lemma ON entry (lemma);
 CREATE INDEX entry_lemma_lower ON entry (lemma_lower);
@@ -55,23 +57,21 @@ CREATE TABLE example (
     translation TEXT,
     PRIMARY KEY (sense_id, ord)
 ) WITHOUT ROWID;
+-- data: what the kind adds, {"aspect": "Perf"} or {"how": "diminutive"} (schema.py Relation).
+-- target_id is NULL when no one entry has the target's spelling.
 CREATE TABLE relation (
     source_id TEXT NOT NULL REFERENCES entry,
     ord INTEGER NOT NULL,
-    target_id TEXT NOT NULL REFERENCES entry,
+    target_lemma TEXT NOT NULL,
+    target_id TEXT REFERENCES entry,
     kind TEXT NOT NULL,
-    note TEXT,
+    data TEXT NOT NULL CHECK (json_valid(data) AND json_type(data) = 'object'),
     evidence TEXT CHECK (
         evidence IS NULL OR (json_valid(evidence) AND json_type(evidence) = 'array')
     ),
-    -- The target's sense ords the relation is about; NULL: the whole entry. No source
-    -- gives them reliably yet (_write_derivatives)
-    target_senses TEXT CHECK (
-        target_senses IS NULL
-        OR (json_valid(target_senses) AND json_type(target_senses) = 'array')
-    ),
     PRIMARY KEY (source_id, ord)
 ) WITHOUT ROWID;
+CREATE INDEX relation_target_lemma ON relation (target_lemma, source_id, ord);
 CREATE INDEX relation_target ON relation (target_id, source_id, ord);
 CREATE TABLE paradigm (
     id INTEGER PRIMARY KEY,
@@ -110,14 +110,14 @@ CREATE INDEX recording_word ON recording (word, upos, ord);
 
 
 class Edge(NamedTuple):
-    """A relation row: target_senses is its JSON array of sense ords, or None for all."""
+    """A relation row: data is its JSON object."""
 
     source_id: str
     ord: int
-    target_id: str
-    kind: RelationType
-    note: str | None
-    target_senses: str | None
+    target_lemma: str
+    target_id: str | None
+    kind: RelationKind
+    data: str
 
 
 class Row(NamedTuple):
@@ -127,6 +127,7 @@ class Row(NamedTuple):
     senses: list[Sense]
     relations: list[Relation]
     paradigms: list[Paradigm]
+    grammar: Feats
 
 
 class PronunciationRow(NamedTuple):
@@ -163,8 +164,8 @@ def write(
         relations: list[tuple[str, int, Relation]] = []
         for row in rows:
             db.execute(
-                "INSERT INTO entry VALUES (?, ?, ?, ?)",
-                (row.lemma_id, row.lemma, row.lemma.lower(), row.upos),
+                "INSERT INTO entry VALUES (?, ?, ?, ?, ?)",
+                (row.lemma_id, row.lemma, row.lemma.lower(), row.upos, json.dumps(row.grammar)),
             )
             for index, sense in enumerate(row.senses):
                 sense_id = db.execute(
@@ -204,14 +205,18 @@ def write(
                 )
             count += 1
         db.executemany(
-            "INSERT INTO relation (source_id, ord, target_id, kind, note) VALUES (?, ?, ?, ?, ?)",
+            """
+            INSERT INTO relation (source_id, ord, target_lemma, target_id, kind, data)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
             (
                 (
                     source_id,
                     ord_,
+                    relation["lemma"],
                     _target(db, source_id, relation),
-                    relation["type"],
-                    relation.get("note"),
+                    relation["kind"],
+                    json.dumps(relation_data(relation), ensure_ascii=False),
                 )
                 for source_id, ord_, relation in relations
             ),
@@ -239,15 +244,28 @@ def write(
     return count
 
 
-def _target(db: sqlite3.Connection, source_id: str, relation: Relation) -> str:
-    """Use the known part of speech, an unambiguous definition, or a spelling-only node."""
-    lang = source_id.split(":", 1)[0]
-    lemma = relation["lemma"]
-    kind = relation["type"]
-    match kind:
+RELATION_KEYS = frozenset({"kind", "lemma", "lemma_id"})
+
+
+def relation_data(relation: Relation) -> dict[str, object]:
+    """What a relation's kind adds: the relation table's data column."""
+    return {key: value for key, value in relation.items() if key not in RELATION_KEYS}
+
+
+def make_relation(kind: str, lemma: str, target_id: str | None, data: str) -> Relation:
+    relation = cast(Relation, {"kind": kind, "lemma": lemma, **json.loads(data)})
+    if target_id is not None:
+        relation["lemma_id"] = target_id
+    return relation
+
+
+def _target(db: sqlite3.Connection, source_id: str, relation: Relation) -> str | None:
+    """An aspect partner is a verb, with an entry of its own if Wiktionary has none; another
+    target is the one entry with senses spelled like it, if there's one."""
+    match relation["kind"]:
         case "aspect-partner":
-            return _ensure_entry(db, lang, lemma, "VERB")
-        case "derived-from":
+            return _ensure_verb(db, source_id.split(":", 1)[0], relation["lemma"])
+        case "derived-from" | "variant-of":
             matches = db.execute(
                 """
                 SELECT entry.lemma_id FROM entry
@@ -255,20 +273,19 @@ def _target(db: sqlite3.Connection, source_id: str, relation: Relation) -> str:
                     AND EXISTS (SELECT 1 FROM sense WHERE sense.lemma_id = entry.lemma_id)
                 LIMIT 2
                 """,
-                (lemma,),
+                (relation["lemma"],),
             ).fetchall()
-            if len(matches) == 1:
-                return cast(str, matches[0][0])
-            return _ensure_entry(db, lang, lemma, None)
+            return cast(str, matches[0][0]) if len(matches) == 1 else None
         case _:
-            assert_never(kind)
+            assert_never(relation["kind"])
 
 
-def _ensure_entry(db: sqlite3.Connection, lang: str, lemma: str, upos: Upos | None) -> str:
-    lemma_id = f"{lang}:{lemma}:{upos or ''}"
+def _ensure_verb(db: sqlite3.Connection, lang: str, lemma: str) -> str:
+    """A verb Wiktionary names only in another's entry (zgolić), without senses."""
+    lemma_id = f"{lang}:{lemma}:VERB"
     db.execute(
-        "INSERT INTO entry VALUES (?, ?, ?, ?) ON CONFLICT (lemma_id) DO NOTHING",
-        (lemma_id, lemma, lemma.lower(), upos),
+        "INSERT INTO entry VALUES (?, ?, ?, 'VERB', '{}') ON CONFLICT (lemma_id) DO NOTHING",
+        (lemma_id, lemma, lemma.lower()),
     )
     return lemma_id
 
@@ -276,14 +293,16 @@ def _ensure_entry(db: sqlite3.Connection, lang: str, lemma: str, upos: Upos | No
 def _write_derivatives(db: sqlite3.Connection, derivatives: Iterable[VerbDerivative]) -> None:
     evidence: dict[tuple[str, str], list[tuple[str, ...]]] = {}
     for lang, base, derivative, glosses in derivatives:
-        source_id = _ensure_entry(db, lang, derivative, "VERB")
-        target_id = _ensure_entry(db, lang, base, "VERB")
+        source_id = _ensure_verb(db, lang, derivative)
+        target_id = _ensure_verb(db, lang, base)
         senses = evidence.setdefault((source_id, target_id), [])
         if glosses and glosses not in senses:
             senses.append(glosses)
-    # Not target_senses: Kaikki gives a page's derived terms to the sense before the list, so
-    # zgolić came under golić's "to down, to soak (to drink)" though it means "to shave off"
+    # The evidence isn't which of the base's senses the derivative is about: Kaikki gives a
+    # page's derived terms to the sense before the list, so zgolić came under golić's "to
+    # down, to soak (to drink)" though it means "to shave off"
     for (source_id, target_id), senses in evidence.items():
+        base = target_id.split(":", 1)[1].rsplit(":", 1)[0]
         found = db.execute(
             """
             SELECT ord FROM relation
@@ -300,11 +319,19 @@ def _write_derivatives(db: sqlite3.Connection, derivatives: Iterable[VerbDerivat
         else:
             db.execute(
                 """
-                INSERT INTO relation (source_id, ord, target_id, kind, note, evidence)
-                SELECT ?, coalesce(max(ord), -1) + 1, ?, 'derived-from', 'perfective derivative', ?
+                INSERT INTO relation
+                    (source_id, ord, target_lemma, target_id, kind, data, evidence)
+                SELECT ?, coalesce(max(ord), -1) + 1, ?, ?, 'derived-from', ?, ?
                 FROM relation WHERE source_id = ?
                 """,
-                (source_id, target_id, json.dumps(senses, ensure_ascii=False), source_id),
+                (
+                    source_id,
+                    base,
+                    target_id,
+                    json.dumps({"how": "perfective"}),
+                    json.dumps(senses, ensure_ascii=False),
+                    source_id,
+                ),
             )
 
 
@@ -358,15 +385,14 @@ class Lexicon:
 
     def incoming(self, lemma: str) -> Iterator[tuple[str, Relation]]:
         """Stored relations pointing to a spelling, even if it has no entry."""
-        for source_id, kind, note in self._db.execute(
+        for source_id, target_id, kind, data in self._db.execute(
             """
-            SELECT relation.source_id, relation.kind, relation.note
-            FROM entry AS target JOIN relation ON relation.target_id = target.lemma_id
-            WHERE target.lemma = ? ORDER BY relation.source_id, relation.ord
+            SELECT source_id, target_id, kind, data FROM relation
+            WHERE target_lemma = ? ORDER BY source_id, ord
             """,
             (lemma,),
         ):
-            yield source_id, _relation(kind, lemma, note)
+            yield source_id, make_relation(kind, lemma, target_id, data)
 
     def pronunciations(self, word: str) -> dict[Upos, list[Pronunciation]]:
         """By part of speech: lead is /lɛd/ as a noun, /liːd/ as a verb."""
@@ -410,11 +436,9 @@ class Lexicon:
         return self._select("ORDER BY lemma_id")
 
     def _select(self, where: str, *values: str) -> Iterator[Row]:
-        for lemma_id, lemma, upos in self._db.execute(
-            f"SELECT lemma_id, lemma, upos FROM entry {where}", values
+        for lemma_id, lemma, upos, grammar in self._db.execute(
+            f"SELECT lemma_id, lemma, upos, grammar FROM entry {where}", values
         ):
-            if upos is None:
-                continue
             yield Row(
                 lemma_id,
                 lemma,
@@ -422,42 +446,28 @@ class Lexicon:
                 list(self._senses(lemma_id)),
                 list(self._relations(lemma_id)),
                 list(self._paradigms(lemma_id)),
+                cast(Feats, json.loads(grammar)),
             )
-
-    def spellings(self) -> Iterator[tuple[str, str]]:
-        """The nodes with no entry, (lemma_id, lemma): spellings relations point at."""
-        return iter(
-            self._db.execute(
-                "SELECT lemma_id, lemma FROM entry WHERE upos IS NULL ORDER BY lemma_id"
-            ).fetchall()
-        )
 
     def edges(self) -> Iterator[Edge]:
         """Every relation as stored, by source."""
-        for source_id, ord_, target_id, kind, note, target_senses in self._db.execute(
+        for row in self._db.execute(
             """
-            SELECT source_id, ord, target_id, kind, note, target_senses FROM relation
+            SELECT source_id, ord, target_lemma, target_id, kind, data FROM relation
             ORDER BY source_id, ord
             """
         ):
-            yield Edge(source_id, ord_, target_id, kind, note, target_senses)
+            yield Edge(*row)
 
     def _relations(self, lemma_id: str) -> Iterator[Relation]:
-        for kind, target_id, target, upos, note, target_senses in self._db.execute(
+        for target_lemma, target_id, kind, data in self._db.execute(
             """
-            SELECT relation.kind, relation.target_id, target.lemma, target.upos, relation.note,
-                relation.target_senses
-            FROM relation JOIN entry AS target ON target.lemma_id = relation.target_id
-            WHERE relation.source_id = ? ORDER BY relation.ord
+            SELECT target_lemma, target_id, kind, data FROM relation
+            WHERE source_id = ? ORDER BY ord
             """,
             (lemma_id,),
         ):
-            relation = _relation(kind, target, note)
-            if upos is not None:
-                relation["lemma_id"] = target_id
-            if target_senses is not None:
-                relation["sense_indexes"] = cast(list[int], json.loads(target_senses))
-            yield relation
+            yield make_relation(kind, target_lemma, target_id, data)
 
     def _senses(self, lemma_id: str) -> Iterator[Sense]:
         for id_, gloss, tags in self._db.execute(
@@ -499,10 +509,3 @@ class Lexicon:
                 )
             ]
             yield {"homonym": homonym, "forms": forms}
-
-
-def _relation(kind: RelationType, lemma: str, note: str | None) -> Relation:
-    result: Relation = {"type": kind, "lemma": lemma}
-    if note is not None:
-        result["note"] = note
-    return result

@@ -42,6 +42,8 @@ INFLECTION_TAGS = kaikki.INFLECTION_TAGS | {
     "gerund",
 }
 GENDER_TAGS: Mapping[str, Gender] = {"masculine": "Masc", "feminine": "Fem"}
+# A noun's gender is its senses' selectors, or its grammar when they all share one
+GRAMMAR_TAGS = frozenset(GENDER_TAGS)
 
 SKIPPED_FORM_TAGS = kaikki.SKIPPED_FORM_TAGS | {
     "dated",
@@ -74,6 +76,7 @@ NOT_TODAY_TAGS = {"obsolete", "archaic", "dated", "Middle", "Old"}
 
 class Source:
     attribution = ATTRIBUTION
+    grammar_tags = GRAMMAR_TAGS
     version = ""
 
     def convert(self, entry: KaikkiEntry) -> Converted | None:
@@ -92,7 +95,7 @@ class Source:
         ]
         if not senses:
             return None
-        relations = list(kaikki_senses.derived_from(entry, INFLECTION_TAGS, kaikki.DERIVATION_TAGS))
+        relations = list(kaikki_senses.relations(entry, INFLECTION_TAGS, GRAMMAR_TAGS))
         # A pronominal verb's forms are the verb's own, filed under it
         forms = [] if extra_tags else list(paradigm_forms(word, upos, entry.get("forms", [])))
         paradigms: list[Paradigm] = [{"homonym": "", "forms": forms}] if len(forms) > 1 else []

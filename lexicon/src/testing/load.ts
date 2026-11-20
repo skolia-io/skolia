@@ -1,32 +1,24 @@
 // Lexicon rows for tests, the lexicon's and the API's, written as infra/load-lexicon.py
 // loads them.
-import type { Lang } from "@skolia/shared/api";
+import type { Lang, LemmaId } from "@skolia/shared/api";
+import type { Entry } from "@skolia/shared/schema";
 import { sql } from "@skolia/util/sql";
 import { prepare } from "@skolia/util/d1";
 import { lexiconsOf, type LexiconBindings } from "../store.ts";
 
 export { lexiconBinding, lexiconsOf, type LexiconBindings } from "../store.ts";
 
-/** An entry, as a row of entry and its rows of relation. */
-export type TestEntry = {
-  readonly lemmaId: string;
-  readonly lemma: string;
-  /** null: a spelling relations point at, with no entry */
-  readonly upos: string | null;
-  /** null: no senses */
-  readonly gloss: string | null;
-  readonly pronunciations?: readonly unknown[];
-  /** Compact, as in D1: [{ homonym, forms: [["psa", [0, 1]]] }] */
-  readonly paradigms?: readonly unknown[];
-  readonly relations?: readonly {
-    readonly kind: string;
-    readonly targetId: string;
-    readonly note?: string;
-    readonly targetSenses?: readonly number[];
-  }[];
-};
+/** An entry as the lexicon builds it, with what a test leaves out empty. */
+export type TestEntry = Pick<Entry, "lemma_id" | "lemma" | "upos"> & Partial<Omit<Entry, "lemma_id" | "lemma" | "upos">>;
 
-/** Loads a lexicon version with its feature sets, by id, and makes it the one served. */
+/** A test entry with one sense, the gloss. */
+export function glossed(lemmaId: LemmaId, gloss: string, more: Partial<Entry> = {}): TestEntry {
+  const [, lemma = "", upos = "X"] = lemmaId.split(":");
+  return { lemma_id: lemmaId, lemma, upos: upos as Entry["upos"], senses: [{ gloss, tags: [] }], ...more };
+}
+
+/** Loads a lexicon version with its feature sets, by id, and makes it the one served: each
+ * entry whole, and its relations as rows. */
 export async function loadLexicon(
   env: LexiconBindings,
   lang: Lang,
@@ -35,33 +27,28 @@ export async function loadLexicon(
   featureSets: readonly Record<string, string>[] = [],
 ): Promise<void> {
   const db = lexiconsOf(env)[lang];
+  const whole = entries.map(
+    (e): Entry => ({ grammar: {}, senses: [], relations: [], pronunciations: [], paradigms: [], frames: [], ...e }),
+  );
   await db.batch([
-    ...entries.map((e) =>
+    ...whole.map((e) =>
       prepare(
         db,
-        sql`INSERT INTO entry (lemma_id, version, lemma, upos, senses, pronunciations, paradigms) VALUES ${sql.tuple([
-          e.lemmaId,
-          version,
-          e.lemma,
-          e.upos,
-          JSON.stringify(e.gloss === null ? [] : [{ gloss: e.gloss, tags: [] }]),
-          JSON.stringify(e.pronunciations ?? []),
-          JSON.stringify(e.paradigms ?? []),
-        ])}`,
+        sql`INSERT INTO entry (lemma_id, version, lemma, upos, data) VALUES ${sql.tuple([e.lemma_id, version, e.lemma, e.upos, JSON.stringify(e)])}`,
       ),
     ),
-    ...entries.flatMap((e) =>
-      (e.relations ?? []).map((r, ord) =>
+    ...whole.flatMap((e) =>
+      e.relations.map(({ kind, lemma, lemma_id, ...data }, ord) =>
         prepare(
           db,
-          sql`INSERT INTO relation (source_id, version, ord, target_id, kind, note, target_senses) VALUES ${sql.tuple([
-            e.lemmaId,
+          sql`INSERT INTO relation (source_id, version, ord, target_lemma, target_id, kind, data) VALUES ${sql.tuple([
+            e.lemma_id,
             version,
             ord,
-            r.targetId,
-            r.kind,
-            r.note ?? null,
-            r.targetSenses === undefined ? null : JSON.stringify(r.targetSenses),
+            lemma,
+            lemma_id ?? null,
+            kind,
+            JSON.stringify(data),
           ])}`,
         ),
       ),

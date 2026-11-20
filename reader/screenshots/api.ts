@@ -19,7 +19,6 @@ import {
   type DocumentId as DocumentIdType,
   type Lang,
   type LemmaId as LemmaIdType,
-  type LexiconEntry,
   type ScheduledCard,
   type ReadingList,
   type ReadingListId as ReadingListIdType,
@@ -29,7 +28,7 @@ import {
 } from "@skolia/shared/api";
 import { LANGUAGES } from "@skolia/shared/lang";
 import { partKey, statusKey, textKey } from "@skolia/shared/keys";
-import type { Blob, Bundle, Status } from "@skolia/shared/schema";
+import type { Blob, Bundle, Entry, Status } from "@skolia/shared/schema";
 import { AnnotationId, CardId, DocumentId, LemmaId, ReadingListId, Timestamp, UserId } from "@skolia/shared/schemas";
 
 type Deps = Parameters<typeof createApp>[0];
@@ -212,18 +211,9 @@ const blobs: ReadonlyMap<string, StoredBlob> = new Map([
   ),
 ]);
 
-function entry(lemmaId: LemmaIdType): LexiconEntry | null {
-  const found = bundle.entries[lemmaId];
-  if (!found) return null;
-  return {
-    lemmaId,
-    lemma: found.lemma,
-    upos: found.upos,
-    senses: found.senses,
-    relations: found.relations,
-    pronunciations: [],
-    paradigms: found.paradigms,
-  };
+/** The lexicon serves the same entries a bundle carries. */
+function entry(lemmaId: LemmaIdType): Entry | null {
+  return bundle.entries[lemmaId] ?? null;
 }
 
 const featureSets = Object.fromEntries(bundle.feats.map((feats, id) => [String(id), feats]));
@@ -236,7 +226,7 @@ const lexicon: Lexicon = {
     found(Object.keys(bundle.entries).flatMap((id) => (bundle.entries[id]?.lemma === lemma ? (entry(LemmaId.parse(id)) ?? []) : []))),
 };
 
-function found(entries: readonly LexiconEntry[]): Found {
+function found(entries: readonly Entry[]): Found {
   return { entries, related: [], incoming: new Map(), featureSets };
 }
 

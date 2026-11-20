@@ -8,5 +8,4 @@ export const english: Language = {
   explainCase: () => null,
   uses: () => [],
   partOfWord: () => null,
-  grammarTags: new Set(),
 };

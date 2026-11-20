@@ -11,7 +11,7 @@ test("lexicon entries and paradigms, with their licence", async () => {
   const { entries, featureSets } = await body("lexicon", Promise.resolve(response));
   for (const lang of LANGS) {
     const word = WORDS[lang];
-    const entry = entries.find((e) => e.lemmaId === word);
+    const entry = entries.find((e) => e.lemma_id === word);
     if (!entry) throw new Error(`lexicon: no ${word}; has load-lexicon run?`);
     assert.ok(entry.senses.length > 0, `lexicon: ${word} has no senses`);
     assert.equal(entry.license.type, "CC-BY-SA-4.0");

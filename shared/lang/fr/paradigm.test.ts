@@ -48,8 +48,11 @@ const FEATS: Feats[] = [
 ];
 
 const PRENDRE: Entry = {
+  lemma_id: "fr:prendre:VERB",
   lemma: "prendre",
   upos: "VERB",
+  grammar: {},
+  pronunciations: [],
   senses: [{ gloss: "to take", tags: [] }],
   relations: [],
   frames: [],
@@ -71,8 +74,11 @@ const PRENDRE: Entry = {
 };
 
 const BEAU: Entry = {
+  lemma_id: "fr:beau:ADJ",
   lemma: "beau",
   upos: "ADJ",
+  grammar: {},
+  pronunciations: [],
   senses: [{ gloss: "handsome", tags: [] }],
   relations: [],
   frames: [],
@@ -91,14 +97,15 @@ const BEAU: Entry = {
 };
 
 const BUNDLE: Bundle = {
-  schema: 1,
+  schema: 2,
   lang: "fr",
   lexicon: "t",
   attribution: "",
   entries: { "fr:prendre:VERB": PRENDRE, "fr:beau:ADJ": BEAU },
   lookup: {},
-  match: {},
   feats: FEATS,
+  pronunciations: {},
+  recordings: {},
 };
 
 function titles(tables: Table[]): string[] {

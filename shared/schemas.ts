@@ -652,43 +652,17 @@ export const FeatureSets = z.record(z.string(), gen.Feats).meta({
     'The feature sets a response\'s paradigms use, by id: { "50": { Case: "Gen", ... } }. An id means something only within its language\'s loaded lexicon.',
 });
 
-export const LexiconEntry = z
-  .object({
-    lemmaId: LemmaId,
-    lemma: z.string(),
-    upos: gen.Upos,
-    senses: z.array(gen.Sense),
-    relations: z.array(gen.Relation),
-    pronunciations: z.array(gen.Pronunciation).describe("How the lemma is said"),
-    paradigms: z.array(gen.BundleParadigm),
-  })
-  .meta({
-    id: "LexiconEntry",
-    description:
-      'A lexicon entry: what a card shows. Its paradigms\' forms point into feature sets, ["psa", [50, 51]], which the response carries (FeatureSets).',
-  });
-
-export const RelationType = gen.RelationType;
-
 export const Relation = gen.Relation;
 
-export const Lookup = z.object({ entries: z.array(LexiconEntry), featureSets: z.partialRecord(Lang, FeatureSets) }).meta({
+export const Entry = gen.Entry;
+
+export const Lookup = z.object({ entries: z.array(gen.Entry), featureSets: z.partialRecord(Lang, FeatureSets) }).meta({
   id: "Lookup",
   description:
-    "The entries asked for that the lexicon has, and the targets of the relations of those with no senses of their own, which take their meaning from them (zgolić from golić).",
+    'The entries asked for that the lexicon has, as a bundle carries them. Their paradigms\' forms point into feature sets, ["psa", [50, 51]], which featureSets has by language.',
 });
 
-export const DueCard = z
-  .intersection(
-    ScheduledFields.extend({
-      entry: LexiconEntry.nullable(),
-      related: z
-        .array(LexiconEntry)
-        .describe("The targets of the entry's relations when it has no senses of its own, which take their meaning from them"),
-    }),
-    CardContent,
-  )
-  .meta({ id: "DueCard" });
+export const DueCard = z.intersection(ScheduledFields.extend({ entry: gen.Entry.nullable() }), CardContent).meta({ id: "DueCard" });
 
 const Count = z.number().int().min(0);
 

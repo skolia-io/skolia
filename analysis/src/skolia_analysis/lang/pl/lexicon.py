@@ -15,9 +15,9 @@ from ...lexicon import kaikki
 from ...lexicon import senses as kaikki_senses
 from ...lexicon.kaikki import KaikkiEntry, KaikkiSound
 from ...lexicon.pronunciation import pronunciations, recordings
-from ...lexicon.schema import Accent, Form, Paradigm, Relation
+from ...lexicon.schema import Accent, AspectPartner, Form, Paradigm, Relation
 from ...lexicon.source import Converted, Pronounced
-from ...schema import Feats, Upos
+from ...schema import Aspect, Feats, Upos
 from .morfeusz import MorfeuszCandidates, interpretation_readings, split_homonym
 from .nkjp import VERB_FORM_CLASSES, tag_class
 
@@ -79,17 +79,21 @@ INFLECTION_TAGS = kaikki.INFLECTION_TAGS | {
     "comparative",
     "superlative",
 }
-# Tags that say how a form-of sense is derived, kept as the relation's note
-DERIVATION_TAGS = (
-    "diminutive",
-    "augmentative",
-    "endearing",
-    "noun-from-verb",
-    "frequentative",
-    "feminine",
-    "masculine",
+ASPECTS: dict[str, Aspect] = {"imperfective": "Imp", "perfective": "Perf"}
+# Wiktionary's tags for a word's gender and aspect, which its paradigm's features say
+GRAMMAR_TAGS = frozenset(
+    {
+        "masculine",
+        "feminine",
+        "neuter",
+        "animal-not-person",
+        "person",
+        "personal",
+        "inanimate",
+        "animate",
+        *ASPECTS,
+    }
 )
-ASPECT_TAGS = {"perfective", "imperfective"}
 # Paradigms leave out PronType and ExtPos: the sentence decides them, not the form (jakie
 # is interrogative, PronType=Int, or relative, Rel, depending on use), so the token's
 # form still matches whichever the parser chose.
@@ -124,6 +128,7 @@ class Source:
     """Kaikki's Polish entries, each headword filed under the UPOS Morfeusz gives it."""
 
     attribution = ATTRIBUTION
+    grammar_tags = GRAMMAR_TAGS
 
     def __init__(self) -> None:
         self._candidates = MorfeuszCandidates()
@@ -155,7 +160,7 @@ class Source:
         ]
         if not senses:
             return None
-        derived = kaikki_senses.derived_from(entry, INFLECTION_TAGS, DERIVATION_TAGS)
+        derived = kaikki_senses.relations(entry, INFLECTION_TAGS, GRAMMAR_TAGS)
         relations = list(derived) + list(_aspect_partners(entry, word))
         return Converted(word, self._upos(word, pos), senses, relations)
 
@@ -261,6 +266,13 @@ def _aspect_partners(entry: KaikkiEntry, word: str) -> Iterator[Relation]:
         return
     for form in entry.get("forms", []):
         partner = form.get("form", "")
-        tags = set(form.get("tags", []))
-        if partner and partner != word and tags and tags <= ASPECT_TAGS:
-            yield {"type": "aspect-partner", "lemma": partner, "note": tags.pop()}
+        match form.get("tags", []):
+            case [tag] if tag in ASPECTS and partner and partner != word:
+                found: AspectPartner = {
+                    "kind": "aspect-partner",
+                    "lemma": partner,
+                    "aspect": ASPECTS[tag],
+                }
+                yield found
+            case _:
+                pass

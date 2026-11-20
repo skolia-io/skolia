@@ -1,5 +1,5 @@
 // What the reader needs from a language: everything outside lang/ goes through this.
-import type { Entry, Relation, Token } from "@skolia/shared/schema";
+import type { Entry, Token } from "@skolia/shared/schema";
 import type { Layout, MergeLabels } from "../paradigm.ts";
 
 export interface CaseExplanation {
@@ -37,9 +37,4 @@ export interface Language {
   /** A label for a token that's only part of a word (the Polish person ending -em), shown
    * instead of its part of speech, without meanings or forms; null for a word. */
   partOfWord(token: Token): string | null;
-  /** Wiktionary tags the grammar line already shows (gender, aspect), left off senses. */
-  grammarTags: ReadonlySet<string>;
-  /** A label for relations the language names itself (Polish aspect partners); others
-   * read "from (note)". */
-  relationLabel?(relation: Relation): string | null;
 }

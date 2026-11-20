@@ -28,7 +28,7 @@ flowchart LR
     LXW["skolia-lexicon Worker: public lexicon API, /v1"]
     UDO["User DO, one per user: word, card, cloze, review, settings"]
     DB[("D1 skolia: document, auth tables")]
-    LX[("D1 skolia-lexicon-{lang}, one per language: entry, featureset, loaded")]
+    LX[("D1 skolia-lexicon-{lang}, one per language: entry, relation, featureset, loaded")]
     R2[("R2 skolia: doc/{id}/..., versions/{lang}.json")]
     IDB[("D1 skolia-ingest: ingest_job, 30 days")]
     subgraph INGW["skolia-ingest Worker"]
@@ -190,7 +190,7 @@ flowchart TB
 ```
 
 - D1 is bound by name. If Terraform hasn't made a database, `wrangler deploy` creates one outside Terraform, so `deploy-infra` goes first.
-- The ingest image has `lexicon-{lang}` but not the cards lexicon. The cards lexicon is built from the lexicon, with Morfeusz's paradigms for Polish.
+- The ingest image has `lexicon-{lang}` but not the D1 export. The D1 export is built from the lexicon by the same `lexicon/entry.py` as the bundles.
 - `load-lexicon` only substitutes from Cachix and never fetches the inputs, so it needs the lexicon there; `build-ingest-image` pushes it only when an image is rebuilt.
 - `deploy-web` waits for `deploy-lexicon`, which it binds, and for `load-lexicon` and `deploy-ingest`: the end-to-end tests read the lexicon.
 - Deploys don't wait for `check`. `infra/plan.py` has a dependency graph of projects (each pnpm package by its `package.json`, `analysis/`, `infra/`, `curated/`) and the targets CI builds, checks and deploys, each node keyed by a hash of its Nix content and its build and test dependencies' keys. CI skips each one whose key `skolia-ci` has a row for: in `build` for an image, the skolia Worker's bundle or a check, done once for every environment, and as the environment's last row in `deployment` for Terraform, the ingest Worker, the lexicon, the lexicon Worker, the skolia Worker, the end-to-end tests and the curated sync. Both tables only grow.
@@ -230,7 +230,7 @@ class LanguagePlugin:
     def parser(model) -> Parser
     def analyzer(parser, options, data) -> Analyzer   # text -> blob; its name versions the blob
     def lexicon_source() -> LexiconSource        # Kaikki entries in the analyser's terms
-    def bundler(lexicon, data) -> Bundler        # blob -> bundle: senses, paradigms, frames
+    def extras(data) -> Extras                   # what it adds to entries: paradigms, frames
 ```
 
 `data` is the language's data directory: the lexicon (`{lang}.sqlite`) and whatever else the plugin builds (Polish: `pl-valency.json`).
@@ -250,16 +250,21 @@ Built offline (`analysis/src/skolia_analysis/lexicon/`) into one SQLite file per
 English and French have no Morfeusz: headwords are filed under Kaikki's part of speech mapped to UPOS, and Wiktionary's inflection table gives the paradigm.
 
 ```
-entry(lemma_id, lemma, upos, senses_json, relations_json, paradigms_json)
+entry(lemma_id, lemma, upos, grammar)  with senses, paradigms, relations in tables of their own
   senses:    gloss, tags (slang, dated...), examples, and `when`: the features that select
              the sense (pies the dog: Animacy=Nhum; the cop: Animacy=Hum)
-  relations: aspect partner (robić <-> zrobić), derived-from (pani <- pan, rubelek <- rubel)
+  grammar:   a `when` every sense shares (pani: Gender=Fem)
+  relations: aspect-partner (robić <-> zrobić, its aspect), derived-from (pani <- pan,
+             rubelek <- rubel, with how), variant-of (niechże <- niech, with Wiktionary's tags);
+             the target's spelling, and its entry when the lexicon has one
   paradigms: forms with UD features, for languages without a generator (English, French); empty for Polish
 ```
 
+What the lexicon Worker serves and a bundle carries is an `Entry`, made from a row in one place (`lexicon/entry.py`): its grammar adds what every form's features share (zgolić: Aspect=Perf), Wiktionary's tags for that grammar come off its senses, a word with no senses of its own takes those of the words it's derived from (zgolić, a perfective of golić, means what golić does), and it has its lemma's pronunciations, its paradigms (Morfeusz's for Polish) and its frames. Each lexicon D1 stores each `Entry` whole, with the relation rows beside it for finding what points at a word (`include=incoming`). The reader renders a relation's kind in English.
+
 Polish paradigms aren't stored: Morfeusz generates them, in the analyser's feature conventions, when a document's bundle is made. A verb's paradigm includes its participles and gerunds. English paradigms are stored in UD EWT's conventions: a form lists every feature set it serves (`walk` is the infinitive, the imperative and the present for every person but the third singular), since the reader matches a token to the forms whose features include the token's. French paradigms are stored in UD French GSD's conventions (an imperfect is `Tense=Imp`, a conditional `Mood=Cnd`); Wiktionary gives only the masculine singular past participle, so its feminine and plural forms follow the regular rule (`pris`, `prise`, `prises`), with the few that never agree (`été`) left alone.
 
-Each imported document gets a bundle with only the lemmas it uses (meanings, relations, paradigms), so taps stay offline. Lookup falls back from the exact `lemma_id` to the lemma lowercased under the same part of speech (*Old* Town is the adjective *old*), then to the same lemma under another part of speech (English *be* as AUX is Wiktionary's verb), then to the lemma lowercased under any. The reader marks the token's form in the paradigm by its text and features, counting only features the paradigm's forms have. A full-dictionary download for search is a possible later addition (meanings only, without paradigms).
+Each imported document gets a bundle with the `Entry` of each lemma it uses, so taps stay offline. Lookup falls back from the exact `lemma_id` to the lemma lowercased under the same part of speech (*Old* Town is the adjective *old*), then to the same lemma under another part of speech (English *be* as AUX is Wiktionary's verb), then to the lemma lowercased under any. The reader marks the token's form in the paradigm by its text and features, counting only features the paradigm's forms have. A full-dictionary download for search is a possible later addition (meanings only, without paradigms).
 
 Later: showing a word's frames on its sheet ("`pomagać` + dative", from the same Walenty data the case reasons use) and `expression` (multi-word, matched by lemma sequence, from Wiktionary's phrase entries and Walenty's idioms).
 

@@ -50,7 +50,43 @@ def test_inflected_form_pointer_is_skipped_derivation_kept(
     }
     converted = source.convert(diminutive)
     assert converted is not None
-    assert converted.relations == [{"type": "derived-from", "lemma": "rubel", "note": "diminutive"}]
+    assert converted.relations == [{"kind": "derived-from", "lemma": "rubel", "how": "diminutive"}]
+
+
+def test_untagged_inflections_are_neither_senses_nor_relations(
+    source: lexicon_pl.Source,
+) -> None:
+    entry: KaikkiEntry = {
+        "word": "ładnych",
+        "pos": "adj",
+        "senses": [
+            {
+                "glosses": ["inflection of ładny:", "genitive/locative plural"],
+                "tags": ["form-of"],
+                "form_of": [{"word": "ładny"}],
+            }
+        ],
+    }
+    assert source.convert(entry) is None
+
+
+def test_a_form_of_that_isnt_a_derivation_is_a_variant(source: lexicon_pl.Source) -> None:
+    entry: KaikkiEntry = {
+        "word": "bzikać",
+        "pos": "verb",
+        "senses": [
+            {
+                "glosses": ["regional form of bzykać"],
+                "tags": ["form-of", "imperfective", "intransitive", "regional"],
+                "form_of": [{"word": "bzykać"}],
+            }
+        ],
+    }
+    converted = source.convert(entry)
+    assert converted is not None
+    assert converted.relations == [
+        {"kind": "variant-of", "lemma": "bzykać", "tags": ["intransitive", "regional"]}
+    ]
 
 
 def test_reflexive_headword_files_under_the_bare_verb(source: lexicon_pl.Source) -> None:
@@ -77,7 +113,7 @@ def test_aspect_partner() -> None:
         ],
     }
     partners = list(lexicon_pl._aspect_partners(entry, "robić"))  # pyright: ignore[reportPrivateUsage]
-    assert partners == [{"type": "aspect-partner", "lemma": "zrobić", "note": "perfective"}]
+    assert partners == [{"kind": "aspect-partner", "lemma": "zrobić", "aspect": "Perf"}]
 
 
 def test_paradigm_is_split_by_homonym(paradigms: lexicon_pl.Paradigms) -> None:

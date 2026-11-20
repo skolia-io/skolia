@@ -336,10 +336,6 @@ export type ReviewRequest = z.output<typeof schemas.ReviewRequest>;
 /** What the reader sends: the same, before the API's validation brands its ids. */
 export type ReviewRequestInput = z.input<typeof schemas.ReviewRequest>;
 
-/** A lexicon entry: what a card shows. Its paradigms' forms point into feature sets,
- * ["psa", [50, 51]], which the response carries (FeatureSets). */
-export type LexiconEntry = z.output<typeof schemas.LexiconEntry>;
-
 /** The feature sets a response's paradigms use, by id: { "50": { Case: "Gen", ... } }. An
  * id means something only within its language's loaded lexicon. */
 export type FeatureSets = z.output<typeof schemas.FeatureSets>;

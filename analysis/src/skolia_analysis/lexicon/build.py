@@ -1,19 +1,19 @@
 """Kaikki extract -> lexicon SQLite file, keyed by the analyser's lemma_id."""
 
 import hashlib
-from collections.abc import Iterable, Iterator
+from collections.abc import Collection, Iterable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from ..blob import lemma_id
-from ..schema import Upos
+from ..schema import Feats, Upos
 from . import commons, kaikki, store
 from .pronunciation import merge as merge_pronunciations
 from .pronunciation import merge_recordings
 from .schema import Paradigm, Pronunciation, Recording, Relation, Sense
 from .source import Converted, LexiconSource
 
-LEXICON_VERSION = "7"
+LEXICON_VERSION = "8"
 
 
 @dataclass
@@ -23,6 +23,7 @@ class Merged:
     senses: list[Sense] = field(default_factory=lambda: list[Sense]())
     relations: list[Relation] = field(default_factory=lambda: list[Relation]())
     paradigms: list[Paradigm] = field(default_factory=lambda: list[Paradigm]())
+    grammar: Feats = field(default_factory=lambda: Feats())
 
 
 @dataclass
@@ -37,10 +38,13 @@ class Stats:
     """Spellings with a recording from Commons."""
 
 
-def merge(converted: Iterable[Converted]) -> dict[tuple[str, Upos], Merged]:
+def merge(
+    converted: Iterable[Converted], grammar_tags: Collection[str] = ()
+) -> dict[tuple[str, Upos], Merged]:
     """Wiktionary splits a word by etymology and gender (pies the dog, the cop, the peg);
     the analyser can only tell them apart by features, so they merge into one entry
-    whose senses carry the features that select them."""
+    whose senses carry the features that select them. grammar_tags come off the senses:
+    the entry's grammar says them."""
     merged: dict[tuple[str, Upos], Merged] = {}
     for entry in converted:
         for upos in entry.upos:
@@ -49,7 +53,9 @@ def merge(converted: Iterable[Converted]) -> dict[tuple[str, Upos], Merged]:
             target.relations += [r for r in entry.relations if r not in target.relations]
             target.paradigms += entry.paradigms
     for target in merged.values():
-        _drop_uninformative_when(target.senses)
+        target.grammar = _lift_shared_when(target.senses)
+        for sense in target.senses:
+            sense["tags"] = [t for t in sense["tags"] if t not in grammar_tags]
         target.paradigms = _drop_contained(target.paradigms)
     return merged
 
@@ -75,12 +81,19 @@ def _drop_contained(paradigms: list[Paradigm]) -> list[Paradigm]:
     return kept
 
 
-def _drop_uninformative_when(senses: list[Sense]) -> None:
-    """A selector that every sense shares (pani: always Fem) can't pick between them."""
+def _lift_shared_when(senses: list[Sense]) -> Feats:
+    """A selector that every sense shares (pani: always Fem) can't pick between them, so it
+    comes off them; one set of features is the word's grammar."""
     selectors = [s.get("when") for s in senses]
-    if all(selector == selectors[0] for selector in selectors):
-        for sense in senses:
-            sense.pop("when", None)
+    if not all(selector == selectors[0] for selector in selectors):
+        return {}
+    for sense in senses:
+        sense.pop("when", None)
+    match selectors[0]:
+        case [feats]:
+            return feats
+        case _:
+            return {}
 
 
 type Pronunciations = dict[tuple[str, Upos], list[Pronunciation]]
@@ -119,7 +132,7 @@ def rows(
             else:
                 yield result
 
-    merged = merge(converted())
+    merged = merge(converted(), source.grammar_tags)
     for hand in source.hand_entries():
         for upos in hand.upos:
             merged.setdefault(
@@ -129,7 +142,15 @@ def rows(
     for (lemma, upos), entry in sorted(merged.items()):
         entry_id = lemma_id(lang, lemma, upos)
         if entry_id is not None:
-            yield store.Row(entry_id, lemma, upos, entry.senses, entry.relations, entry.paradigms)
+            yield store.Row(
+                entry_id,
+                lemma,
+                upos,
+                entry.senses,
+                entry.relations,
+                entry.paradigms,
+                entry.grammar,
+            )
 
 
 def _verb_derivatives(lang: str, entry: kaikki.KaikkiEntry) -> Iterator[store.VerbDerivative]:

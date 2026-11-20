@@ -10,11 +10,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from .lexicon.schema import Bundle, Paradigm
+from .lexicon.entry import Extras
 from .lexicon.source import LexiconSource
-from .lexicon.store import Lexicon
 from .parsed import ParsedSentence, Parser
-from .schema import Blob, ExpressionDef, Upos
+from .schema import Blob, ExpressionDef
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,9 +54,6 @@ class ParsingAnalyzer:
         return self.assembler(text, parsed)
 
 
-type Bundler = Callable[[Blob], Bundle]
-
-
 class LanguagePlugin(Protocol):
     @property
     def LANG(self) -> str:
@@ -86,11 +82,9 @@ class LanguagePlugin(Protocol):
 
     def lexicon_source(self) -> LexiconSource: ...
 
-    def bundler(self, lexicon: Lexicon, data: Path | None) -> Bundler: ...
-
-    def paradigms(self) -> Callable[[str, Upos], list[Paradigm]] | None:
-        """Generates a lemma's paradigms, for a language whose lexicon doesn't store them;
-        None when it does."""
+    def extras(self, data: Path | None) -> Extras:
+        """What the language adds to its lexicon's entries (lexicon/entry.py): paradigms,
+        for a language whose lexicon doesn't store them, and, with data, valency frames."""
         ...
 
 

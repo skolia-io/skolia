@@ -170,14 +170,36 @@ export interface Sense {
   examples?: Example[];
 }
 
-export type RelationType = "aspect-partner" | "derived-from";
-
-export interface Relation {
-  type: RelationType;
+export interface AspectPartner {
+  kind: "aspect-partner";
   lemma: string;
-  note?: string;
   lemma_id?: string;
-  sense_indexes?: number[];
+  aspect: Aspect;
+}
+
+export type Derivation = "agent-noun" | "augmentative" | "diminutive" | "endearing" | "feminine" | "frequentative" | "iterative" | "masculine" | "noun-from-verb" | "perfective";
+
+export interface DerivedFrom {
+  kind: "derived-from";
+  lemma: string;
+  lemma_id?: string;
+  how: Derivation;
+}
+
+export interface VariantOf {
+  kind: "variant-of";
+  lemma: string;
+  lemma_id?: string;
+  tags: string[];
+}
+
+export type Relation = AspectPartner | DerivedFrom | VariantOf;
+
+export type Accent = "UK" | "US";
+
+export interface Pronunciation {
+  ipa: string;
+  accents?: Accent[];
 }
 
 export type FormRow = [string, number[]];
@@ -435,21 +457,15 @@ export interface Schema {
 }
 
 export interface Entry {
+  lemma_id: string;
   lemma: string;
   upos: Upos;
+  grammar: Feats;
   senses: Sense[];
   relations: Relation[];
+  pronunciations: Pronunciation[];
   paradigms: BundleParadigm[];
   frames: Schema[];
-}
-
-export type Match = "exact" | "other-pos" | "lowercase" | "none";
-
-export type Accent = "UK" | "US";
-
-export interface Pronunciation {
-  ipa: string;
-  accents?: Accent[];
 }
 
 export interface Recording {
@@ -465,10 +481,9 @@ export interface Bundle {
   attribution: string;
   entries: Record<string, Entry>;
   lookup: Record<string, string>;
-  match: Record<string, Match>;
   feats: Feats[];
-  pronunciations?: Record<string, Pronunciation[]>;
-  recordings?: Record<string, Recording[]>;
+  pronunciations: Record<string, Pronunciation[]>;
+  recordings: Record<string, Recording[]>;
 }
 
 export interface IngestJob {
@@ -543,5 +558,5 @@ export interface Versions {
 }
 
 export const SCHEMA = 2;
-export const BUNDLE_SCHEMA = 1;
+export const BUNDLE_SCHEMA = 2;
 export const MAX_TEXT_LENGTH = 20000;

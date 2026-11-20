@@ -237,7 +237,7 @@
         lang:
         pkgs.runCommand "skolia-d1-export-${lang}" { nativeBuildInputs = [ venv ]; } ''
           mkdir $out
-          skolia-build-d1-export ${lang} ${lexicon.${lang}}/${lang}.sqlite \
+          skolia-build-d1-export ${lang} ${lexicon.${lang}} \
             ${
               builtins.path {
                 path = ../lexicon/migrations;
