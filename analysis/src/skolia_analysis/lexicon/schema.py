@@ -36,10 +36,9 @@ class Relation(TypedDict):
     """The target's entry; absent when the lexicon has the spelling but no entry for it."""
     sense_indexes: NotRequired[list[int]]
     """Which of the target's senses the relation is about, by index; absent: all of them.
-    zgolić is listed under golić's sense "to down, to soak (to drink)" as its perfective,
-    not under "to shave". A word with no senses of its own takes these as its meaning
-    (shared/lexicon.ts sensesOf), so a bundle or lookup carries the targets of such a word's
-    relations."""
+    A word with no senses of its own takes these as its meaning (shared/lexicon.ts
+    sensesOf), so a bundle or lookup carries the targets of such a word's relations:
+    zgolić, which Wiktionary only lists as golić's perfective, means what golić does."""
 
 
 class Form(TypedDict):

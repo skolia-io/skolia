@@ -13,7 +13,7 @@ from .pronunciation import merge_recordings
 from .schema import Paradigm, Pronunciation, Recording, Relation, Sense
 from .source import Converted, LexiconSource
 
-LEXICON_VERSION = "6"
+LEXICON_VERSION = "7"
 
 
 @dataclass

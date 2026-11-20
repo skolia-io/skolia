@@ -64,7 +64,8 @@ CREATE TABLE relation (
     evidence TEXT CHECK (
         evidence IS NULL OR (json_valid(evidence) AND json_type(evidence) = 'array')
     ),
-    -- The target's sense ords the evidence names; NULL: the whole entry
+    -- The target's sense ords the relation is about; NULL: the whole entry. No source
+    -- gives them reliably yet (_write_derivatives)
     target_senses TEXT CHECK (
         target_senses IS NULL
         OR (json_valid(target_senses) AND json_type(target_senses) = 'array')
@@ -280,8 +281,9 @@ def _write_derivatives(db: sqlite3.Connection, derivatives: Iterable[VerbDerivat
         senses = evidence.setdefault((source_id, target_id), [])
         if glosses and glosses not in senses:
             senses.append(glosses)
+    # Not target_senses: Kaikki gives a page's derived terms to the sense before the list, so
+    # zgolić came under golić's "to down, to soak (to drink)" though it means "to shave off"
     for (source_id, target_id), senses in evidence.items():
-        target_senses = _evidenced_senses(db, target_id, senses)
         found = db.execute(
             """
             SELECT ord FROM relation
@@ -292,50 +294,18 @@ def _write_derivatives(db: sqlite3.Connection, derivatives: Iterable[VerbDerivat
         ).fetchone()
         if found:
             db.execute(
-                """
-                UPDATE relation SET evidence = ?, target_senses = ?
-                WHERE source_id = ? AND ord = ?
-                """,
-                (json.dumps(senses, ensure_ascii=False), target_senses, source_id, found[0]),
+                "UPDATE relation SET evidence = ? WHERE source_id = ? AND ord = ?",
+                (json.dumps(senses, ensure_ascii=False), source_id, found[0]),
             )
         else:
             db.execute(
                 """
-                INSERT INTO relation
-                    (source_id, ord, target_id, kind, note, evidence, target_senses)
-                SELECT ?, coalesce(max(ord), -1) + 1, ?, 'derived-from', 'perfective derivative',
-                    ?, ?
+                INSERT INTO relation (source_id, ord, target_id, kind, note, evidence)
+                SELECT ?, coalesce(max(ord), -1) + 1, ?, 'derived-from', 'perfective derivative', ?
                 FROM relation WHERE source_id = ?
                 """,
-                (
-                    source_id,
-                    target_id,
-                    json.dumps(senses, ensure_ascii=False),
-                    target_senses,
-                    source_id,
-                ),
+                (source_id, target_id, json.dumps(senses, ensure_ascii=False), source_id),
             )
-
-
-def _evidenced_senses(
-    db: sqlite3.Connection, target_id: str, evidence: list[tuple[str, ...]]
-) -> str | None:
-    """The ords of the target's senses whose gloss is one the evidence came from, as JSON;
-    None when none matches, so the whole entry stands. A sense's gloss is its Kaikki
-    glosses joined with ": " (senses.sense)."""
-    glosses = json.dumps([": ".join(found) for found in evidence], ensure_ascii=False)
-    ords = [
-        ord_
-        for (ord_,) in db.execute(
-            """
-            SELECT ord FROM sense
-            WHERE lemma_id = ? AND gloss IN (SELECT value FROM json_each(?))
-            ORDER BY ord
-            """,
-            (target_id, glosses),
-        )
-    ]
-    return json.dumps(ords) if ords else None
 
 
 def _write_recordings(
