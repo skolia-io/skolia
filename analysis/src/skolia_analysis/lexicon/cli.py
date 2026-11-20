@@ -1,5 +1,6 @@
 import argparse
 import json
+import sqlite3
 import sys
 from pathlib import Path
 from typing import cast
@@ -9,6 +10,39 @@ from ..plugin import lexicon_path
 from ..schema import Blob
 from . import build, cards, commons
 from .store import Lexicon
+
+
+def lookup_main() -> None:
+    parser = argparse.ArgumentParser(
+        prog="skolia-lexicon",
+        description="Look up an exact lemma in a built lexicon and print JSON.",
+    )
+    parser.add_argument("lemma", help="headword as spelled in the lexicon, e.g. golić")
+    parser.add_argument("--db", type=Path, required=True, help="path to the lexicon SQLite file")
+    parser.add_argument(
+        "--incoming",
+        action="store_true",
+        help="also scan the local lexicon for relations pointing to this lemma",
+    )
+    args = parser.parse_args()
+    lemma: str = args.lemma
+    try:
+        lexicon = Lexicon(args.db.resolve())
+        result: dict[str, object] = {
+            "lemma": lemma,
+            "entries": [row._asdict() for row in lexicon.by_lemma(lemma)],
+        }
+        if args.incoming:
+            result["incoming"] = [
+                {"from": row.lemma_id, "relation": relation}
+                for row in lexicon.rows()
+                for relation in row.relations
+                if relation["lemma"] == lemma
+            ]
+    except sqlite3.Error as error:
+        parser.exit(1, f"{parser.prog}: {args.db}: {error}\n")
+    json.dump(result, sys.stdout, ensure_ascii=False, indent=2)
+    sys.stdout.write("\n")
 
 
 def build_main() -> None:
