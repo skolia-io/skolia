@@ -14,6 +14,7 @@ import os
 import signal
 import sys
 from pathlib import Path
+from time import perf_counter
 from types import FrameType
 
 from .. import lang
@@ -81,9 +82,15 @@ def ingest(queue: HttpJobs) -> None:
     unknown = set(codes) - set(lang.LANGS)
     if unknown:
         sys.exit(f"skolia-ingest: unknown languages in SKOLIA_LANGS: {', '.join(sorted(unknown))}")
+    started = perf_counter()
     pipelines = {code: pipeline(code, data) for code in codes}
+    log.info("loaded pipelines in %.2f s", perf_counter() - started)
+
     ingester = Ingester(blobs, pipelines)
+    started = perf_counter()
     ingester.publish_versions()
+    log.info("published version metadata in %.2f s", perf_counter() - started)
+
     queue.loaded()
     log.info("waiting for jobs")
     ingester.run(queue)
