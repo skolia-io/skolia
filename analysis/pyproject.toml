@@ -30,7 +30,6 @@ skolia-analyze = "skolia_analysis.cli:main"
 skolia-lexicon = "skolia_analysis.lexicon.cli:lookup_main"
 skolia-build-lexicon = "skolia_analysis.lexicon.cli:build_main"
 skolia-fetch-commons = "skolia_analysis.lexicon.cli:fetch_commons_main"
-skolia-build-d1-export = "skolia_analysis.lexicon.cli:d1_export_main"
 skolia-ingest = "skolia_analysis.ingest.cli:main"
 skolia-build-valency = "skolia_analysis.lang.pl.valency:build_main"
 

@@ -23,19 +23,16 @@ SHOW_MISSES = 40
 
 
 def match_of(lexicon: Lexicon, token: Token, token_id: str) -> Match:
-    exact = lexicon.get(token_id)
-    if exact is not None:
-        return "exact" if exact.senses else "none"
+    if lexicon.get(token_id) is not None:
+        return "exact" if lexicon.has_senses(token_id) else "none"
     lang, rest = token_id.split(":", 1)
     lemma, _ = rest.rsplit(":", 1)
     lower = lemma.lower()
-    if lower != lemma:
-        lowered = lexicon.get(f"{lang}:{lower}:{token['upos']}")
-        if lowered is not None and lowered.senses:
-            return "lowercase"
-    if any(row.senses for row in lexicon.by_lemma(lemma)):
+    if lower != lemma and lexicon.has_senses(f"{lang}:{lower}:{token['upos']}"):
+        return "lowercase"
+    if lexicon.with_senses(lemma):
         return "other-pos"
-    if lower != lemma and any(row.senses for row in lexicon.by_lowercase(lower)):
+    if lower != lemma and lexicon.lowercase_with_senses(lower):
         return "lowercase"
     return "none"
 

@@ -76,7 +76,7 @@ parlé	VERB	$VERSION	{"pronunciations":[{"ipa":"/paʁ.le/"}],"recordings":[]}
 ## meta (key, value)
 attribution	Meanings, forms and pronunciations from Wiktionary (https://en.wiktionary.org) via kaikki.org, CC BY-SA 4.0
 lang	fr
-version	8+kaikki-2e4f54f35300+d1-4
+version	9+kaikki-2e4f54f35300
 ## relation (source_id, version, ord, target_lemma, target_id, kind, data)
 fr:chaton:NOUN	$VERSION	0	chat	fr:chat:NOUN	derived-from	{"how": "diminutive"}
 fr:cholère:NOUN	$VERSION	0	colère	fr:colère:NOUN	derived-from	{"how": "feminine"}

@@ -176,7 +176,7 @@ lexicon-cli lang *args:
       uv run --project analysis --locked skolia-lexicon --db "$out/$lang.sqlite" "$@"
     fi
 
-# Load each language's lexicon (staging, production, pr-N or local) from its Nix D1 export, into a D1 database
+# Load each language's lexicon (staging, production, pr-N or local) from its Nix build, into a D1 database
 # of the build's own (infra/load-lexicon.py); just deploy-lexicon binds it.
 # A preview gets each language's entries for wordfreq's 3,000 most common words (infra/load-lexicon.py --sample).
 # A language whose build evaluates to a Nix output already loaded is skipped without building it.
@@ -187,14 +187,14 @@ load-lexicon env *flags:
     set -euo pipefail
     case {{ env }} in pr-*) sample="--sample 3000" ;; *) sample= ;; esac
     for lang in {{ langs }}; do
-      build="./analysis#d1-export-$lang"
+      build="./analysis#lexicon-$lang"
       out=$(nix eval --raw "$build.outPath")
       state=$(infra/load-lexicon.py state {{ env }} --lang "$lang" --built-from "$out" $sample {{ flags }})
       if [ "$state" = current ]; then echo "{{ env }}: $lang already has $out"; continue; fi
       out=$(nix build --no-link --print-out-paths "$build")
       if [ -n "${CACHIX_AUTH_TOKEN:-}" ]; then cachix push andyyu2004 "$out"; fi
       if [ {{ env }} != local ]; then infra/plan.py deploying {{ env }} lexicon; fi
-      infra/load-lexicon.py load {{ env }} "$out/$lang.d1.sqlite" --built-from "$out" $sample {{ flags }}
+      infra/load-lexicon.py load {{ env }} "$out/$lang.sqlite" --built-from "$out" $sample {{ flags }}
     done
     if [ {{ env }} != local ]; then infra/plan.py deployed {{ env }} lexicon; fi
 

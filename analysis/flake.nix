@@ -210,45 +210,30 @@
         skolia-build-valency walenty/walenty_20180630-text $out/pl-valency.json
       '';
 
+      # Each language's lexicon: the lexicon Worker's D1 lexicon as a SQLite file in D1's schema
+      # (lexicon/migrations), which infra/load-lexicon.py copies into D1. Not in the images. The
+      # migrations keep the store name they had under api/, so moving them changed no build.
+      migrations = builtins.path {
+        path = ../lexicon/migrations;
+        name = "lexicon-migrations";
+      };
       lexicon = {
         en = pkgs.runCommand "skolia-lexicon-en" { nativeBuildInputs = [ venv ]; } ''
           mkdir $out
-          skolia-build-lexicon en ${input."kaikki.org-dictionary-English.jsonl"} $out/en.sqlite
+          skolia-build-lexicon en ${input."kaikki.org-dictionary-English.jsonl"} ${migrations} \
+            $out/en.sqlite
         '';
         fr = pkgs.runCommand "skolia-lexicon-fr" { nativeBuildInputs = [ venv ]; } ''
           mkdir $out
-          skolia-build-lexicon fr ${input."kaikki.org-dictionary-French.jsonl"} $out/fr.sqlite
+          skolia-build-lexicon fr ${input."kaikki.org-dictionary-French.jsonl"} ${migrations} \
+            $out/fr.sqlite
         '';
-        pl =
-          pkgs.runCommand "skolia-lexicon-pl"
-            {
-              nativeBuildInputs = [
-                venv
-              ];
-            }
-            ''
-              mkdir $out
-              skolia-build-lexicon pl ${input."kaikki.org-dictionary-Polish.jsonl"} $out/pl.sqlite \
-                --commons ${input."commons-recordings-pl.txt"}
-              cp ${walenty}/pl-valency.json $out/
-            '';
-      };
-
-      # The lexicon Worker's D1 lexicon as a SQLite file in D1's schema (lexicon/migrations),
-      # which infra/load-lexicon.py copies into D1. Not in the images. The migrations keep the
-      # store name they had under api/, so moving them changed no export.
-      d1Export =
-        lang:
-        pkgs.runCommand "skolia-d1-export-${lang}" { nativeBuildInputs = [ venv ]; } ''
+        pl = pkgs.runCommand "skolia-lexicon-pl" { nativeBuildInputs = [ venv ]; } ''
           mkdir $out
-          skolia-build-d1-export ${lang} ${lexicon.${lang}} \
-            ${
-              builtins.path {
-                path = ../lexicon/migrations;
-                name = "lexicon-migrations";
-              }
-            } $out/${lang}.d1.sqlite
+          skolia-build-lexicon pl ${input."kaikki.org-dictionary-Polish.jsonl"} ${migrations} \
+            $out/pl.sqlite --commons ${input."commons-recordings-pl.txt"} --data ${walenty}
         '';
+      };
 
       env =
         lang:
@@ -359,10 +344,6 @@
         // perLang host {
           prefix = "lexicon";
           value = lang: lexicon.${lang};
-        }
-        // perLang host {
-          prefix = "d1-export";
-          value = d1Export;
         }
         // perLang host {
           prefix = "cacheable";

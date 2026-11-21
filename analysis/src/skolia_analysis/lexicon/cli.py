@@ -5,8 +5,7 @@ import sys
 from pathlib import Path
 
 from .. import lang
-from ..plugin import lexicon_path
-from . import build, commons, d1_export
+from . import build, commons, store
 from .store import Lexicon
 
 
@@ -28,7 +27,7 @@ def lookup_main() -> None:
         lexicon = Lexicon(args.db.resolve())
         result: dict[str, object] = {
             "lemma": lemma,
-            "entries": [row._asdict() for row in lexicon.by_lemma(lemma)],
+            "entries": lexicon.by_lemma(lemma),
         }
         if args.incoming:
             result["incoming"] = [
@@ -44,21 +43,34 @@ def lookup_main() -> None:
 def build_main() -> None:
     parser = argparse.ArgumentParser(
         prog="skolia-build-lexicon",
-        description="Build a language's lexicon SQLite file from Kaikki's Wiktionary extract.",
+        description="Build a language's lexicon from Kaikki's Wiktionary extract: a SQLite "
+        "file in the lexicon Worker's D1 schema, which infra/load-lexicon.py loads.",
     )
     parser.add_argument("lang", choices=lang.LANGS)
     parser.add_argument("kaikki", type=Path, help="e.g. kaikki.org-dictionary-Polish.jsonl")
+    parser.add_argument("migrations", type=Path, help="lexicon/migrations")
     parser.add_argument("out", type=Path, help="output .sqlite file (replaced)")
     parser.add_argument(
         "--commons",
         type=Path,
         help="Commons' recordings' file names, from skolia-fetch-commons (Polish only)",
     )
+    parser.add_argument(
+        "--data",
+        type=Path,
+        help="the language's data directory, for its valency frames (Polish: pl-valency.json)",
+    )
     args = parser.parse_args()
-    source = lang.plugin(args.lang).lexicon_source()
-    count, stats = build.build(args.lang, source, args.kaikki, args.out, args.commons)
+    plugin = lang.plugin(args.lang)
+    contents, stats = build.build(
+        args.lang,
+        plugin.lexicon_source(),
+        build.Inputs(args.kaikki, args.commons),
+        plugin.frames(args.data),
+    )
+    store.write(args.out, args.migrations, contents)
     print(
-        f"{count} lemma entries from {stats.entries} Kaikki entries "
+        f"{len(contents.entries)} lemma entries from {stats.entries} Kaikki entries "
         f"({stats.skipped} skipped: inflected forms, phrases, affixes); "
         f"{stats.pronounced} (word, part of speech) pairs with a pronunciation, "
         f"{stats.recorded} with a recording; "
@@ -77,28 +89,3 @@ def fetch_commons_main() -> None:
     parser.add_argument("out", type=Path, help="output .txt file (replaced)")
     args = parser.parse_args()
     print(f"{commons.fetch(args.lang, args.out)} files", file=sys.stderr)
-
-
-def d1_export_main() -> None:
-    parser = argparse.ArgumentParser(
-        prog="skolia-build-d1-export",
-        description="Build the API's D1 lexicon as a SQLite file in D1's schema "
-        "(infra/load-lexicon.py loads it).",
-    )
-    parser.add_argument("lang", choices=lang.LANGS)
-    parser.add_argument(
-        "data",
-        type=Path,
-        help="the language's data directory: {lang}.sqlite and the plugin's files",
-    )
-    parser.add_argument("migrations", type=Path, help="lexicon/migrations")
-    parser.add_argument("out", type=Path, help="output .sqlite file (replaced)")
-    args = parser.parse_args()
-    data: Path = args.data
-    count = d1_export.build(
-        Lexicon(lexicon_path(data, args.lang)),
-        lang.plugin(args.lang).extras(data),
-        args.migrations,
-        args.out,
-    )
-    print(f"{count} entries", file=sys.stderr)

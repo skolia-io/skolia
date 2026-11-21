@@ -208,7 +208,7 @@ class Target:
 
 
 IMAGES = tuple(f"image-{lang}" for lang in LANGS)
-LEXICON_EXPORTS = tuple(f"./analysis#d1-export-{lang}" for lang in LANGS)
+LEXICON_EXPORTS = tuple(f"./analysis#lexicon-{lang}" for lang in LANGS)
 LEXICON_LOAD = ("infra/load-lexicon.py", "infra/cloudflare.py")
 PLAN_INFRA = {"shared": "infra/shared", "staging": "infra", "production": "infra"}
 # These checks also depend on how CI runs them and the tools it installs.
