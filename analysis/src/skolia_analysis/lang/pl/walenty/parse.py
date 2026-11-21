@@ -282,7 +282,7 @@ class Parser:
         self.expect(")")
         return phrase
 
-    def _phrase_body(self, name: str) -> Phrase:
+    def _phrase_body(self, name: str) -> Phrase:  # noqa: C901, PLR0912
         match name:
             case "np":
                 return {"kind": "np", "case": self.case()}
@@ -595,7 +595,7 @@ def empty_expansions() -> Expansions:
     }
 
 
-def parse_expansions(lines: Iterable[str]) -> Expansions:
+def parse_expansions(lines: Iterable[str]) -> Expansions:  # noqa: C901, PLR0912
     """phrase_types_expand_*.txt: "head-->" lines, then indented "realisation\\t[certainty]"."""
     blocks: dict[str, list[tuple[str, Certainty]]] = {}
     head: str | None = None

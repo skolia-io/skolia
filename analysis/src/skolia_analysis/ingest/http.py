@@ -223,7 +223,7 @@ class HttpJobs:
         return job
 
 
-def serve(jobs: HttpJobs, host: str, port: int) -> ThreadingHTTPServer:
+def serve(jobs: HttpJobs, host: str, port: int) -> ThreadingHTTPServer:  # noqa: C901
     """Listen in a background thread; returns the server (shutdown() stops it)."""
 
     class Handler(BaseHTTPRequestHandler):

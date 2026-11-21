@@ -624,7 +624,7 @@ def record_deployment(env: str, name: str, value: str | None) -> None:
 # The graph, to read
 
 
-def print_graph(planner: Planner, as_dot: bool) -> None:
+def print_graph(planner: Planner, *, as_dot: bool) -> None:
     """The planner's targets and the nodes they reach."""
     chosen, reached = planner.targets, planner.nodes
     if not as_dot:
@@ -670,7 +670,7 @@ def preview(value: str) -> str:
     return value
 
 
-def main(args: list[str]) -> None:
+def main(args: list[str]) -> None:  # noqa: C901
     logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stderr)
     parser = argparse.ArgumentParser(
         prog="plan.py",
@@ -725,7 +725,7 @@ def main(args: list[str]) -> None:
             for name in scope("deploy"):
                 record_deployment(parsed.env, name, None)
         case "graph":
-            print_graph(Planner(parsed.names or list(targets())), parsed.dot)
+            print_graph(Planner(parsed.names or list(targets())), as_dot=parsed.dot)
         case "version":
             print(Planner(["web"]).version())
 

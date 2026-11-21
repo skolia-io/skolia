@@ -113,7 +113,7 @@ class Sentence:
         if lemma is None:
             return None
         negated = self.negation(verb) is not None
-        return valency.bare_objects(lemma, self.reflexive(verb), negated)
+        return valency.bare_objects(lemma, reflexive=self.reflexive(verb), negated=negated)
 
 
 def explain_cases(tokens: list[Token], valency: Valency | None) -> None:
@@ -128,7 +128,7 @@ def explain_cases(tokens: list[Token], valency: Valency | None) -> None:
             token["case_reason"] = reason
 
 
-def _reason(
+def _reason(  # noqa: C901, PLR0912
     sentence: Sentence, index: int, case: Case, valency: Valency | None
 ) -> CaseReason | None:
     tokens = sentence.tokens
@@ -211,7 +211,7 @@ def _with_governor(reason: CaseReason, governor: Token) -> CaseReason:
     return reason
 
 
-def correct_cases(tokens: list[Token], valency: Valency) -> int:
+def correct_cases(tokens: list[Token], valency: Valency) -> int:  # noqa: C901, PLR0912
     """Where a verb only takes lexical cases (szukać: genitive) and its complement has
     another, but the form also has the required case (psa: genitive = accusative), switch
     to that reading, and the words agreeing with it. Returns how many tokens changed.
@@ -304,7 +304,9 @@ def _apply(token: Token, reading: Reading, original: Case, governor: str) -> Non
     token["case_correction"] = {"original": original, "governor": governor}
 
 
-def apply(sentences: Sequence[list[Token]], valency: Valency | None, correct: bool = True) -> int:
+def apply(
+    sentences: Sequence[list[Token]], valency: Valency | None, *, correct: bool = True
+) -> int:
     """Correct cases where the verb rules them out (needs valency), then explain every
     case, sentence by sentence. Returns how many tokens the correction changed."""
     changed = 0

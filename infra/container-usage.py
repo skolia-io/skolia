@@ -15,7 +15,7 @@ application that no longer exists, almost always a torn-down preview's, is count
 """
 
 import argparse
-import datetime
+import datetime as dt
 import json
 import os
 import re
@@ -117,7 +117,7 @@ def environment(name: str | None) -> str:
 
 
 def main() -> None:
-    today = datetime.datetime.now(datetime.UTC).date()
+    today = dt.datetime.now(dt.UTC).date()
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )

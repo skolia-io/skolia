@@ -170,13 +170,13 @@ def _paradigm_forms(word: str, upos: Upos, kaikki_forms: Iterable[KaikkiForm]) -
             no_infinitive = any(
                 f.get("form") == "-" and "infinitive" in f.get("tags", []) for f in kaikki_forms
             )
-            yield from _verb_forms(word, inflections, no_infinitive)
+            yield from _verb_forms(word, inflections, no_infinitive=no_infinitive)
         case _:
             return
 
 
-def _verb_forms(
-    word: str, inflections: list[tuple[str, set[str]]], no_infinitive: bool
+def _verb_forms(  # noqa: C901, PLR0912
+    word: str, inflections: list[tuple[str, set[str]]], *, no_infinitive: bool
 ) -> Iterator[Form]:
     """The base form is the infinitive, the imperative, and the present of every person
     and number no other form covers (all but the third-person singular, usually). A verb

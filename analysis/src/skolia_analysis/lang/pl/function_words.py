@@ -166,7 +166,7 @@ def _with(feats: Feats, extra: Feats, drop: Literal["Degree", "NumForm"] | None 
     return merged
 
 
-def adjust(grammatical_class: str, lemma: str, upos: Upos, feats: Feats) -> Iterator[PosFeats]:
+def adjust(grammatical_class: str, lemma: str, upos: Upos, feats: Feats) -> Iterator[PosFeats]:  # noqa: C901, PLR0912
     if grammatical_class == "subst" and lemma in PRONOUN_NOUNS:
         for extra in PRONOUN_NOUNS[lemma]:
             yield "PRON", _with(feats, extra)

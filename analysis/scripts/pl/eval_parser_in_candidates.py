@@ -34,7 +34,7 @@ def comparable(feats: Feats) -> frozenset[tuple[str, object]]:
     return frozenset((k, v) for k, v in feats.items() if k not in CONTEXTUAL_FEATS)
 
 
-def main() -> None:
+def main() -> None:  # noqa: PLR0915
     parser = argparse.ArgumentParser()
     parser.add_argument("input", type=Path)
     parser.add_argument("--limit", type=int, help="only the first N sentences")

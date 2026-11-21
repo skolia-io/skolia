@@ -48,17 +48,35 @@ extend-exclude = ["scripts/vendor"]
 
 [tool.ruff.lint]
 select = [
-    "A", "B", "C4", "DTZ", "E", "EXE", "F", "FA", "FLY", "I", "INT",
-    "LOG", "PERF", "PIE", "PT", "RUF", "SIM", "T10", "TID", "UP", "W",
+    "A", "ASYNC", "B", "BLE", "C4", "C90", "DTZ", "E", "EXE", "F", "FA", "FBT", "FLY", "FURB",
+    "G", "I", "ICN", "INT", "ISC", "LOG", "PERF", "PGH", "PIE", "PL", "PT", "PTH", "RET",
+    "RSE", "RUF", "SIM", "SLF", "SLOT", "T10", "TID", "TRY", "UP", "W",
 ]
 # Allow intra-package relative imports and assertions that describe a single invariant.
-ignore = ["TID252", "PT018"]
+ignore = [
+    "TID252", "PT018",
+    # Dispatch by match returns from each arm; branch counts catch what matters
+    "PLR0911",
+    # PLR0913 counts all arguments; FBT catches the unreadable positional ones
+    "PLR0917",
+    "PLR2004",
+    # Plugins import their models lazily
+    "PLC0415",
+    # Polish words in test names
+    "PLC2401",
+    # lambda: list[T]() gives a typed default_factory
+    "PLW0108",
+    # pyright checks returns
+    "RET503",
+    "TRY003", "TRY301",
+]
 
 # IPA symbols in pronunciations: stress, length, and vowels that look like Latin letters
 allowed-confusables = ["ˈ", "ː", "ɪ", "ɑ", "ɡ"]
 
 [tool.ruff.lint.per-file-ignores]
 "*.pyi" = ["PIE790"]
+"tests/**" = ["SLF001"]
 
 [tool.pyright]
 include = ["src", "tests", "scripts"]

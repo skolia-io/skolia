@@ -100,7 +100,7 @@ type Pronunciations = dict[tuple[str, Upos], list[Pronunciation]]
 type Recordings = dict[tuple[str, Upos], list[Recording]]
 
 
-def rows(
+def rows(  # noqa: C901, PLR0913
     lang: str,
     source: LexiconSource,
     path: Path,

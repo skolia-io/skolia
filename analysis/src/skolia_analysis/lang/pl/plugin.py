@@ -77,6 +77,7 @@ def analyzer_name(
     model_name: str,
     snap: str | None = DEFAULT_SNAP,
     valency: Valency | None = None,
+    *,
     correct_cases: bool = True,
 ) -> str:
     """The version of everything that shapes an analysis. A document analysed under
@@ -89,7 +90,7 @@ def analyzer_name(
     return analyzer
 
 
-def assemble(
+def assemble(  # noqa: PLR0913
     text: str,
     parsed: Iterable[ParsedSentence],
     model_name: str,
@@ -97,13 +98,14 @@ def assemble(
     expressions: Iterable[ExpressionDef] = (),
     snap: str | None = DEFAULT_SNAP,
     valency: Valency | None = None,
+    *,
     correct_cases: bool = True,
 ) -> Blob:
     """snap: a reconcile.POLICIES name, or None to keep the parser's readings as they are.
     valency: Walenty frames, to explain cases by what verbs require; without it, case
     reasons use only the tree. correct_cases: let verb valency fix a case it rules out
     (only off to measure the correction)."""
-    analyzer = analyzer_name(model_name, snap, valency, correct_cases)
+    analyzer = analyzer_name(model_name, snap, valency, correct_cases=correct_cases)
     blob = build(
         parsed,
         lang=LANG,
@@ -115,7 +117,7 @@ def assemble(
         entry_upos=entry_upos,
         snap=reconcile.POLICIES[snap] if snap else None,
     )
-    cases.apply([s["tokens"] for s in blob["sentences"]], valency, correct_cases)
+    cases.apply([s["tokens"] for s in blob["sentences"]], valency, correct=correct_cases)
     return blob
 
 

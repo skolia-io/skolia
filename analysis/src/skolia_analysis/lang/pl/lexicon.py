@@ -251,9 +251,9 @@ def _gender(entry: KaikkiEntry) -> list[Feats]:
         elif template.get("name") == GENERIC_HEAD_TEMPLATE:
             codes += [v for k, v in args.items() if k.startswith("g")]
     found: list[Feats] = []
-    for code in codes:
+    for qualified in codes:
         # drop qualifiers like m-an! or m-anml<l:colloquial>
-        code = code.split("<")[0].rstrip("!").removesuffix(PLURAL_ONLY_SUFFIX)
+        code = qualified.split("<")[0].rstrip("!").removesuffix(PLURAL_ONLY_SUFFIX)
         feats = GENDER.get(code)
         if feats is not None and feats not in found:
             found.append(feats)

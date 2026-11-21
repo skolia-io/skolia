@@ -161,7 +161,7 @@ class UdReading(NamedTuple):
     """The NKJP tag with alternatives resolved: "subst:sg:nom.acc:m3" -> "subst:sg:acc:m3"."""
 
 
-def to_ud(tag: str, lemma: str, proper_name: bool = False) -> Iterator[UdReading]:
+def to_ud(tag: str, lemma: str, *, proper_name: bool = False) -> Iterator[UdReading]:
     """All UD readings of one NKJP tag for a given lemma.
 
     proper_name: Morfeusz labelled the reading as a name (place, person, ...), so a noun

@@ -86,7 +86,7 @@ def interpretation_readings(interpretation: Interpretation) -> Iterator[Reading]
     lemma, _homonym = split_homonym(base)
     # Morfeusz capitalises lemmas of names; ethnonyms (Czeczen) carry no name label
     proper_name = lemma[:1].isupper() or any(name != MORFEUSZ_COMMON_NOUN for name in names)
-    for reading in to_ud(tag, lemma, proper_name):
+    for reading in to_ud(tag, lemma, proper_name=proper_name):
         yield {
             "lemma": lemma,
             "upos": reading.upos,

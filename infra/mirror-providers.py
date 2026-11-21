@@ -69,7 +69,7 @@ class Provider:
 def locked_providers(lock: str) -> list[Provider]:
     def provider(address: str, body: str) -> Provider:
         host, namespace, name = address.split("/")
-        version = re.search(r'^\s*version\s*=\s*"([^"]+)"', body, re.M)
+        version = re.search(r'^\s*version\s*=\s*"([^"]+)"', body, re.MULTILINE)
         if version is None:
             raise SystemExit(f"{address}: no version in the lock file")
         return Provider(
@@ -82,7 +82,7 @@ def locked_providers(lock: str) -> list[Provider]:
 
     blocks = cast(
         list[tuple[str, str]],
-        re.findall(r'^provider "([^"]+)" \{\n(.*?)^\}', lock, re.M | re.S),
+        re.findall(r'^provider "([^"]+)" \{\n(.*?)^\}', lock, re.MULTILINE | re.DOTALL),
     )
     return [provider(address, body) for address, body in blocks]
 

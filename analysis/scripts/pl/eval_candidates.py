@@ -49,7 +49,7 @@ def closest(word: GoldWord, candidates: list[Reading]) -> Reading:
     return min(candidates, key=distance)
 
 
-def main() -> None:
+def main() -> None:  # noqa: C901
     parser = argparse.ArgumentParser()
     parser.add_argument("treebanks", nargs="+", type=Path)
     parser.add_argument("--show", type=int, default=40, help="how many mismatch patterns to list")

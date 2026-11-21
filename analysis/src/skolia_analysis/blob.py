@@ -103,7 +103,7 @@ def parser_reading(word: ParsedWord) -> Reading:
     }
 
 
-def build_token(
+def build_token(  # noqa: PLR0913
     lang: str,
     units: Sequence[int],
     tok: ParsedToken,
@@ -142,7 +142,7 @@ def build_token(
     return entry
 
 
-def build_tokens(
+def build_tokens(  # noqa: PLR0913
     lang: str,
     units: Sequence[int],
     tok: ParsedToken,
@@ -156,7 +156,7 @@ def build_tokens(
         yield build_token(lang, units, tok, word, reading, snap, entry_upos)
 
 
-def build(
+def build(  # noqa: PLR0913
     sentences: Iterable[ParsedSentence],
     *,
     lang: str,
