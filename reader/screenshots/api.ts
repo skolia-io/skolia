@@ -283,11 +283,20 @@ const cards: readonly ScheduledCard[] = [
   },
 ];
 
-/** The cards as the list of them has them, newest first: one due in days, one new, one
+/** The cards as the list of them has them, newest first: one due in days, a lemma's two new, one
  * whose word is known, and the cloze card due. */
 const listedCards: readonly Card[] = [
   listed(cards[2]!, "2026-11-08T08:00:00.000Z", { scheduleStatus: "learning", dueAt: "2026-11-09T09:00:00.000Z", scheduledDays: 0 }),
   listed(cards[1]!, "2026-11-07T08:00:00.000Z", { scheduleStatus: "new", dueAt: "2026-11-09T08:00:00.000Z", scheduledDays: 0 }),
+  listed(
+    { ...cards[1]!, id: CardId.parse("00000000-0000-4000-8000-000000000005"), kind: "recognition", data: {} },
+    "2026-11-07T08:00:00.000Z",
+    {
+      scheduleStatus: "new",
+      dueAt: "2026-11-09T08:00:00.000Z",
+      scheduledDays: 0,
+    },
+  ),
   listed(cards[0]!, "2026-11-06T08:00:00.000Z", { scheduleStatus: "review", dueAt: "2026-11-13T08:00:00.000Z", scheduledDays: 4 }),
   listed(
     { ...cards[0]!, id: CardId.parse("00000000-0000-4000-8000-000000000004"), kind: "production", data: {} },
