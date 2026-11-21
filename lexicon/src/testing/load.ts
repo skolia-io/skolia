@@ -29,9 +29,15 @@ export async function loadLexicon(
   featureSets: readonly Record<string, string>[] = [],
 ): Promise<void> {
   const db = lexiconsOf(env)[lang];
-  const whole = entries.map(
-    (e): Entry => ({ grammar: {}, senses: [], relations: [], pronunciations: [], paradigms: [], frames: [], ...e }),
-  );
+  const whole = entries.map((e): Entry => ({
+    grammar: {},
+    senses: [],
+    relations: [],
+    pronunciations: [],
+    paradigms: [],
+    frames: [],
+    ...e,
+  }));
   await db.batch([
     ...whole.map((e) =>
       prepare(

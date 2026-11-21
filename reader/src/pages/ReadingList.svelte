@@ -82,7 +82,7 @@
   </select>
 {/snippet}
 
-<Page {title} wide>
+<Page title={title} wide>
   {#if user === null}
     <p class="muted">Sign in to save texts and make your own reading lists.</p>
     <Button variant="primary" onclick={() => void signIn()}>Sign in</Button>
@@ -99,7 +99,7 @@
         </header>
         <section aria-label="List contents">
           {#key current.id}
-            <ReadingListContents id={current.id} {lang} controls={filter} />
+            <ReadingListContents id={current.id} lang={lang} controls={filter} />
           {/key}
         </section>
       {:else}
@@ -122,11 +122,7 @@
           <p class="empty muted" role="status">Loading lists…</p>
         {:else if shown.length}
           <table aria-label="Reading lists">
-            <thead
-              ><tr
-                ><th scope="col">List</th><th scope="col" class="count">Texts</th></tr
-              ></thead
-            >
+            <thead><tr><th scope="col">List</th><th scope="col" class="count">Texts</th></tr></thead>
             <tbody>
               {#each shown as list (list.id)}
                 <tr>
@@ -159,7 +155,7 @@
         <p>“{current?.name}” will be removed. Its texts won't be deleted.</p>
       {:else}
         <label for="list-name">{action === "create" ? "New list name" : "List name"}</label>
-        <input id="list-name" placeholder="e.g. Weekend reading" maxlength="100" required bind:this={nameInput} bind:value={name}>
+        <input id="list-name" placeholder="e.g. Weekend reading" maxlength="100" required bind:this={nameInput} bind:value={name} />
       {/if}
       {#if edit.error}
         <p class="error" role="alert">{edit.error.message}</p>

@@ -4,4 +4,4 @@
   let { id, title }: { id: DocumentId; title: string } = $props();
 </script>
 
-<SaveToLists {id} {title} />
+<SaveToLists id={id} title={title} />

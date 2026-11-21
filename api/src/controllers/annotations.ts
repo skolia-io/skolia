@@ -21,7 +21,7 @@ import type { BlobStore } from "../ports/blobs.ts";
 import type { Clock } from "../ports/index.ts";
 import type { DocumentAnnotations, DocumentLookup, StoredDocument } from "../ports/documents.ts";
 import { findDocument, noSuchDocument } from "./documents.ts";
-import { NO_CONTENT, fail, ok, type Failed, type Json, type NoContent, type Ok } from "./result.ts";
+import { NO_CONTENT, fail, ok, type Failed, type NoContent, type Ok } from "./result.ts";
 
 type AnnotationDeps = { documents: DocumentAnnotations & DocumentLookup };
 

@@ -220,7 +220,8 @@ CHECK_RECIPE = (
     "justfile",
     "flake.nix",
     "flake.lock",
-    "biome.json",
+    ".oxfmtrc.json",
+    ".oxlintrc.json",
 )
 # What a project's tests read outside it, besides its workspace dependencies: the reader's
 # build, which the API's bundle serves (api/wrangler.jsonc assets), the curated texts

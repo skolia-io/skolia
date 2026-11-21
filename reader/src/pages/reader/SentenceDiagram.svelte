@@ -129,7 +129,7 @@
         </g>
       {/each}
       {#if diagram.reading.length > 0}
-        <g class="reading-row" {lang}>
+        <g class="reading-row" lang={lang}>
           {#each diagram.reading as span (span.words[0]?.index)}
             {@const first = span.words[0]}
             <!-- The same as tapping the word's node, which is the keyboard and screen reader's way in -->
@@ -138,8 +138,7 @@
               class={{ selected: span.words.some((w) => selected.has(w.index)) }}
               x={span.at.x}
               y={span.at.y}
-              onclick={() => first && onselect(first.index)}
-              >{span.text}</text
+              onclick={() => first && onselect(first.index)}>{span.text}</text
             >
           {/each}
         </g>
@@ -168,8 +167,7 @@
               <tspan
                 class={[CLASS[run.role], { why: run.role === "case" && isSelected && focus.chain.length > 0 }]}
                 font-size={SIZE[run.role]}
-                lang={run.role === "form" ? lang : undefined}
-                >{run.text}</tspan
+                lang={run.role === "form" ? lang : undefined}>{run.text}</tspan
               >
             {/each}</text
           >

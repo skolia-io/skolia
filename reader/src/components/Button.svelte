@@ -20,7 +20,7 @@
   } = $props();
 </script>
 
-<button bind:this={element} {type} class={[variant, { small }]} {...rest}>{@render children()}</button>
+<button bind:this={element} type={type} class={[variant, { small }]} {...rest}>{@render children()}</button>
 
 <style>
   button {

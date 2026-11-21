@@ -6,6 +6,6 @@
   const client = newQueryClient();
 </script>
 
-<QueryClientProvider {client}>
+<QueryClientProvider client={client}>
   <App />
 </QueryClientProvider>

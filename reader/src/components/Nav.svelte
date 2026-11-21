@@ -58,9 +58,9 @@
   }
 </script>
 
-<svelte:window {onscroll} />
+<svelte:window onscroll={onscroll} />
 
-<header class:tucked bind:this={header}>
+<header class:tucked={tucked} bind:this={header}>
   <button type="button" class="menu-button" popovertarget="nav-drawer" aria-label="Menu">
     <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4h12M2 8h12M2 12h12" /></svg>
   </button>
@@ -73,7 +73,7 @@
     >
   </a>
   {#snippet link(href: string, label: string, current: boolean, icon: string, drawerOnly: boolean)}
-    <a class={{ "drawer-only": drawerOnly }} {href} aria-current={current ? "page" : undefined} onclick={() => drawer?.hidePopover()}>
+    <a class={{ "drawer-only": drawerOnly }} href={href} aria-current={current ? "page" : undefined} onclick={() => drawer?.hidePopover()}>
       <svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><path d={icon} /></svg>
       {label}
     </a>
@@ -91,7 +91,7 @@
     {#if user}
       <button type="button" class="avatar-button" popovertarget="account-menu" aria-label="Account: {user.name}">
         {#if user.image}
-          <img class="avatar" src={user.image} alt="" referrerpolicy="no-referrer">
+          <img class="avatar" src={user.image} alt="" referrerpolicy="no-referrer" />
         {:else}
           <span class="avatar initial" aria-hidden="true">{initial(user.name)}</span>
         {/if}
@@ -129,8 +129,7 @@
                   )
                     location.hash = "#/";
                   await forgetUser(client);
-                })}
-              >Sign out</button
+                })}>Sign out</button
             >
           </li>
         </ul>

@@ -9,7 +9,7 @@ import {
 } from "@skolia/shared/api";
 import type { DocumentLookup, StoredDocument } from "../ports/documents.ts";
 import type { JobQueue } from "../ports/ingest.ts";
-import { fail, ok, type Failed, type Json, type Ok } from "./result.ts";
+import { ok, type Ok } from "./result.ts";
 
 /** How many of the jobs started most recently the overview lists */
 export const RECENT_JOBS = 50;

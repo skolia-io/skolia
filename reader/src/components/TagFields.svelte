@@ -25,7 +25,7 @@
     <select id="{id}-{kind}" value={tags[kind] ?? ""} onchange={(event) => set(kind, event.currentTarget.value)}>
       <option value="">Not given</option>
       {#each options as { value, description } (value)}
-        <option {value}>{value}{description ? ` · ${description}` : ""}</option>
+        <option value={value}>{value}{description ? ` · ${description}` : ""}</option>
       {/each}
     </select>
   </Field>

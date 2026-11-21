@@ -28,7 +28,7 @@ function responseObjects(specs: Specs) {
 
 /** The spec of the app's routes. A request that doesn't fit its schema gets an
  * ApiError, which some route's schema must name so it's among the components. */
-// biome-ignore lint/suspicious/noExplicitAny: any app's env, routes and base path
+// Accept any Hono app environment, routes and base path.
 type AnyHono = Hono<any, any, any>;
 
 export async function openApiSpec(app: AnyHono, documentation: Partial<OpenAPIV3_1.Document>): Promise<OpenAPIV3_1.Document> {

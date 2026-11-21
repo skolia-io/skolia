@@ -126,8 +126,7 @@
                       small
                       disabled={remove.isPending}
                       title={row.length === 1 ? "Delete this card and its reviews" : "Delete these cards and their reviews"}
-                      onclick={() => void deleteRow(row)}
-                      >Delete</Button
+                      onclick={() => void deleteRow(row)}>Delete</Button
                     >
                   </div>
                 </li>

@@ -69,7 +69,7 @@ test("migrating down and back up appends to the log instead of rewriting it", as
   );
   assert.deepEqual(
     log.map((e) => e.seq),
-    [...log.map((e) => e.seq)].sort((a, b) => a - b),
+    log.map((e) => e.seq).sort((a, b) => a - b),
   );
   assert.equal(log[LATEST]?.checksum, await checksum(MIGRATIONS[LATEST - 1]!.down));
   await assert.rejects(dave.migrate(LATEST + 1));
