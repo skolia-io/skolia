@@ -64,25 +64,6 @@ def lemma_id(lang: str, lemma: str | None, upos: Upos) -> str | None:
     return f"{lang}:{lemma}:{upos}"
 
 
-def find_expressions(
-    lemmas: Sequence[str | None],
-    expressions: Iterable[ExpressionDef],
-    gaps: Sequence[bool] | None = None,
-) -> Iterator[ExpressionMatch]:
-    kept = [
-        (index, (lemma or "").lower())
-        for index, lemma in enumerate(lemmas)
-        if not (gaps and gaps[index])
-    ]
-    kept_lemmas = [lemma for _, lemma in kept]
-    for expr in expressions:
-        seq = [lemma.lower() for lemma in expr["lemmas"]]
-        n = len(seq)
-        for i in range(len(kept) - n + 1):
-            if kept_lemmas[i : i + n] == seq:
-                yield {"from": kept[i][0], "to": kept[i + n - 1][0], "id": expr["id"]}
-
-
 def match_expressions(
     lemmas: Sequence[str | None],
     expressions: Iterable[ExpressionDef],
@@ -90,7 +71,17 @@ def match_expressions(
 ) -> list[ExpressionMatch]:
     """Contiguous lemma-sequence matches, skipping tokens marked as gaps. Indices refer
     to the full token list, so a match can span a skipped token."""
-    found = find_expressions(lemmas, expressions, gaps)
+    kept = [i for i in range(len(lemmas)) if not (gaps and gaps[i])]
+    kept_lemmas = [(lemmas[i] or "").lower() for i in kept]
+    found: list[ExpressionMatch] = []
+    for expr in expressions:
+        seq = [lemma.lower() for lemma in expr["lemmas"]]
+        n = len(seq)
+        found.extend(
+            {"from": kept[i], "to": kept[i + n - 1], "id": expr["id"]}
+            for i in range(len(kept) - n + 1)
+            if kept_lemmas[i : i + n] == seq
+        )
     return sorted(found, key=lambda m: (m["from"], m["to"]))
 
 
