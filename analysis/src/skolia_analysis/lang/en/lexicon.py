@@ -11,6 +11,7 @@ from collections.abc import Iterable, Iterator, Mapping
 
 from ...lexicon import kaikki
 from ...lexicon import senses as kaikki_senses
+from ...lexicon.inflections import Inflection, form, inflections, noun_forms, paradigm, unique
 from ...lexicon.kaikki import KaikkiEntry, KaikkiForm, KaikkiSound
 from ...lexicon.pronunciation import pronunciations, recordings
 from ...lexicon.schema import Accent, Form, Paradigm
@@ -82,12 +83,10 @@ class Source:
     version = ""
 
     def convert(self, entry: KaikkiEntry) -> Converted | None:
-        word, pos = entry.get("word", ""), entry.get("pos", "")
-        upos = kaikki.POS.get(pos)
-        if pos == "suffix" and word in ENCLITICS:
-            word, upos = ENCLITICS[word]
-        if upos is None or not word or " " in word:
+        headword = _headword(entry)
+        if headword is None:
             return None
+        word, upos = headword
         found = (
             kaikki_senses.sense(kaikki_sense, INFLECTION_TAGS, [])
             for kaikki_sense in entry.get("senses", [])
@@ -96,19 +95,14 @@ class Source:
         if not senses:
             return None
         relations = list(kaikki_senses.relations(entry, INFLECTION_TAGS, self.grammar_tags))
-        forms = list(paradigm_forms(word, upos, entry.get("forms", [])))
-        # Wiktionary splits a word by etymology, usually with the same forms (bank, the
-        # shore and the institution); merge keeps one copy of each table
-        paradigms: list[Paradigm] = [{"homonym": "", "forms": forms}] if len(forms) > 1 else []
+        paradigms = paradigm(paradigm_forms(word, upos, entry.get("forms", [])))
         return Converted(word, (upos,), senses, relations, paradigms)
 
     def pronounce(self, entry: KaikkiEntry) -> Pronounced | None:
-        word, pos = entry.get("word", ""), entry.get("pos", "")
-        upos = kaikki.POS.get(pos)
-        if pos == "suffix" and word in ENCLITICS:
-            word, upos = ENCLITICS[word]
-        if upos is None or not word or " " in word:
+        headword = _headword(entry)
+        if headword is None:
             return None
+        word, upos = headword
         sounds = entry.get("sounds", [])
         found, heard = pronunciations(sounds, _accents), recordings(sounds)
         return Pronounced(word, (upos,), found, heard) if found or heard else None
@@ -118,6 +112,17 @@ class Source:
 
     def hand_entries(self) -> Iterable[Converted]:
         return ()
+
+
+def _headword(entry: KaikkiEntry) -> tuple[str, Upos] | None:
+    """The word and its part of speech, if it's one word of a part of speech kept."""
+    word, pos = entry.get("word", ""), entry.get("pos", "")
+    upos = kaikki.POS.get(pos)
+    if pos == "suffix" and word in ENCLITICS:
+        word, upos = ENCLITICS[word]
+    if upos is None or not word or " " in word:
+        return None
+    return word, upos
 
 
 def _accents(sound: KaikkiSound) -> list[Accent] | None:
@@ -137,65 +142,50 @@ def _accents(sound: KaikkiSound) -> list[Accent] | None:
 
 
 def paradigm_forms(word: str, upos: Upos, kaikki_forms: Iterable[KaikkiForm]) -> Iterator[Form]:
-    """The headword and its inflections, each with every feature set it has, once: Kaikki
-    lists a verb's forms from the headword line (walked: past) and again from its
-    conjugation table (walked: first-person singular past)."""
-    seen: set[tuple[str, tuple[tuple[str, object], ...]]] = set()
-    for form in _paradigm_forms(word, upos, kaikki_forms):
-        key = (form["form"], tuple(sorted(form["feats"].items())))
-        if key not in seen:
-            seen.add(key)
-            yield form
+    """The headword and its inflections, each with every feature set it has, once."""
+    return unique(_paradigm_forms(word, upos, list(kaikki_forms)))
 
 
-def _paradigm_forms(word: str, upos: Upos, kaikki_forms: Iterable[KaikkiForm]) -> Iterator[Form]:
-    kaikki_forms = list(kaikki_forms)
-    inflections = [
-        (f.get("form", ""), set(f.get("tags", [])))
-        for f in kaikki_forms
-        if _is_inflection(f.get("form", ""), f.get("tags", []))
-    ]
+def _paradigm_forms(word: str, upos: Upos, kaikki_forms: list[KaikkiForm]) -> Iterator[Form]:
+    found = inflections(kaikki_forms, SKIPPED_FORM_TAGS, UNTAGGED_ARCHAIC_FORMS)
     match upos:
         case "NOUN" | "PROPN":
-            yield _form(word, {"Number": "Sing"})
-            for form, tags in inflections:
-                if tags == {"plural"}:
-                    yield _form(form, {"Number": "Plur"})
+            yield from noun_forms(word, found)
         case "ADJ" | "ADV":
-            yield _form(word, {"Degree": "Pos"})
-            for form, tags in inflections:
+            yield form(word, {"Degree": "Pos"})
+            for text, tags in found:
                 if tags == {"comparative"}:
-                    yield _form(form, {"Degree": "Cmp"})
+                    yield form(text, {"Degree": "Cmp"})
                 elif tags == {"superlative"}:
-                    yield _form(form, {"Degree": "Sup"})
+                    yield form(text, {"Degree": "Sup"})
         case "VERB":
             # A modal's table gives its infinitive as "-" (can, must: no to can)
             no_infinitive = any(
                 f.get("form") == "-" and "infinitive" in f.get("tags", []) for f in kaikki_forms
             )
-            yield from _verb_forms(word, inflections, no_infinitive=no_infinitive)
+            yield from _verb_forms(word, found, no_infinitive=no_infinitive)
         case _:
             return
 
 
 def _verb_forms(  # noqa: C901, PLR0912
-    word: str, inflections: list[tuple[str, set[str]]], *, no_infinitive: bool
+    word: str, found: list[Inflection], *, no_infinitive: bool
 ) -> Iterator[Form]:
     """The base form is the infinitive, the imperative, and the present of every person
     and number no other form covers (all but the third-person singular, usually). A verb
     Wiktionary gives no inflections (could, would, ought) has no paradigm."""
-    if not inflections:
+    if not found:
         return
     present_taken: set[tuple[Person, Number]] = set()
-    for form, tags in inflections:
+    for text, tags in found:
         if "participle" in tags:
             tense = next((TENSE_TAGS[t] for t in tags if t in TENSE_TAGS), None)
             if tense == "Past":
-                yield _form(form, {"Tense": "Past", "VerbForm": "Part"})
-                yield _form(form, {"Tense": "Past", "VerbForm": "Part", "Voice": "Pass"})
+                yield form(text, {"Tense": "Past", "VerbForm": "Part"})
+                yield form(text, {"Tense": "Past", "VerbForm": "Part", "Voice": "Pass"})
             elif tense == "Pres":
-                yield _form(form, {"Tense": "Pres", "VerbForm": "Part"})
-                yield _form(form, {"VerbForm": "Ger"})
+                yield form(text, {"Tense": "Pres", "VerbForm": "Part"})
+                yield form(text, {"VerbForm": "Ger"})
             continue
         if "imperative" in tags or "infinitive" in tags:
             # be's own tables list them; the base form below covers them
@@ -207,8 +197,8 @@ def _verb_forms(  # noqa: C901, PLR0912
         for person, number in _persons(tags):
             if finite == "Pres" and mood == "Ind":
                 present_taken.add((person, number))
-            yield _form(
-                form,
+            yield form(
+                text,
                 {
                     "Mood": mood,
                     "Number": number,
@@ -218,8 +208,8 @@ def _verb_forms(  # noqa: C901, PLR0912
                 },
             )
     if not no_infinitive:
-        yield _form(word, {"VerbForm": "Inf"})
-        yield _form(word, {"Mood": "Imp", "VerbForm": "Fin"})
+        yield form(word, {"VerbForm": "Inf"})
+        yield form(word, {"Mood": "Imp", "VerbForm": "Fin"})
     for person in PERSONS:
         for number in NUMBERS:
             if (person, number) not in present_taken:
@@ -230,7 +220,7 @@ def _verb_forms(  # noqa: C901, PLR0912
                     "Tense": "Pres",
                     "VerbForm": "Fin",
                 }
-                yield _form(word, feats)
+                yield form(word, feats)
 
 
 def _persons(tags: set[str]) -> Iterator[tuple[Person, Number]]:
@@ -245,19 +235,3 @@ def _persons(tags: set[str]) -> Iterator[tuple[Person, Number]]:
     for person in persons:
         for number in numbers:
             yield person, number
-
-
-def _is_inflection(form: str, tags: list[str]) -> bool:
-    # "more beautiful" and the like: two tokens, never one token's form
-    return (
-        bool(form)
-        and " " not in form
-        and form != "-"
-        and form not in UNTAGGED_ARCHAIC_FORMS
-        and not SKIPPED_FORM_TAGS.intersection(tags)
-    )
-
-
-def _form(text: str, feats: Feats) -> Form:
-    # English tags are UD's: there is no separate language-specific tag to keep
-    return {"form": text, "xpos": "", "feats": feats}

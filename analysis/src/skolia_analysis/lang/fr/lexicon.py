@@ -11,6 +11,7 @@ from collections.abc import Iterable, Iterator, Mapping
 
 from ...lexicon import kaikki
 from ...lexicon import senses as kaikki_senses
+from ...lexicon.inflections import Inflection, form, inflections, noun_forms, paradigm, unique
 from ...lexicon.kaikki import KaikkiEntry, KaikkiForm, KaikkiSense, KaikkiSound
 from ...lexicon.pronunciation import pronunciations
 from ...lexicon.schema import Accent, Form, Paradigm, Sense
@@ -97,8 +98,9 @@ class Source:
             return None
         relations = list(kaikki_senses.relations(entry, INFLECTION_TAGS, GRAMMAR_TAGS))
         # A pronominal verb's forms are the verb's own, filed under it
-        forms = [] if extra_tags else list(paradigm_forms(word, upos, entry.get("forms", [])))
-        paradigms: list[Paradigm] = [{"homonym": "", "forms": forms}] if len(forms) > 1 else []
+        paradigms = (
+            [] if extra_tags else paradigm(paradigm_forms(word, upos, entry.get("forms", [])))
+        )
         return Converted(word, (upos,), senses, relations, paradigms)
 
     def pronounce(self, entry: KaikkiEntry) -> Pronounced | None:
@@ -141,75 +143,63 @@ def _accents(sound: KaikkiSound) -> list[Accent] | None:
 
 def paradigm_forms(word: str, upos: Upos, kaikki_forms: Iterable[KaikkiForm]) -> Iterator[Form]:
     """The headword and its inflections, each with every feature set it has, once."""
-    seen: set[tuple[str, tuple[tuple[str, object], ...]]] = set()
-    for form in _paradigm_forms(word, upos, kaikki_forms):
-        key = (form["form"], tuple(sorted(form["feats"].items())))
-        if key not in seen:
-            seen.add(key)
-            yield form
+    return unique(_paradigm_forms(word, upos, kaikki_forms))
 
 
 def _paradigm_forms(word: str, upos: Upos, kaikki_forms: Iterable[KaikkiForm]) -> Iterator[Form]:
-    inflections = [
-        (f.get("form", ""), set(f.get("tags", [])))
-        for f in kaikki_forms
-        if _is_inflection(f.get("form", ""), f.get("tags", []))
-    ]
+    found = inflections(kaikki_forms, SKIPPED_FORM_TAGS)
     match upos:
         case "NOUN" | "PROPN":
-            yield _form(word, {"Number": "Sing"})
-            for form, tags in inflections:
-                if tags == {"plural"}:
-                    yield _form(form, {"Number": "Plur"})
+            yield from noun_forms(word, found)
         case "ADJ":
-            yield from _adjective_forms(word, inflections)
+            yield from _adjective_forms(word, found)
         case "VERB":
-            yield from _verb_forms(word, inflections)
+            yield from _verb_forms(word, found)
         case _:
             return
 
 
-def _adjective_forms(word: str, inflections: list[tuple[str, set[str]]]) -> Iterator[Form]:
+def _adjective_forms(word: str, found: list[Inflection]) -> Iterator[Form]:
     """The headword is the masculine singular, and the feminine too when Wiktionary gives
     no feminine (rapide). A plural without a gender is the masculine one, and the
     feminine one when there's no other (rapides)."""
-    feminine = [f for f, tags in inflections if tags == {"feminine"}]
-    feminine_plural = [f for f, tags in inflections if tags == {"feminine", "plural"}]
-    yield _form(word, {"Gender": "Masc", "Number": "Sing"})
+    feminine = [f for f, tags in found if tags == {"feminine"}]
+    feminine_plural = [f for f, tags in found if tags == {"feminine", "plural"}]
+    yield form(word, {"Gender": "Masc", "Number": "Sing"})
     if not feminine:
-        yield _form(word, {"Gender": "Fem", "Number": "Sing"})
-    for form, tags in inflections:
+        yield form(word, {"Gender": "Fem", "Number": "Sing"})
+    for text, tags in found:
         bare = tags - {"before-vowel"}
         if bare in ({"feminine"}, {"feminine", "singular"}):
-            yield _form(form, {"Gender": "Fem", "Number": "Sing"})
+            yield form(text, {"Gender": "Fem", "Number": "Sing"})
         elif bare == {"masculine", "singular"}:
             # bel, the masculine before a vowel: un bel homme
-            yield _form(form, {"Gender": "Masc", "Number": "Sing"})
+            yield form(text, {"Gender": "Masc", "Number": "Sing"})
         elif bare == {"masculine", "plural"}:
-            yield _form(form, {"Gender": "Masc", "Number": "Plur"})
+            yield form(text, {"Gender": "Masc", "Number": "Plur"})
         elif bare == {"feminine", "plural"}:
-            yield _form(form, {"Gender": "Fem", "Number": "Plur"})
+            yield form(text, {"Gender": "Fem", "Number": "Plur"})
         elif bare == {"plural"}:
-            yield _form(form, {"Gender": "Masc", "Number": "Plur"})
+            yield form(text, {"Gender": "Masc", "Number": "Plur"})
             if not feminine_plural:
-                yield _form(form, {"Gender": "Fem", "Number": "Plur"})
+                yield form(text, {"Gender": "Fem", "Number": "Plur"})
 
 
-def _verb_forms(word: str, inflections: list[tuple[str, set[str]]]) -> Iterator[Form]:
+def _verb_forms(word: str, found: list[Inflection]) -> Iterator[Form]:
     """A verb Wiktionary gives no conjugation has no paradigm."""
-    if not inflections:
+    if not found:
         return
-    yield _form(word, {"VerbForm": "Inf"})
-    for form, tags in inflections:
+    yield form(word, {"VerbForm": "Inf"})
+    for text, tags in found:
         if tags == {"gerund", "participle", "present"}:
             # GSD gives the present participle VerbForm=Part alone; other French
             # treebanks add Tense=Pres
-            yield _form(form, {"VerbForm": "Part"})
-            yield _form(form, {"Tense": "Pres", "VerbForm": "Part"})
+            yield form(text, {"VerbForm": "Part"})
+            yield form(text, {"Tense": "Pres", "VerbForm": "Part"})
             continue
         # A verb that's only pronominal tags its participle reflexive (fié, of se fier)
         if tags - {"reflexive"} == {"participle", "past"}:
-            yield from _past_participles(form)
+            yield from _past_participles(text)
             continue
         persons: list[Person] = [kaikki.PERSON_TAGS[t] for t in tags if t in kaikki.PERSON_TAGS]
         numbers: list[Number] = [kaikki.NUMBER_TAGS[t] for t in tags if t in kaikki.NUMBER_TAGS]
@@ -218,8 +208,8 @@ def _verb_forms(word: str, inflections: list[tuple[str, set[str]]]) -> Iterator[
         if finite is None or len(persons) != 1 or len(numbers) != 1:
             continue
         mood, tense = finite
-        yield _form(
-            form,
+        yield form(
+            text,
             {
                 "Mood": mood,
                 "Number": numbers[0],
@@ -234,24 +224,12 @@ def _past_participles(masculine: str) -> Iterator[Form]:
     """Wiktionary gives the masculine singular; the others follow the rule: +e, +s, +es,
     no s after s or x (pris, prise, pris, prises), -û loses its accent (dû, due), -ous
     becomes -oute (dissous, dissoute)."""
-    yield _form(masculine, {"Gender": "Masc", "Number": "Sing", "VerbForm": "Part"})
+    yield form(masculine, {"Gender": "Masc", "Number": "Sing", "VerbForm": "Part"})
     if masculine in INVARIABLE_PARTICIPLES:
         return
     stem = masculine.removesuffix("û") + "u" if masculine.endswith("û") else masculine
     feminine = masculine.removesuffix("s") + "te" if masculine.endswith("ous") else stem + "e"
     plural = masculine if masculine.endswith(("s", "x")) else stem + "s"
-    yield _form(feminine, {"Gender": "Fem", "Number": "Sing", "VerbForm": "Part"})
-    yield _form(plural, {"Gender": "Masc", "Number": "Plur", "VerbForm": "Part"})
-    yield _form(feminine + "s", {"Gender": "Fem", "Number": "Plur", "VerbForm": "Part"})
-
-
-def _is_inflection(form: str, tags: list[str]) -> bool:
-    # "avoir + past participle" and the like: several tokens, never one token's form
-    return (
-        bool(form) and " " not in form and form != "-" and not SKIPPED_FORM_TAGS.intersection(tags)
-    )
-
-
-def _form(text: str, feats: Feats) -> Form:
-    # French tags are UD's: there is no separate language-specific tag to keep
-    return {"form": text, "xpos": "", "feats": feats}
+    yield form(feminine, {"Gender": "Fem", "Number": "Sing", "VerbForm": "Part"})
+    yield form(plural, {"Gender": "Masc", "Number": "Plur", "VerbForm": "Part"})
+    yield form(feminine + "s", {"Gender": "Fem", "Number": "Plur", "VerbForm": "Part"})
