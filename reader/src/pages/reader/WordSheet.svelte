@@ -3,12 +3,12 @@
   import { createQueries, useQueryClient } from "@tanstack/svelte-query";
   import { entryQuery, formAudioQuery, prefetchEntry, tokenLemma } from "../../lib/lexicon.ts";
   import type { DocumentId, Lang } from "@skolia/shared/api";
-  import type { Token } from "@skolia/shared/schema";
+  import type { Entry, Recording, Token } from "@skolia/shared/schema";
   import { LANGUAGES } from "@skolia/shared/lang";
   import type { Piece } from "@skolia/shared/doc";
   import type { LemmaId } from "@skolia/shared/api";
   import { mainPronunciations, rankSenses, relationLabel } from "@skolia/shared/lexicon";
-  import type { Recording } from "@skolia/shared/schema";
+  import type { FormAudio } from "@skolia/lexicon/app";
   import { LemmaId as LemmaIdSchema } from "@skolia/shared/schemas";
   import { createForgetCards, createLearnWord, createWordCards, wordState } from "../../lib/words.ts";
   import { createAddCloze, createClozes } from "../../lib/clozes.ts";
@@ -160,37 +160,44 @@
     }),
   }));
 
+  function wordAudio(text: string, entry: Entry | undefined, form: FormAudio | undefined) {
+    const matchesLemma = entry !== undefined && sameWord(entry.lemma, text);
+    const audio = matchesLemma ? entry : form;
+    const said = mainPronunciations(audio?.pronunciations ?? []);
+    return {
+      said,
+      lemmaSaid: said.length === 0 && entry && !matchesLemma ? mainPronunciations(entry.pronunciations) : [],
+      heard: audio?.recordings?.slice(0, 1) ?? [],
+    };
+  }
+
   const words = $derived(
     tokens.map((w, i) => {
       const lookup = entries[ids.findIndex((id) => id === tokenLemma(w.token))];
       const entry = lookup?.data?.entries[0];
-      const audio = entry && sameWord(entry.lemma, w.token.text) ? entry : forms[i]?.data;
       const partOfWord = language.partOfWord(w.token);
       const role = roleLabel(w.token.deprel);
       const head = w.token.head === null ? null : headText(w.sentence, w.token.head);
       const tokens = sentenceTokens(w.sentence);
-      const uses = entry && partOfWord === null ? language.uses(entry, tokens, w.index) : [];
+      const wholeWordEntry = partOfWord === null ? entry : undefined;
+      const uses = wholeWordEntry ? language.uses(wholeWordEntry, tokens, w.index) : [];
       const parsedId = LemmaIdSchema.safeParse(entry?.lemma_id ?? (lookup?.isSuccess ? w.token.lemma_id : undefined));
-      const said = mainPronunciations(audio?.pronunciations ?? []);
       return {
         ref: w,
         entry,
         loading: lookup?.isPending ?? false,
         lookupError: lookup?.isError ?? false,
         lemmaId: parsedId.success ? parsedId.data : null,
-        said,
-        lemmaSaid: said.length === 0 && entry && !sameWord(entry.lemma, w.token.text) ? mainPronunciations(entry.pronunciations) : [],
-        heard: audio?.recordings?.slice(0, 1) ?? [],
+        ...wordAudio(w.token.text, entry, forms[i]?.data),
         partOfWord,
         role: role && head ? { role, head } : null,
         caseWhy: language.explainCase(tokens, w.index),
         senses: entry ? rankSenses(entry.senses, w.token.feats) : [],
         uses: uses.filter((u) => !u.idiom),
         idioms: uses.filter((u) => u.idiom),
-        tables:
-          entry && partOfWord === null
-            ? formTables((id) => lookup?.data?.featureSets[lang]?.[id], entry, w.token, language.paradigm, language.mergeLabels)
-            : [],
+        tables: wholeWordEntry
+          ? formTables((id) => lookup?.data?.featureSets[lang]?.[id], wholeWordEntry, w.token, language.paradigm, language.mergeLabels)
+          : [],
       };
     }),
   );
