@@ -1,5 +1,5 @@
 import * as z from "zod";
-import { LANGS, UPOS, langOf, type FeatureSets, type Lang, type LemmaId, type Lookup } from "@skolia/shared/api";
+import { LANGS, UPOS, langOf, parseLemmaId, type FeatureSets, type Lang, type LemmaId, type Lookup } from "@skolia/shared/api";
 import type { Entry, Relation, Upos } from "@skolia/shared/schema";
 import { sql, type Sql } from "@skolia/util/sql";
 import { prepare } from "@skolia/util/d1";
@@ -109,9 +109,7 @@ export class D1Lexicon implements Lexicon {
     if (exact.entries.length > 0) return exact;
 
     const db = this.dbs[lang];
-    const last = id.lastIndexOf(":");
-    const lemma = id.slice(lang.length + 1, last);
-    const upos = z.enum(UPOS).parse(id.slice(last + 1));
+    const { lemma, upos } = parseLemmaId(id);
     const lower = lemma.toLowerCase();
     if (lower !== lemma) {
       const loweredId = schemas.LemmaId.safeParse(`${lang}:${lower}:${upos}`).data;

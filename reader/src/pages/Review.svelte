@@ -4,8 +4,8 @@
     CARD_GROUPS,
     LANGUAGE_INFO,
     blankParts,
+    parseLemmaId,
     RATINGS,
-    isLang,
     type CardCounts,
     type CardGroup,
     type Cloze,
@@ -150,9 +150,8 @@
     showButton?.focus();
   }
 
-  function langOf(c: DueCard): Lang | undefined {
-    const lang = c.lemmaId.split(":")[0];
-    return isLang(lang) ? lang : undefined;
+  function langOf(c: DueCard): Lang {
+    return parseLemmaId(c.lemmaId).lang;
   }
 
   function sensesFor(c: DueCard): Sense[] {
@@ -165,10 +164,9 @@
   }
 
   function tablesOf(c: DueCard): Table[] {
-    const lang = langOf(c);
-    if (!lang || !c.entry || !due) return [];
+    if (!c.entry || !due) return [];
     const sets = due.featureSets;
-    const language = LANGUAGES[lang];
+    const language = LANGUAGES[langOf(c)];
     const featsOf = (id: number) => sets[String(id)];
     return c.kind === "cloze"
       ? formTables(featsOf, c.entry, { text: blankOf(c.data), feats: c.data.feats }, language.paradigm, language.mergeLabels)
@@ -180,7 +178,7 @@
   }
 
   function lemmaOf(c: DueCard): string {
-    return c.entry?.lemma ?? c.lemmaId.split(":")[1] ?? c.lemmaId;
+    return c.entry?.lemma ?? parseLemmaId(c.lemmaId).lemma;
   }
 
   function onkeydown(event: KeyboardEvent): void {
@@ -251,7 +249,7 @@
   {/if}
   {@render meanings(c)}
   {@const tables = tablesOf(c)}
-  {#if lang && tables.length > 0}
+  {#if tables.length > 0}
     <details class="forms">
       <summary>Forms</summary>
       {#each tables as table (table.title)}
