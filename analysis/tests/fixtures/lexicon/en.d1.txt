@@ -126,6 +126,6 @@ of	ADP	$VERSION	{"pronunciations":[{"ipa":"/ɒv/","accents":["UK"]},{"ipa":"/əv
 ## meta (key, value)
 attribution	Meanings, forms and pronunciations from Wiktionary (https://en.wiktionary.org) via kaikki.org, CC BY-SA 4.0
 lang	en
-version	8+kaikki-db8ca5d35975+d1-4
+version	9+kaikki-db8ca5d35975
 ## relation (source_id, version, ord, target_lemma, target_id, kind, data)
 en:doggy:NOUN	$VERSION	0	dog	NULL	derived-from	{"how": "diminutive"}

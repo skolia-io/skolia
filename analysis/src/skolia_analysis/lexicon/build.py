@@ -1,19 +1,23 @@
-"""Kaikki extract -> lexicon SQLite file, keyed by the analyser's lemma_id."""
+"""Kaikki extract -> a language's lexicon (store.py), keyed by the analyser's lemma_id."""
 
 import hashlib
-from collections.abc import Collection, Iterable, Iterator
+import json
+from collections.abc import Collection, Iterable, Iterator, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import NamedTuple, assert_never, cast
 
 from ..blob import lemma_id
 from ..schema import Feats, Upos
 from . import commons, kaikki, store
+from .entry import FeatsTable, Frames, Lexicon, Row, make, no_frames
 from .pronunciation import merge as merge_pronunciations
 from .pronunciation import merge_recordings
-from .schema import Paradigm, Pronunciation, Recording, Relation, Sense
+from .schema import Example, Paradigm, Pronunciation, Recording, Relation, Sense
 from .source import Converted, LexiconSource, Pronounced
 
-LEXICON_VERSION = "8"
+LEXICON_VERSION = "9"
+"""Goes up when what the build makes changes, so every environment loads it again."""
 
 
 @dataclass
@@ -100,6 +104,13 @@ type Pronunciations = dict[tuple[str, Upos], list[Pronunciation]]
 type Recordings = dict[tuple[str, Upos], list[Recording]]
 
 
+class VerbDerivative(NamedTuple):
+    """A perfective verb Wiktionary lists among another's derived terms: zgolić under golić."""
+
+    base: str
+    derivative: str
+
+
 @dataclass(frozen=True)
 class Extract:
     """What one pass over a Kaikki extract finds."""
@@ -111,18 +122,18 @@ class Extract:
     pronunciations: Pronunciations
     """By spelling and part of speech: inflected forms have them too."""
     recordings: Recordings
-    derivatives: list[store.VerbDerivative]
+    derivatives: list[VerbDerivative]
 
 
-def read(lang: str, source: LexiconSource, path: Path) -> Extract:
+def read(source: LexiconSource, path: Path) -> Extract:
     converted: list[Converted] = []
     pronunciations: Pronunciations = {}
     recordings: Recordings = {}
-    derivatives: list[store.VerbDerivative] = []
+    derivatives: list[VerbDerivative] = []
     count = 0
     for entry in kaikki.read(path):
         count += 1
-        derivatives.extend(_verb_derivatives(lang, entry))
+        derivatives.extend(_verb_derivatives(entry))
         if (said := source.pronounce(entry)) is not None:
             _add_said(said, pronunciations, recordings)
         if (result := source.convert(entry)) is not None:
@@ -141,39 +152,7 @@ def _add_said(said: Pronounced, pronunciations: Pronunciations, recordings: Reco
             recordings[key] = merge_recordings(recordings.get(key, []), said.recordings)
 
 
-def rows(lang: str, source: LexiconSource, converted: Iterable[Converted]) -> list[store.Row]:
-    """The merged entries and the source's hand entries, by lemma and part of speech; an
-    entry the analyser has no lemma_id for is left out."""
-    merged = merge(converted, source.grammar_tags)
-    for hand in source.hand_entries():
-        for upos in hand.upos:
-            merged.setdefault(
-                (hand.lemma, upos),
-                Merged(hand.lemma, upos, hand.senses, hand.relations, hand.paradigms),
-            )
-    return [
-        store.Row(
-            entry_id, lemma, upos, entry.senses, entry.relations, entry.paradigms, entry.grammar
-        )
-        for (lemma, upos), entry in sorted(merged.items())
-        if (entry_id := lemma_id(lang, lemma, upos)) is not None
-    ]
-
-
-def said(extract: Extract) -> list[store.PronunciationRow]:
-    """Each spelling and part of speech's pronunciations and recordings, in order."""
-    return [
-        store.PronunciationRow(
-            word,
-            upos,
-            extract.pronunciations.get((word, upos), []),
-            extract.recordings.get((word, upos), []),
-        )
-        for word, upos in sorted(extract.pronunciations.keys() | extract.recordings.keys())
-    ]
-
-
-def _verb_derivatives(lang: str, entry: kaikki.KaikkiEntry) -> Iterator[store.VerbDerivative]:
+def _verb_derivatives(entry: kaikki.KaikkiEntry) -> Iterator[VerbDerivative]:
     base = entry.get("word", "")
     if entry.get("pos") != "verb" or not base or " " in base:
         return
@@ -188,38 +167,149 @@ def _verb_derivatives(lang: str, entry: kaikki.KaikkiEntry) -> Iterator[store.Ve
                 and "perfective" in tags
                 and "verb" in tags
             ):
-                yield store.VerbDerivative(lang, base, word)
+                yield VerbDerivative(base, word)
+
+
+def rows(
+    lang: str,
+    source: LexiconSource,
+    converted: Iterable[Converted],
+    derivatives: Iterable[VerbDerivative] = (),
+) -> list[Row]:
+    """The merged entries, the source's hand entries and the verbs the others name, by
+    lemma_id; an entry the analyser has no lemma_id for is left out. Their relations name
+    their targets' entries, and a derivative is derived-from its base. Paradigms are the
+    source's (Wiktionary's): a language that generates them does when the entry is made."""
+    merged = merge(converted, source.grammar_tags)
+    for hand in source.hand_entries():
+        for upos in hand.upos:
+            merged.setdefault(
+                (hand.lemma, upos),
+                Merged(hand.lemma, upos, hand.senses, hand.relations, hand.paradigms),
+            )
+    for verb in _named_verbs(merged.values(), derivatives):
+        merged.setdefault((verb, "VERB"), Merged(verb, "VERB"))
+    by_id = sorted(
+        (
+            (entry_id, entry)
+            for (lemma, upos), entry in merged.items()
+            if (entry_id := lemma_id(lang, lemma, upos)) is not None
+        ),
+        key=lambda pair: pair[0],
+    )
+    with_senses: dict[str, list[str]] = {}
+    for entry_id, entry in by_id:
+        if entry.senses:
+            with_senses.setdefault(entry.lemma, []).append(entry_id)
+    relations = {
+        entry_id: [_resolved(lang, relation, with_senses) for relation in entry.relations]
+        for entry_id, entry in by_id
+    }
+    for base, derivative in dict.fromkeys(derivatives):
+        _add_derived_from(relations[_verb_id(lang, derivative)], base, _verb_id(lang, base))
+    return [
+        Row(
+            entry_id,
+            entry.lemma,
+            entry.upos,
+            [_sense(sense) for sense in entry.senses],
+            relations[entry_id],
+            entry.paradigms,
+            entry.grammar,
+        )
+        for entry_id, entry in by_id
+    ]
+
+
+def _named_verbs(entries: Iterable[Merged], derivatives: Iterable[VerbDerivative]) -> list[str]:
+    """Verbs Wiktionary names only in another's entry, as an aspect partner or a derived
+    term (zgolić under golić), which get an entry without senses."""
+    partners = [
+        relation["lemma"]
+        for entry in entries
+        for relation in entry.relations
+        if relation["kind"] == "aspect-partner"
+    ]
+    return partners + [verb for d in derivatives for verb in (d.derivative, d.base)]
+
+
+def _verb_id(lang: str, lemma: str) -> str:
+    return f"{lang}:{lemma}:VERB"
+
+
+def _resolved(lang: str, relation: Relation, with_senses: Mapping[str, list[str]]) -> Relation:
+    """The relation naming its target's entry: an aspect partner's is its verb; another's
+    is the one entry with senses spelled like it, if there's one."""
+    match relation["kind"]:
+        case "aspect-partner":
+            target: str | None = _verb_id(lang, relation["lemma"])
+        case "derived-from" | "variant-of":
+            matches = with_senses.get(relation["lemma"], [])
+            target = matches[0] if len(matches) == 1 else None
+        case _:
+            assert_never(relation["kind"])
+    data = store.relation_data(relation)
+    resolved = cast(Relation, {"kind": relation["kind"], "lemma": relation["lemma"], **data})
+    if target is not None:
+        resolved["lemma_id"] = target
+    return resolved
+
+
+def _add_derived_from(relations: list[Relation], base: str, base_id: str) -> None:
+    """A derivative is derived-from its whole base, unless it says so already. Not from
+    the sense Kaikki lists it under: it gives a page's derived terms to the sense before the
+    list, so zgolić came under golić's "to down, to soak (to drink)", not "to shave"."""
+    if not any(r["kind"] == "derived-from" and r.get("lemma_id") == base_id for r in relations):
+        relations.append(
+            {"kind": "derived-from", "lemma": base, "how": "perfective", "lemma_id": base_id}
+        )
+
+
+def _sense(sense: Sense) -> Sense:
+    """Only Sense's keys, in its order, without an empty selector or example list."""
+    kept: Sense = {"gloss": sense["gloss"], "tags": sense["tags"]}
+    if when := sense.get("when"):
+        kept["when"] = when
+    if examples := sense.get("examples"):
+        kept["examples"] = [_example(example) for example in examples]
+    return kept
+
+
+def _example(example: Example) -> Example:
+    kept: Example = {"text": example["text"]}
+    if (translation := example.get("translation")) is not None:
+        kept["translation"] = translation
+    return kept
+
+
+@dataclass(frozen=True)
+class Inputs:
+    kaikki: Path
+    """Kaikki's extract for the language, e.g. kaikki.org-dictionary-Polish.jsonl."""
+    commons: Path | None = None
+    """A snapshot of Commons' recordings' file names (commons.fetch)."""
 
 
 def build(
-    lang: str,
-    source: LexiconSource,
-    kaikki_path: Path,
-    out: Path,
-    commons_path: Path | None = None,
-) -> tuple[int, Stats]:
-    """commons_path is a snapshot of Commons' recordings' file names (commons.fetch)."""
-    # Named by content: kaikki.org overwrites its extract in place, and a download's
-    # mtime is the day it was fetched, so a date would differ between machines
-    extract = _sha256(kaikki_path)[:12]
-    lexicon_version = f"{LEXICON_VERSION}+kaikki-{extract}"
-    if source.version:
-        lexicon_version += f"+{source.version}"
-    if commons_path is not None:
-        lexicon_version += f"+commons-{_sha256(commons_path)[:12]}"
-    by_word = commons.recordings(lang, commons.read(commons_path)) if commons_path else {}
-    meta = {"lang": lang, "version": lexicon_version, "attribution": source.attribution}
-    extract = read(lang, source, kaikki_path)
-    count = store.write(
-        out,
-        store.Contents(
-            meta,
-            rows(lang, source, extract.converted),
-            said(extract),
-            by_word,
-            extract.derivatives,
-        ),
+    lang: str, source: LexiconSource, inputs: Inputs, frames: Frames = no_frames
+) -> tuple[store.Contents, Stats]:
+    extract = read(source, inputs.kaikki)
+    by_word = commons.recordings(lang, commons.read(inputs.commons)) if inputs.commons else {}
+    built = rows(lang, source, extract.converted, extract.derivatives)
+    lexicon = Lexicon(
+        {row.lemma_id: row for row in built},
+        _by_spelling(extract.pronunciations),
+        _by_spelling(extract.recordings),
+        by_word,
     )
+    feats = FeatsTable()
+    entries = [
+        _entry_row(lexicon, row._replace(paradigms=paradigms), frames, feats)
+        for row in built
+        for paradigms in [row.paradigms or source.paradigms(row.lemma, row.upos)]
+    ]
+    meta = {"lang": lang, "version": _version(source, inputs), "attribution": source.attribution}
+    contents = store.Contents(meta, entries, _edges(built), feats.table, _audio(lexicon))
     stats = Stats(
         entries=extract.read,
         skipped=extract.read - len(extract.converted),
@@ -227,7 +317,76 @@ def build(
         recorded=len(extract.recordings),
         commons=len(by_word),
     )
-    return count, stats
+    return contents, stats
+
+
+def _by_spelling[T](
+    by_word_upos: Mapping[tuple[str, Upos], list[T]],
+) -> dict[str, dict[Upos, list[T]]]:
+    found: dict[str, dict[Upos, list[T]]] = {}
+    for (word, upos), values in sorted(by_word_upos.items()):
+        found.setdefault(word, {})[upos] = values
+    return found
+
+
+def _entry_row(lexicon: Lexicon, row: Row, frames: Frames, feats: FeatsTable) -> store.EntryRow:
+    data = store.to_json(make(lexicon, row, frames, feats))
+    return store.EntryRow(row.lemma_id, row.lemma, row.upos, data, len(row.senses))
+
+
+def _edges(built: Iterable[Row]) -> list[store.Edge]:
+    return [
+        store.Edge(
+            row.lemma_id,
+            index,
+            relation["lemma"],
+            relation.get("lemma_id"),
+            relation["kind"],
+            json.dumps(store.relation_data(relation), ensure_ascii=False),
+        )
+        for row in built
+        for index, relation in enumerate(row.relations)
+    ]
+
+
+def _audio(lexicon: Lexicon) -> list[store.AudioRow]:
+    """Each spelling's pronunciations and recordings by part of speech, and Commons'."""
+    spellings = lexicon.pronunciations.keys() | lexicon.recordings.keys()
+    found: list[store.AudioRow] = []
+    for form in sorted(spellings | lexicon.word_recordings.keys()):
+        pronunciations = lexicon.pronunciations.get(form, {})
+        recordings = lexicon.recordings.get(form, {})
+        found += [
+            store.AudioRow(
+                form,
+                upos,
+                store.to_json(
+                    {
+                        "pronunciations": pronunciations.get(upos, []),
+                        "recordings": recordings.get(upos, []),
+                    }
+                ),
+            )
+            for upos in sorted(pronunciations.keys() | recordings.keys())
+        ]
+        if heard := lexicon.word_recordings.get(form):
+            found.append(
+                store.AudioRow(
+                    form, None, store.to_json({"pronunciations": [], "recordings": heard})
+                )
+            )
+    return found
+
+
+def _version(source: LexiconSource, inputs: Inputs) -> str:
+    # Named by content: kaikki.org overwrites its extract in place, and a download's
+    # mtime is the day it was fetched, so a date would differ between machines
+    version = f"{LEXICON_VERSION}+kaikki-{_sha256(inputs.kaikki)[:12]}"
+    if source.version:
+        version += f"+{source.version}"
+    if inputs.commons is not None:
+        version += f"+commons-{_sha256(inputs.commons)[:12]}"
+    return version
 
 
 def _sha256(path: Path) -> str:

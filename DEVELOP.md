@@ -188,7 +188,7 @@ Large inputs and outputs live in `data/` at the repo root (git-ignored). The lex
 
 ```fish
 scripts/fetch_inputs.sh pl
-nix build .#lexicon-pl   # → result/pl.sqlite and pl-valency.json
+nix build .#lexicon-pl   # → result/pl.sqlite, in the lexicon Worker's D1 schema
 ```
 
 The lexicon's version names the extract by its hash, so the same extract gives the same version on any machine. To move to a newer extract (this re-bundles every document once):
@@ -212,12 +212,13 @@ zstd -19 -c ../data/inputs/commons-recordings-pl.txt | pnpm --dir ../api exec wr
 
 `wrangler r2 object put` takes at most 300 MiB. The English extract is over that at `zstd -19` (320 MB) and under it at `zstd --ultra -22 --long=27` (281 MB, about 6 minutes); `zstd -d` reads a 2^27 window without any flag, so `fetch_inputs.sh` needs none.
 
-Or build from a local extract (about 10 s):
+Or build from a local extract (Polish takes about 30 s). `--data` is a directory with
+`pl-valency.json` (`skolia-build-valency`), for the verbs' frames:
 
 ```fish
-uv run skolia-build-lexicon pl ../data/kaikki/kaikki.org-dictionary-Polish.jsonl ../data/lexicon/pl.sqlite --commons ../data/inputs/commons-recordings-pl.txt
-uv run skolia-build-lexicon en ../data/kaikki/kaikki.org-dictionary-English.jsonl ../data/lexicon/en.sqlite
-uv run skolia-build-lexicon fr ../data/kaikki/kaikki.org-dictionary-French.jsonl ../data/lexicon/fr.sqlite
+uv run skolia-build-lexicon pl ../data/kaikki/kaikki.org-dictionary-Polish.jsonl ../lexicon/migrations ../data/lexicon/pl.sqlite --commons ../data/inputs/commons-recordings-pl.txt --data ../data/lexicon
+uv run skolia-build-lexicon en ../data/kaikki/kaikki.org-dictionary-English.jsonl ../lexicon/migrations ../data/lexicon/en.sqlite
+uv run skolia-build-lexicon fr ../data/kaikki/kaikki.org-dictionary-French.jsonl ../lexicon/migrations ../data/lexicon/fr.sqlite
 ```
 
 From the repo root, build or reuse the pinned lexicon and look up a lemma:
@@ -240,15 +241,13 @@ uv run skolia-lexicon --db result/pl.sqlite --incoming ogolić
 ```
 
 Use `--db ../data/lexicon/pl.sqlite` for a manual build. The command prints JSON with
-the entries it finds, including their senses, relations, and stored paradigms.
-`--incoming` uses the relation target index to find links pointing to a headword,
-even if it has no entry of its own. Rebuild any SQLite files from before this schema change.
+the entries it finds, each the whole Entry the lexicon Worker serves. `--incoming` finds
+the relations pointing to a headword, even if it has no entry of its own. A lexicon file
+built before the build wrote D1's schema has another one; rebuild it.
 
-Each entry row holds its senses (with examples and selectors) and its paradigms
-(with forms) as JSON arrays; relations, pronunciations and recordings are in ordered
-tables of their own. Both endpoints of a relation reference entries, which can have
-zero senses. Each endpoint has an index. The D1 export builds entries and form audio
-from these tables.
+The file is what `infra/load-lexicon.py` loads into D1 (`lexicon/store.py`): each entry
+row holds the whole Entry as JSON, with the relation, featureset and form_pronunciation
+tables beside it.
 
 To produce a document analysis for inspection:
 

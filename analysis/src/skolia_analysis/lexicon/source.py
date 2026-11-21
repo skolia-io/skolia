@@ -19,7 +19,7 @@ class Converted:
     senses: list[Sense] = field(default_factory=lambda: list[Sense]())
     relations: list[Relation] = field(default_factory=lambda: list[Relation]())
     paradigms: list[Paradigm] = field(default_factory=lambda: list[Paradigm]())
-    """Forms from Wiktionary, for a language without a generator (Polish has Morfeusz)."""
+    """Forms from Wiktionary; empty for a language that generates them (LexiconSource.paradigms)."""
 
 
 @dataclass
@@ -57,6 +57,11 @@ class LexiconSource(Protocol):
     def pronounce(self, entry: KaikkiEntry) -> Pronounced | None:
         """None for entries without a pronunciation the reader shows or a recording, or
         that no token would match: phrases, affixes."""
+        ...
+
+    def paradigms(self, lemma: str, upos: Upos) -> list[Paradigm]:
+        """The forms of an entry Kaikki gave none, from a generator (Polish has Morfeusz);
+        [] for a language whose forms all come from Wiktionary."""
         ...
 
     def hand_entries(self) -> Iterable[Converted]:

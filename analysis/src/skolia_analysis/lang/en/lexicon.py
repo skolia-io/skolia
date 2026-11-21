@@ -113,6 +113,9 @@ class Source:
         found, heard = pronunciations(sounds, _accents), recordings(sounds)
         return Pronounced(word, (upos,), found, heard) if found or heard else None
 
+    def paradigms(self, lemma: str, upos: Upos) -> list[Paradigm]:
+        return []
+
     def hand_entries(self) -> Iterable[Converted]:
         return ()
 

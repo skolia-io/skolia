@@ -8,8 +8,8 @@ Worker's wrangler config that binds them:
   load-lexicon.py state <env> --lang LANG --built-from OUT [--sample N] [--persist-to DIR]
   load-lexicon.py load <env> <sqlite> --built-from OUT [--sample N] [--persist-to DIR]
   load-lexicon.py config <env> [--sample N] [--check]
-env is staging, production, pr-N or local. sqlite is analysis's {lang}.d1.sqlite
-(skolia-build-d1-export, or the Nix output analysis#d1-export-{lang}), which has D1's schema;
+env is staging, production, pr-N or local. sqlite is analysis's {lang}.sqlite
+(skolia-build-lexicon, or the Nix output analysis#lexicon-{lang}), which has D1's schema;
 its meta table gives the language. OUT is the Nix output sqlite is in; with --sample (the
 previews' wordfreq N most common words), OUT+sampleN.
 
@@ -341,7 +341,7 @@ def render(template: str, values: Mapping[str, Json]) -> str:
 
 def nix_out(lang: str) -> str:
     return subprocess.run(
-        ["nix", "eval", "--raw", f"./analysis#d1-export-{lang}.outPath"],
+        ["nix", "eval", "--raw", f"./analysis#lexicon-{lang}.outPath"],
         cwd=ROOT,
         stdout=subprocess.PIPE,
         text=True,
@@ -399,7 +399,7 @@ def main() -> None:
         command.add_argument("--built-from", required=True, help="the Nix output of the build")
         command.add_argument("--persist-to", type=Path, help="wrangler dev's state (local)")
     state.add_argument("--lang", required=True, choices=LANGS)
-    load.add_argument("sqlite", type=Path, help="analysis's {lang}.d1.sqlite")
+    load.add_argument("sqlite", type=Path, help="analysis's {lang}.sqlite")
     configure.add_argument("--check", action="store_true", help="fail if it's out of date")
     args = parser.parse_args()
     command = cast(str, args.command)

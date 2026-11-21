@@ -118,8 +118,7 @@ flowchart TB
     INP["inputs.sha256: Kaikki, Walenty"]
     MOD["models (fixed-output)"]
     VENV["venv (uv2nix)"]
-    LEXN["lexicon-{lang}: {lang}.sqlite"]
-    D1X["d1-export-{lang}: {lang}.d1.sqlite, in D1's schema"]
+    LEXN["lexicon-{lang}: {lang}.sqlite, in D1's schema"]
     IMG["ingest-{lang} image"]
   end
   subgraph CI["GitHub Actions (ci.yml, deploy.yml)"]
@@ -152,8 +151,7 @@ flowchart TB
   PY --> VENV
   INP --> LEXN
   VENV --> LEXN
-  LEXN --> D1X
-  LXS -- "migrations" --> D1X
+  LXS -- "migrations" --> LEXN
   MOD --> IMG
   VENV --> IMG
   LEXN --> IMG
@@ -190,7 +188,7 @@ flowchart TB
 ```
 
 - D1 is bound by name. If Terraform hasn't made a database, `wrangler deploy` creates one outside Terraform, so `deploy-infra` goes first.
-- The D1 export builds each entry with `lexicon/entry.py`. Polish ingest carries Walenty for case analysis.
+- The lexicon build makes each entry with `lexicon/entry.py`. Polish ingest carries Walenty for case analysis.
 - `load-lexicon` only substitutes from Cachix and never fetches the inputs, so it needs the lexicon there; `build-ingest-image` pushes it only when an image is rebuilt.
 - `deploy-web` waits for `deploy-lexicon`, which it binds, and for `load-lexicon` and `deploy-ingest`: the end-to-end tests read the lexicon.
 - Deploys don't wait for `check`. `infra/plan.py` has a dependency graph of projects (each pnpm package by its `package.json`, `analysis/`, `infra/`, `curated/`) and the targets CI builds, checks and deploys, each node keyed by a hash of its Nix content and its build and test dependencies' keys. CI skips each one whose key `skolia-ci` has a row for: in `build` for an image, the skolia Worker's bundle or a check, done once for every environment, and as the environment's last row in `deployment` for Terraform, the ingest Worker, the lexicon, the lexicon Worker, the skolia Worker, the end-to-end tests and the curated sync. Both tables only grow.
@@ -230,12 +228,12 @@ class LanguagePlugin:
     def parser(model) -> Parser
     def analyzer(parser, options, data) -> Analyzer   # text -> blob; its name versions the blob
     def lexicon_source() -> LexiconSource        # Kaikki entries in the analyser's terms
-    def extras(data) -> Extras                   # what it adds to entries: paradigms, frames
+    def frames(data) -> Frames                   # its words' valency frames, for the lexicon
 ```
 
-`data` is the language's data directory: the lexicon (`{lang}.sqlite`) and whatever else the plugin builds (Polish: `pl-valency.json`).
+`data` is the language's data directory: whatever the plugin builds besides the lexicon (Polish: `pl-valency.json`).
 
-Polish: COMBO (XLM-RoBERTa, trained on UD Polish PDB) picks the reading that fits the context and gives the dependency parse; Stanza models are available as alternatives. Morfeusz 2 supplies the list of candidate readings and generates missing paradigms. When the parser's reading isn't one Morfeusz allows, the closest Morfeusz reading replaces it and the parser's is kept alongside. Measured choices and scores: `analysis/EVALUATION.md`.
+Polish: COMBO (XLM-RoBERTa, trained on UD Polish PDB) picks the reading that fits the context and gives the dependency parse; Stanza models are available as alternatives. Morfeusz 2 supplies the list of candidate readings and generates the lexicon's paradigms. When the parser's reading isn't one Morfeusz allows, the closest Morfeusz reading replaces it and the parser's is kept alongside. Measured choices and scores: `analysis/EVALUATION.md`.
 
 Why a word has its case is worked out at import (`analysis/src/skolia_analysis/lang/pl/cases.py`) from the dependency tree and the verb's valency in Walenty (IPI PAN's valency dictionary, CC BY-SA 4.0): each token with a case gets a `case_reason` (the rule, the word that causes it, and the verb or preposition). Rules: preposition, agreement, coordination, governing numeral, verb's lexical case (`szukać` + gen), negation (`nie mam czasu`), structural object, partitive, subject, predicate after `być`, possessive and noun complement, verbal noun's object, instrumental, vocative. The reader turns the reason into a sentence and underlines the triggering word.
 
@@ -245,24 +243,26 @@ French: the same, with Stanza's French `default_accurate` (CamemBERT, trained on
 
 ## Lexicon (static, per language)
 
-Built offline (`analysis/src/skolia_analysis/lexicon/`) into one SQLite file per language on the server, keyed by the analyser's `lemma_id`. The lexicon follows the analyser's conventions: each Kaikki (Wiktionary) headword is looked up in Morfeusz and converted with the analyser's own code, so `który` is filed as DET just as the analyser tags it.
+Built offline (`analysis/src/skolia_analysis/lexicon/`) into one SQLite file per language in the lexicon Worker's D1 schema (`lexicon/migrations`), keyed by the analyser's `lemma_id`, which `infra/load-lexicon.py` copies into D1. The lexicon follows the analyser's conventions: each Kaikki (Wiktionary) headword is looked up in Morfeusz and converted with the analyser's own code, so `który` is filed as DET just as the analyser tags it.
 
 English and French have no Morfeusz: headwords are filed under Kaikki's part of speech mapped to UPOS, and Wiktionary's inflection table gives the paradigm.
 
 ```
-entry(lemma_id, lemma, upos, grammar, senses, paradigms)  senses and paradigms as JSON; relations in a table of their own
+entry(lemma_id, version, lemma, upos, data, lemma_lower, sense_count)  data: the whole Entry as JSON;
+  relations, feature sets and each spelling's pronunciations and recordings in tables of their own
   senses:    gloss, tags (slang, dated...), examples, and `when`: the features that select
              the sense (pies the dog: Animacy=Nhum; the cop: Animacy=Hum)
   grammar:   a `when` every sense shares (pani: Gender=Fem)
   relations: aspect-partner (robić <-> zrobić, its aspect), derived-from (pani <- pan,
              rubelek <- rubel, with how), variant-of (niechże <- niech, with Wiktionary's tags);
              the target's spelling, and its entry when the lexicon has one
-  paradigms: forms with UD features, for languages without a generator (English, French); empty for Polish
+  paradigms: forms with their UD feature sets by id: Wiktionary's (English, French) or
+             Morfeusz's (Polish)
 ```
 
-What the lexicon Worker serves is an `Entry`, made from a row in one place (`lexicon/entry.py`): its grammar adds what every form's features share (zgolić: Aspect=Perf), Wiktionary's tags for that grammar come off its senses, a word with no senses of its own takes those of the words it's derived from (zgolić, a perfective of golić, means what golić does), and it has its lemma's pronunciations, its paradigms (Morfeusz's for Polish) and its frames. Each lexicon D1 stores each `Entry` whole, with the relation rows beside it for finding what points at a word (`include=incoming`). The reader renders a relation's kind in English.
+What the lexicon Worker serves is an `Entry`, made from a row in one place (`lexicon/entry.py`): its grammar adds what every form's features share (zgolić: Aspect=Perf), Wiktionary's tags for that grammar come off its senses, a word with no senses of its own takes those of the words it's derived from (zgolić, a perfective of golić, means what golić does), and it has its lemma's pronunciations, its paradigms and its frames. Each lexicon D1 stores each `Entry` whole, with the relation rows beside it for finding what points at a word (`include=incoming`). The reader renders a relation's kind in English.
 
-Polish paradigms aren't stored: Morfeusz generates them, in the analyser's feature conventions, when the D1 export is built. A verb's paradigm includes its participles and gerunds. English paradigms are stored in UD EWT's conventions: a form lists every feature set it serves (`walk` is the infinitive, the imperative and the present for every person but the third singular), since the reader matches a token to the forms whose features include the token's. French paradigms are stored in UD French GSD's conventions (an imperfect is `Tense=Imp`, a conditional `Mood=Cnd`); Wiktionary gives only the masculine singular past participle, so its feminine and plural forms follow the regular rule (`pris`, `prise`, `prises`), with the few that never agree (`été`) left alone.
+Polish paradigms are Morfeusz's, generated in the analyser's feature conventions when the lexicon is built, for every entry, including the verbs only other entries name (zgolić). A verb's paradigm includes its participles and gerunds. English paradigms are stored in UD EWT's conventions: a form lists every feature set it serves (`walk` is the infinitive, the imperative and the present for every person but the third singular), since the reader matches a token to the forms whose features include the token's. French paradigms are stored in UD French GSD's conventions (an imperfect is `Tense=Imp`, a conditional `Mood=Cnd`); Wiktionary gives only the masculine singular past participle, so its feminine and plural forms follow the regular rule (`pris`, `prise`, `prises`), with the few that never agree (`été`) left alone.
 
 The lexicon Worker serves one entry per URL, shared across documents through the browser and edge caches. Lookup falls back from the exact `lemma_id` to the lemma lowercased under the same part of speech (*Old* Town is the adjective *old*), then to the same lemma under another part of speech (English *be* as AUX is Wiktionary's verb), then to the lemma lowercased under any. The reader marks the token's form in the paradigm by its text and features, counting only features the paradigm's forms have. A full-dictionary download for search is a possible later addition (meanings only, without paradigms).
 

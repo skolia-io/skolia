@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from .lexicon.entry import Extras
+from .lexicon.entry import Frames
 from .lexicon.source import LexiconSource
 from .parsed import ParsedSentence, Parser
 from .schema import Blob, ExpressionDef
@@ -67,11 +67,7 @@ class LanguagePlugin(Protocol):
 
     def lexicon_source(self) -> LexiconSource: ...
 
-    def extras(self, data: Path | None) -> Extras:
-        """What the language adds to its lexicon's entries (lexicon/entry.py): paradigms,
-        for a language whose lexicon doesn't store them, and, with data, valency frames."""
+    def frames(self, data: Path | None) -> Frames:
+        """Its words' valency frames, for its lexicon's entries (lexicon/entry.py); with
+        data, or none."""
         ...
-
-
-def lexicon_path(data: Path, lang: str) -> Path:
-    return data / f"{lang}.sqlite"

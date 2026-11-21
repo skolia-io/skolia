@@ -10,14 +10,14 @@ from pathlib import Path
 
 from ... import reconcile
 from ...blob import CandidateLookup, build
-from ...lexicon.entry import Extras, no_frames
+from ...lexicon.entry import Frames, no_frames
 from ...parsed import ParsedSentence, Parser
 from ...parsers.combo_parser import ComboParser
 from ...parsers.stanza_parser import StanzaParser
 from ...plugin import Options
 from ...schema import Blob, ExpressionDef, Reading, Token, Upos
 from . import cases
-from .lexicon import Paradigms, Source
+from .lexicon import Source
 from .morfeusz import MorfeuszCandidates
 from .nkjp import VERB_FORM_CLASSES, tag_class
 from .valency import Valency
@@ -133,7 +133,7 @@ def lexicon_source() -> Source:
     return Source()
 
 
-def extras(data: Path | None) -> Extras:
-    """Morfeusz's paradigms, and with data, Walenty's frames."""
+def frames(data: Path | None) -> Frames:
+    """With data, Walenty's."""
     walenty = valency(data)
-    return Extras(Paradigms(), walenty.frames if walenty is not None else no_frames)
+    return walenty.frames if walenty is not None else no_frames

@@ -109,6 +109,9 @@ class Source:
         found = pronunciations(entry.get("sounds", []), _accents)
         return Pronounced(word, (upos,), found) if found else None
 
+    def paradigms(self, lemma: str, upos: Upos) -> list[Paradigm]:
+        return []
+
     def hand_entries(self) -> Iterable[Converted]:
         return ()
 

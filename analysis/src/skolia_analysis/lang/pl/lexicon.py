@@ -132,10 +132,14 @@ class Source:
 
     def __init__(self) -> None:
         self._candidates = MorfeuszCandidates()
+        self._paradigms = Paradigms()
 
     @property
     def version(self) -> str:
         return f"morfeusz-{version('morfeusz2')}"
+
+    def paradigms(self, lemma: str, upos: Upos) -> list[Paradigm]:
+        return self._paradigms(lemma, upos)
 
     def hand_entries(self) -> Iterator[Converted]:
         for (lemma, upos), glosses in HAND_SENSES.items():

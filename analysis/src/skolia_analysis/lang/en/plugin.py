@@ -9,7 +9,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
-from ...lexicon.entry import Extras
+from ...lexicon.entry import Frames, no_frames
 from ...parsed import Parser
 from ...parsers.stanza_parser import StanzaParser
 from ...plugin import Options
@@ -49,6 +49,6 @@ def lexicon_source() -> Source:
     return Source()
 
 
-def extras(data: Path | None) -> Extras:
-    """Nothing: the paradigms are the lexicon's, from Wiktionary."""
-    return Extras()
+def frames(data: Path | None) -> Frames:
+    """None: there's no valency lexicon for English."""
+    return no_frames
