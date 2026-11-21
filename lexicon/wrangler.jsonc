@@ -17,7 +17,7 @@
   "workers_dev": false,
   "preview_urls": false,
   "cache": { "enabled": true },
-  "observability": { "enabled": true },
+  "observability": { "enabled": true, "issues": { "enabled": true } },
   // Runs near D1 when that's faster than near the caller
   "placement": { "mode": "smart" },
   "routes": [],
@@ -27,5 +27,8 @@
     { "binding": "LEXICON_EN", "database_name": "skolia-lexicon-en-local", "migrations_dir": "migrations" },
     { "binding": "LEXICON_FR", "database_name": "skolia-lexicon-fr-local", "migrations_dir": "migrations" },
     { "binding": "LEXICON_PL", "database_name": "skolia-lexicon-pl-local", "migrations_dir": "migrations" }
-  ]
+  ],
+  // Staging's and production's: the above again, deployed with --env so their traces are
+  // tagged deployment.environment.name. Routes and bindings aren't inherited.
+  "env": {}
 }

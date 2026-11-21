@@ -248,7 +248,8 @@ deploy-lexicon env:
     case {{ env }} in pr-*) sample="--sample 3000" ;; *) sample= ;; esac
     infra/plan.py deploying {{ env }} lexicon-worker
     infra/load-lexicon.py config {{ env }} $sample
-    pnpm --dir lexicon exec wrangler deploy -c wrangler.{{ env }}.jsonc
+    case {{ env }} in staging | production) flags=(--env {{ env }}) ;; *) flags=() ;; esac
+    pnpm --dir lexicon exec wrangler deploy -c wrangler.{{ env }}.jsonc ${flags[@]+"${flags[@]}"}
     infra/plan.py deployed {{ env }} lexicon-worker
 
 # The skolia Worker (reader and API) with wrangler, with Terraform's BETTER_AUTH_SECRET and, if set,
@@ -286,7 +287,7 @@ deploy-oauth-proxy:
     jq -n '{GOOGLE_CLIENT_ID: env.GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET: env.GOOGLE_CLIENT_SECRET, OAUTH_PROXY_SECRET: env.OAUTH_PROXY_SECRET}
       | if any(.[]; (. // "") == "") then error("GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and OAUTH_PROXY_SECRET must be set") end' > "$dir/secrets.json"
     infra/plan.py deploying shared oauth-proxy
-    (cd oauth-proxy && pnpm exec wrangler deploy --secrets-file "$dir/secrets.json")
+    (cd oauth-proxy && pnpm exec wrangler deploy --env production --secrets-file "$dir/secrets.json")
     infra/plan.py deployed shared oauth-proxy
 
 # Build, push and deploy the ingest container

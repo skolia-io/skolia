@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # wrangler for one environment: wrangler.sh <staging|production|pr-N|account> <wrangler args...>
-# Production is the top level of api/wrangler.jsonc and ingest/wrangler.jsonc; staging is
-# their "env" blocks. A preview, pr-N, has configs of its own made from staging's by
+# Production and staging are the "env" blocks of api/wrangler.jsonc and ingest/wrangler.jsonc,
+# deployed with --env so their traces are tagged deployment.environment.name; the top level
+# is wrangler dev's. A preview, pr-N, has configs of its own made from staging's by
 # infra/preview.py (api/wrangler.pr-N.json, ingest/wrangler.pr-N.json), made here if
 # missing; a -c in the arguments replaces it. "account" runs wrangler with no config, for account-wide
 # commands (the container registry, teardown.sh). Runs in api/, so -c paths are relative
@@ -18,9 +19,7 @@ api=$(cd "$(dirname "$0")/../api" && pwd)
 
 flags=()
 case $env in
-  # The top level, named explicitly: without --env wrangler warns when env blocks exist
-  production) flags=(--env=) ;;
-  staging) flags=(--env "$env") ;;
+  staging | production) flags=(--env "$env") ;;
   pr-*)
     flags=(-c "wrangler.$env.json")
     for arg in "$@"; do

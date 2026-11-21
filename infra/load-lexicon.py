@@ -107,8 +107,7 @@ def quote(value: str) -> str:
 
 def local_wrangler(target: Local, *args: str) -> str:
     command = [
-        str(WRANGLER),
-        "production",
+        str(ROOT / "api" / "node_modules" / ".bin" / "wrangler"),
         "d1",
         "execute",
         binding(target.lang),
@@ -322,6 +321,25 @@ def worker(env: str) -> tuple[str, list[Json]]:
             return f"skolia-lexicon-{env}", []
 
 
+def environments(env: str, name: str, routes: list[Json], names: Mapping[str, str]) -> Json:
+    """The config's env blocks: staging's or production's, deployed with --env so its traces
+    are tagged deployment.environment.name, holds what the top level does, since routes and
+    bindings aren't inherited. Local and previews have none."""
+    match env:
+        case "staging" | "production":
+            databases: list[Json] = [
+                {
+                    "binding": binding(lang),
+                    "database_name": names[lang],
+                    "migrations_dir": "migrations",
+                }
+                for lang in LANGS
+            ]
+            return {env: {"name": name, "routes": routes, "d1_databases": databases}}
+        case _:
+            return {}
+
+
 def render(template: str, values: Mapping[str, Json]) -> str:
     """template with each "${name}" replaced by values[name] as JSON. Every placeholder needs a
     value and every value a placeholder."""
@@ -363,7 +381,12 @@ def config(env: str, sample: int | None, check: bool) -> None:
     name, routes = worker(env)
     text = render(
         TEMPLATE.read_text(),
-        {"name": name, "routes": routes, **{binding(lang): names[lang] for lang in LANGS}},
+        {
+            "name": name,
+            "routes": routes,
+            "env": environments(env, name, routes, names),
+            **{binding(lang): names[lang] for lang in LANGS},
+        },
     )
     made = f"// Made by infra/load-lexicon.py config {env} from wrangler.template.jsonc\n" + text
     path = LEXICON / ("wrangler.jsonc" if env == "local" else f"wrangler.{env}.jsonc")

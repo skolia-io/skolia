@@ -152,8 +152,8 @@ deploy() {
       }
       { print }
     ' "$root/ingest/wrangler.jsonc" > "$config"
-    # Production and staging
-    copies=2
+    # The top level (wrangler dev's), production and staging
+    copies=3
   fi
   for pair in "${images[@]}"; do
     if [ "$(grep -c "\"image\": \"${pair#*=}\"" "$config")" != "$copies" ]; then
