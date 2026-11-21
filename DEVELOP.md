@@ -244,10 +244,11 @@ the entries it finds, including their senses, relations, and stored paradigms.
 `--incoming` uses the relation target index to find links pointing to a headword,
 even if it has no entry of its own. Rebuild any SQLite files from before this schema change.
 
-The build stores senses, examples, paradigms, forms and audio in ordered tables.
-Tags, accent labels and feature maps stay with their parent rows. Both endpoints
-of a relation reference entries, which can have zero senses. Each endpoint has
-an index. The D1 export builds entries and form audio from these tables.
+Each entry row holds its senses (with examples and selectors) and its paradigms
+(with forms) as JSON arrays; relations, pronunciations and recordings are in ordered
+tables of their own. Both endpoints of a relation reference entries, which can have
+zero senses. Each endpoint has an index. The D1 export builds entries and form audio
+from these tables.
 
 To produce a document analysis for inspection:
 
