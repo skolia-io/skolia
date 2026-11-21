@@ -7,7 +7,7 @@ sends again.
                result, and its attempts for the ingest history
   GET  /busy   {"busy": bool}: whether a job is waiting or running, so the container
                isn't put to sleep mid-analysis
-  GET  /jobs   JobsState: whether the pipelines are still loading, and the jobs running
+  GET  /jobs   JobsState: whether the analyzers are still loading, and the jobs running
                and waiting in the order they'll run, with their stages so far
 """
 
@@ -174,7 +174,7 @@ class HttpJobs:
         return answer
 
     def loaded(self) -> None:
-        """The pipelines are ready: jobs run from now on."""
+        """The analyzers are ready: jobs run from now on."""
         with self._changed:
             self._loading = False
 

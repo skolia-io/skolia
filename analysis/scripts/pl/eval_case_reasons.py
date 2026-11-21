@@ -41,7 +41,8 @@ def main() -> None:
     text = gold_text(args.gold)
     model = CachedParser(pl.LANG, pl.DEFAULT_MODEL, lambda: pl.parser(pl.DEFAULT_MODEL), args.cache)
     valency = Valency.load(args.valency) if args.valency else None
-    blob = pl.assemble(text, model(text), model.name, pl.candidate_lookup(), valency=valency)
+    analyzer = pl.PolishAnalyzer(parser=model, candidates=pl.candidate_lookup(), valency=valency)
+    blob = analyzer(text)
 
     by_rule: Counter[str] = Counter()
     unexplained: Counter[tuple[str, str, str]] = Counter()

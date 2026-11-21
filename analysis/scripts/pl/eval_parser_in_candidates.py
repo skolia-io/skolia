@@ -45,7 +45,7 @@ def main() -> None:  # noqa: PLR0915
     model = pl.parser()
     lookup = pl.candidate_lookup()
     text = "\n".join(texts)
-    blob = pl.assemble(text, model(text), model.name, lookup, snap=None)
+    blob = pl.PolishAnalyzer(parser=model, candidates=lookup, snap=None)(text)
 
     total = found = without = 0
     patterns: Counter[str] = Counter()

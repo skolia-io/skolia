@@ -20,10 +20,10 @@ import structlog
 
 from .. import lang
 from ..log import configure_logging
-from ..plugin import Options
+from ..plugin import Analyzer, Options
 from .blobs import HttpBlobs
 from .http import HttpJobs, serve
-from .worker import Ingester, Pipeline
+from .worker import Ingester
 
 log = structlog.get_logger(module=__name__)
 
@@ -35,16 +35,11 @@ def env(name: str) -> str:
     return value
 
 
-def pipeline(code: str, data: Path | None) -> Pipeline:
+def analyzer(code: str, data: Path | None) -> Analyzer:
     plugin = lang.plugin(code)
-    log.info("loading pipeline", lang=code, model=plugin.DEFAULT_MODEL)
+    log.info("loading analyzer", lang=code, model=plugin.DEFAULT_MODEL)
     parser = plugin.parser(plugin.DEFAULT_MODEL)
-    analyzer = plugin.analyzer(parser, Options(plugin.DEFAULT_SNAP), data)
-    return Pipeline(
-        lang=code,
-        analyze=analyzer,
-        analyzer=analyzer.name,
-    )
+    return plugin.analyzer(parser, Options(plugin.DEFAULT_SNAP), data)
 
 
 def stop_on_sigterm(_signum: int, _frame: FrameType | None) -> None:
@@ -53,7 +48,7 @@ def stop_on_sigterm(_signum: int, _frame: FrameType | None) -> None:
 
 
 def job_source() -> HttpJobs:
-    """Listening starts before the pipeline loads (which takes a while), so the container
+    """Listening starts before the analyzers load (which takes a while), so the container
     counts as started and jobs wait in memory meanwhile."""
     port = int(env("SKOLIA_HTTP_PORT"))
     jobs = HttpJobs(os.environ.get("SKOLIA_IMAGE") or "unknown")
@@ -82,10 +77,10 @@ def ingest(queue: HttpJobs) -> None:
     if unknown:
         sys.exit(f"skolia-ingest: unknown languages in SKOLIA_LANGS: {', '.join(sorted(unknown))}")
     started = perf_counter()
-    pipelines = {code: pipeline(code, data) for code in codes}
-    log.info("loaded pipelines in %.2f s", perf_counter() - started)
+    analyzers = {code: analyzer(code, data) for code in codes}
+    log.info("loaded analyzers in %.2f s", perf_counter() - started)
 
-    ingester = Ingester(blobs, pipelines)
+    ingester = Ingester(blobs, analyzers)
     started = perf_counter()
     ingester.publish_versions()
     log.info("published version metadata in %.2f s", perf_counter() - started)
