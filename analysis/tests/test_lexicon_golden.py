@@ -50,18 +50,18 @@ def dump(path: Path) -> str:
 @pytest.mark.parametrize(
     ("lang", "commons", "expected"),
     [
-        ("en", False, (10, build.Stats(entries=12, skipped=2, pronounced=5, recorded=2), 10)),
-        ("fr", False, (9, build.Stats(entries=13, skipped=2, pronounced=6), 9)),
+        ("en", None, (10, build.Stats(entries=12, skipped=2, pronounced=5, recorded=2), 10)),
+        ("fr", None, (9, build.Stats(entries=13, skipped=2, pronounced=6), 9)),
         (
             "pl",
-            True,
+            FIXTURES / "pl.commons.txt",
             (11, build.Stats(entries=13, skipped=2, pronounced=9, recorded=2, commons=2), 12),
         ),
     ],
 )
 def test_build_matches_snapshot(
     lang: str,
-    commons: bool,
+    commons: Path | None,
     expected: tuple[int, build.Stats, int],
     tmp_path: Path,
 ) -> None:
@@ -74,7 +74,7 @@ def test_build_matches_snapshot(
         plugin.lexicon_source(),
         FIXTURES / f"{lang}.kaikki.jsonl",
         lexicon,
-        FIXTURES / f"{lang}.commons.txt" if commons else None,
+        commons,
     )
     out = tmp_path / f"{lang}.d1.sqlite"
     exported = d1_export.build(store.Lexicon(lexicon), plugin.extras(None), MIGRATIONS, out)
