@@ -57,10 +57,9 @@ const NONE: Found = { entries: [], related: [], incoming: new Map(), featureSets
 type Selector = { readonly ids: readonly LemmaId[] } | { readonly lemma: string };
 
 /** Each language's lexicon database, loaded by infra/load-lexicon.py from the same build
- * as the offline lexicon. Its JSON is ours, so it's trusted to match. It's only written when
- * a new build is loaded, so a session can start at any replica (first-unconstrained). A
- * load that switches versions during a lookup leaves the old version's rows until it
- * cleans up. */
+ * as the offline lexicon, into a database of the build's own. Its JSON is ours, so it's
+ * trusted to match. It's never written once loaded, so a session can start at any replica
+ * (first-unconstrained). */
 export class D1Lexicon implements Lexicon {
   private readonly dbs: Record<Lang, D1DatabaseSession>;
 

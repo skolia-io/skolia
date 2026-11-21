@@ -13,7 +13,9 @@ node_modules/
 /api/wrangler.internal.pr-*.json
 /ingest/wrangler.deploy.jsonc
 /ingest/wrangler.pr-*.json
-/lexicon/wrangler.pr-*.json
+/lexicon/wrangler.production.jsonc
+/lexicon/wrangler.staging.jsonc
+/lexicon/wrangler.pr-*.jsonc
 /reader/test-results/
 /reader/playwright-report/
 .pi

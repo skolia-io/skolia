@@ -1,0 +1,30 @@
+// skolia-lexicon: the lexicon's public API (src/app.ts) and the RPC the API's cards use
+// (LexiconService, src/main.ts). infra/load-lexicon.py config <env> replaces each "${…}",
+// quotes and all, with a JSON value and writes wrangler.<env>.jsonc, which just
+// deploy-lexicon deploys; local's is wrangler.jsonc, committed, for wrangler dev and the
+// tests. Each language's database is a build's, loaded once by infra/load-lexicon.py and
+// never written again: a new build is a new database, and deploying the config that binds
+// it is the switch.
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "${name}",
+  "main": "src/main.ts",
+  "compatibility_date": "2026-10-19",
+  "minify": true,
+  // Its own hostname, in routes; a preview has none, and is read through its skolia Worker's
+  // /api/lexicon/
+  "workers_dev": false,
+  "preview_urls": false,
+  "cache": { "enabled": true },
+  "observability": { "enabled": true },
+  // Runs near D1 when that's faster than near the caller
+  "placement": { "mode": "smart" },
+  "routes": "${routes}",
+  // migrations/ makes the schema for wrangler dev and the tests; a deployed database gets
+  // it from its build's export
+  "d1_databases": [
+    { "binding": "LEXICON_EN", "database_name": "${LEXICON_EN}", "migrations_dir": "migrations" },
+    { "binding": "LEXICON_FR", "database_name": "${LEXICON_FR}", "migrations_dir": "migrations" },
+    { "binding": "LEXICON_PL", "database_name": "${LEXICON_PL}", "migrations_dir": "migrations" }
+  ]
+}

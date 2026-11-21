@@ -71,6 +71,16 @@ if grep -qx "$bucket" <<<"$buckets"; then
 fi
 
 TF_IN_AUTOMATION=1 "$root/infra/tf.sh" "$env" destroy -auto-approve -input=false
+# The lexicon's databases, listed once Terraform has destroyed what it still has: each
+# build's, skolia-lexicon-{lang}-pr-N-{hash} (infra/load-lexicon.py), and the one per
+# language from before, skolia-lexicon-{lang}-pr-N, if Terraform forgot it
+lexicons=$(cf_pages d1/database |
+  jq -r --arg re "^skolia-lexicon-[a-z]+-$env(-[0-9a-f]{12})?\$" 'select(.name | test($re)) | "\(.uuid) \(.name)"')
+while read -r id name; do
+  [ -n "$id" ] || continue
+  echo "deleting D1 database $name"
+  cf DELETE "d1/database/$id" >/dev/null
+done <<<"$lexicons"
 cf DELETE "r2/buckets/skolia-tfstate/objects/skolia-$env.tfstate" >/dev/null
-rm -rf "$root/infra/.terraform-$env" "$root/api/wrangler.$env.json" "$root/api/wrangler.internal.$env.json" "$root/ingest/wrangler.$env.json"
+rm -rf "$root/infra/.terraform-$env" "$root/api/wrangler.$env.json" "$root/api/wrangler.internal.$env.json" "$root/ingest/wrangler.$env.json" "$root/lexicon/wrangler.$env.jsonc"
 echo "$env is gone"

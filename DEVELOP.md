@@ -176,9 +176,10 @@ lookups, and errors use `Cache-Control: no-store`. The reader also reuses entry 
 keyed by lemma ID and version.
 
 A version is a hash of the rows `load-lexicon` copies into D1 (`content_version` in `infra/load-lexicon.py`),
-so it changes exactly when an entry does, and a pinned URL's response never changes. `load-lexicon` publishes
-a new version by updating D1's `loaded` row. Discovery then returns a new URL key for every lookup in that
-language. An old pinned URL may still hit the edge or a browser's cache, with the old version's data. If it
+so it changes exactly when an entry does, and a pinned URL's response never changes. Each build is loaded
+into a D1 database of its own, never written again, and `deploy-lexicon` publishes it by deploying the
+lexicon Worker bound to it (`lexicon/wrangler.template.jsonc`). Discovery then returns a new URL key for
+every lookup in that language. An old pinned URL may still hit the edge or a browser's cache, with the old version's data. If it
 reaches the Worker after the version has changed, it returns `409` and the client can rediscover the current
 version. Browsers don't revalidate, so a change to the shape of a `/v1` response must be one an older reader
 still reads (a new optional field); anything else is a new path.

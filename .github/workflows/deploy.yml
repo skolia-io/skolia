@@ -2,8 +2,8 @@ name: Deploy
 
 # One environment, as ci.yml's plan (infra/plan.py) says: the images and the skolia
 # Worker's build it says are missing, beside Terraform and migrations; then the ingest Worker,
-# the lexicon Worker and the lexicon's rows; then the skolia Worker (reader and API); then, side by side, the end-to-end
-# tests (e2e) and the curated texts in curated/ (sync-curated, sync-curated.yml). The ingest
+# the lexicon's databases, then the lexicon Worker that binds them; then the skolia Worker
+# (reader and API); then, side by side, the end-to-end tests (e2e) and the curated texts in curated/ (sync-curated, sync-curated.yml). The ingest
 # Worker consumes the queue the skolia Worker feeds, so it goes first. Each job runs only if
 # the plan says its key isn't what the environment has, and records its key once it's done.
 # One deploy of an environment runs at a time (ci.yml's concurrency), so no older deploy
@@ -95,8 +95,8 @@ jobs:
       - if: steps.preview.outputs.state == 'open'
         run: .github/uninterruptible.sh just deploy-infra ${{ inputs.env }}
 
-  # The API's D1 lexicon, built with Nix from the lexicon and venv build-ingest-image put
-  # in Cachix (just load-lexicon), so after it when it runs
+  # Each language's lexicon database, made whole from a build with Nix from the lexicon and
+  # venv build-ingest-image put in Cachix (just load-lexicon), so after it when it runs
   load-lexicon:
     needs: [deploy-infra, build-ingest-image]
     if: ${{ !cancelled() && !failure() && fromJSON(inputs.plan).lexicon }}
@@ -151,10 +151,10 @@ jobs:
       - if: steps.preview.outputs.state == 'open'
         run: .github/uninterruptible.sh infra/deploy-ingest.sh ${{ inputs.env }} deploy
 
-  # The lexicon Worker, whose databases deploy-infra made and migrated; the skolia Worker
-  # binds it, so before deploy-web.
+  # The lexicon Worker, bound to the databases load-lexicon loaded, so after it; the skolia
+  # Worker binds it, so before deploy-web.
   deploy-lexicon:
-    needs: deploy-infra
+    needs: [deploy-infra, load-lexicon]
     if: ${{ !cancelled() && !failure() && fromJSON(inputs.plan)['lexicon-worker'] }}
     runs-on: ubuntu-24.04
     environment: ${{ startsWith(inputs.env, 'pr-') && 'preview' || inputs.env }}

@@ -208,6 +208,8 @@ class Target:
 
 
 IMAGES = tuple(f"image-{lang}" for lang in LANGS)
+LEXICON_EXPORTS = tuple(f"./analysis#d1-export-{lang}" for lang in LANGS)
+LEXICON_LOAD = ("infra/load-lexicon.py", "infra/cloudflare.py")
 PLAN_INFRA = {"shared": "infra/shared", "staging": "infra", "production": "infra"}
 # These checks also depend on how CI runs them and the tools it installs.
 CHECK_RECIPE = (
@@ -226,6 +228,8 @@ CHECK_RECIPE = (
 # The analysis check also runs Ruff on the infrastructure scripts.
 CHECK_READS: dict[str, tuple[str, ...]] = {
     "api": ("reader", "curated"),
+    # just lint lexicon checks wrangler.jsonc is load-lexicon.py's render of the template
+    "lexicon": LEXICON_LOAD,
     "analysis": (
         "shared/schema.gen.ts",
         "shared/schema.zod.gen.ts",
@@ -272,13 +276,13 @@ def targets() -> dict[str, Target]:
                 "infra",
                 *migrations("api/wrangler.jsonc"),
                 *migrations("ingest/wrangler.jsonc"),
-                *migrations("lexicon/wrangler.jsonc"),
             ),
         ),
         "internal": Target("deploy", ("api",)),
         "ingest": Target("deploy", ("ingest", *(f"./analysis#ingest-{lang}" for lang in LANGS))),
-        "lexicon": Target("deploy", tuple(f"./analysis#d1-export-{lang}" for lang in LANGS)),
-        "lexicon-worker": Target("deploy", ("lexicon",)),
+        "lexicon": Target("deploy", (*LEXICON_LOAD, *LEXICON_EXPORTS)),
+        # Bound to the databases its builds are loaded into, so a new build is a new deploy
+        "lexicon-worker": Target("deploy", ("lexicon", *LEXICON_LOAD, *LEXICON_EXPORTS)),
         "web": Target("deploy", (".#skolia-worker",), content=lambda planner: planner.version()),
         "e2e": Target(
             "deploy",
