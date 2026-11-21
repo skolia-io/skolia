@@ -2,7 +2,8 @@ name: Sweep previews
 
 # Nightly: tears down any preview environment (pr-<N>) whose pull request isn't open, in
 # case ci.yml's teardown on close failed or never ran. infra/sweep.sh finds them by the
-# names of what they're made of, and fails if any are left.
+# names of what they're made of, and fails if any are left. Then deletes the lexicon
+# databases no lexicon Worker binds (infra/gc-lexicon.py).
 
 on:
   schedule:
@@ -32,3 +33,15 @@ jobs:
       - uses: ./.github/actions/setup
       - uses: ./.github/actions/pnpm
       - run: infra/sweep.sh
+
+  gc-lexicon:
+    runs-on: ubuntu-24.04
+    concurrency:
+      group: gc-lexicon
+      cancel-in-progress: false
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
+      - run: infra/gc-lexicon.py --delete

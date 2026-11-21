@@ -3,23 +3,28 @@
 # requires-python = ">=3.12"
 # dependencies = ["wordfreq==3.1.1"]
 # ///
-"""Loads a language's lexicon into its D1 database (LEXICON_{LANG} in lexicon/wrangler.jsonc):
-  load-lexicon.py <staging|production|pr-N|local> <sqlite>
-      [--sample N] [--persist-to DIR] [--built-from OUT]
-  load-lexicon.py <staging|production|pr-N|local> --lang LANG --built-from OUT
-      [--sample N] [--persist-to DIR]
-sqlite is analysis's {lang}.d1.sqlite (skolia-build-d1-export, or the Nix output
-analysis#d1-export-{lang}), which has D1's schema; its meta table gives the language. The
-version D1 serves is a hash of the rows loaded, so the load is skipped if D1 already
-serves those rows. The new version's rows go in beside the old ones, then
-loaded points at it and the old rows are deleted in batches (lexicon/migrations), so a
-load that stops part way leaves the old version serving and can be run again. local is wrangler
-dev's database (api/.wrangler/state, just dev-api), or with --persist-to, the one in DIR
-(e2e/e2e.sh).
-For previews, --sample loads entries for wordfreq's N most common words. --built-from OUT,
-the Nix output sqlite is in, is recorded in loaded once the old rows are deleted; without
-sqlite, it prints current if D1 last loaded OUT, else stale (just load-lexicon, to skip the
-build). Needs the credentials infra/wrangler.sh needs.
+"""Loads each language's lexicon into a D1 database of its own, and writes the lexicon
+Worker's wrangler config that binds them:
+  load-lexicon.py state <env> --lang LANG --built-from OUT [--sample N] [--persist-to DIR]
+  load-lexicon.py load <env> <sqlite> --built-from OUT [--sample N] [--persist-to DIR]
+  load-lexicon.py config <env> [--sample N] [--check]
+env is staging, production, pr-N or local. sqlite is analysis's {lang}.d1.sqlite
+(skolia-build-d1-export, or the Nix output analysis#d1-export-{lang}), which has D1's schema;
+its meta table gives the language. OUT is the Nix output sqlite is in; with --sample (the
+previews' wordfreq N most common words), OUT+sampleN.
+
+A deployed environment's database for a build is skolia-lexicon-{lang}[-env]-{hash of OUT},
+made, loaded and never written again; its loaded row goes in last, so a database without one
+is a load that stopped, and is made again. state prints current if the database is loaded,
+else stale (just load-lexicon, to skip the build). config binds the databases this
+checkout's builds name (nix eval), and fails if one isn't loaded, then writes
+lexicon/wrangler.{env}.jsonc from lexicon/wrangler.template.jsonc. infra/gc-lexicon.py
+deletes the databases no Worker binds.
+
+local is wrangler dev's database (api/.wrangler/state, just dev-api), or with --persist-to,
+the one in DIR (e2e/e2e.sh): one per language, emptied and loaded again. Its config,
+lexicon/wrangler.jsonc, is committed; config local --check fails if it's out of date.
+Needs the credentials infra/wrangler.sh needs.
 """
 
 import argparse
@@ -29,108 +34,33 @@ import re
 import sqlite3
 import subprocess
 import tempfile
-from collections.abc import Iterable, Iterator, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
+import cloudflare
 import wordfreq
+from cloudflare import Database, Json, JsonObject
 
 INFRA = Path(__file__).resolve().parent
+ROOT = INFRA.parent
 WRANGLER = INFRA / "wrangler.sh"
-LEXICON = INFRA.parent / "lexicon"
+LEXICON = ROOT / "lexicon"
+TEMPLATE = LEXICON / "wrangler.template.jsonc"
 # Where just dev-api's wrangler dev keeps its local state, every Worker's
-DEV_STATE = INFRA.parent / "api" / ".wrangler" / "state"
+DEV_STATE = ROOT / "api" / ".wrangler" / "state"
+LANGS = ("en", "fr", "pl")
+# infra/variables.tf's location
+LOCATION = "oc"
 # D1's longest statement is 100 KB; the longest row is 35 KB (English)
 MAX_STATEMENT_BYTES = 90_000
-# Old rows deleted per statement, so no one statement deletes a whole language
-CLEAN_BATCH = 50_000
-
-
-@dataclass(frozen=True)
-class Target:
-    """A language's lexicon database in an environment. persist_to: wrangler dev's state
-    directory, for local."""
-
-    env: str
-    lang: str
-    persist_to: Path | None = None
-
-
-def config(env: str) -> Path:
-    """The lexicon Worker's wrangler config for env. A preview's is made from staging's
-    (infra/preview.py) if this checkout hasn't one."""
-    if not env.startswith("pr-"):
-        return LEXICON / "wrangler.jsonc"
-    path = LEXICON / f"wrangler.{env}.json"
-    if not path.exists():
-        subprocess.run(
-            [str(INFRA / "preview.py"), "config", env], check=True, stdout=subprocess.DEVNULL
-        )
-    return path
-
-
-def wrangler(target: Target, *args: str) -> str:
-    where = ["--remote"]
-    if target.env == "local":
-        persist_to = DEV_STATE if target.persist_to is None else target.persist_to
-        where = ["--local", "--persist-to", str(persist_to.resolve())]
-    command = [
-        str(WRANGLER),
-        "production" if target.env == "local" else target.env,
-        "d1",
-        "execute",
-        f"LEXICON_{target.lang.upper()}",
-        "-c",
-        str(config(target.env)),
-        *where,
-        *args,
-    ]
-    return subprocess.run(command, stdout=subprocess.PIPE, text=True, check=True).stdout
-
-
-def quote(value: str) -> str:
-    return "'" + value.replace("'", "''") + "'"
-
-
-def meta(db: sqlite3.Connection) -> tuple[str, str]:
-    rows = dict(cast(list[tuple[str, str]], db.execute("SELECT key, value FROM meta").fetchall()))
-    lang, version = rows.get("lang"), rows.get("version")
-    if lang is None or version is None:
-        raise SystemExit("the lexicon's meta table has no lang or version")
-    if not re.fullmatch(r"[a-z]+", lang):
-        raise SystemExit(f"the lexicon's lang isn't a language code: {lang}")
-    return lang, version
-
-
-@dataclass(frozen=True)
-class Loaded:
-    version: str
-    built_from: str | None
-
-
-def serving(target: Target) -> Loaded | None:
-    out = wrangler(target, "--json", "--command", "SELECT version, built_from FROM loaded")
-    results = cast(list[dict[str, list[dict[str, str | None]]]], json.loads(out))
-    rows = results[0]["results"] if results else []
-    if not rows:
-        return None
-    version = rows[0]["version"]
-    assert version is not None
-    return Loaded(version, rows[0]["built_from"])
-
-
-def built_from_key(built_from: str, sample: int | None) -> str:
-    return built_from if sample is None else f"{built_from}+sample{sample}"
-
-
-def record_built_from(target: Target, version: str, key: str) -> None:
-    wrangler(
-        target,
-        "--command",
-        f"UPDATE loaded SET built_from = {quote(key)} WHERE version = {quote(version)}",
-    )
-
+# 64 bits of SHA-256
+VERSION_HEX = 16
+# 48 bits of SHA-256 of what a database is loaded from
+NAME_HEX = 12
+# A string that's all placeholder, so the template is JSONC too
+PLACEHOLDER = re.compile(r"\"\$\{([A-Za-z_][A-Za-z0-9_]*)\}\"")
 
 TABLES = {
     "entry": ("lemma_id",),
@@ -140,10 +70,82 @@ TABLES = {
 }
 """The tables the export fills, copied column for column, since it has D1's schema, with
 each one's primary key but version."""
-# 64 bits of SHA-256
-VERSION_HEX = 16
 
 type Cell = str | int | None
+
+
+@dataclass(frozen=True)
+class Local:
+    """A language's database in wrangler dev's state directory."""
+
+    lang: str
+    persist_to: Path
+
+
+def binding(lang: str) -> str:
+    return f"LEXICON_{lang.upper()}"
+
+
+def suffix(env: str) -> str:
+    return "" if env == "production" else f"-{env}"
+
+
+def built_from_key(built_from: str, sample: int | None) -> str:
+    return built_from if sample is None else f"{built_from}+sample{sample}"
+
+
+def database_name(lang: str, env: str, key: str) -> str:
+    """The database env loads key into: named for it, so the load and the deploy that binds
+    it agree without passing anything between them."""
+    digest = hashlib.sha256(key.encode()).hexdigest()[:NAME_HEX]
+    return f"skolia-lexicon-{lang}{suffix(env)}-{digest}"
+
+
+def quote(value: str) -> str:
+    return "'" + value.replace("'", "''") + "'"
+
+
+def local_wrangler(target: Local, *args: str) -> str:
+    command = [
+        str(WRANGLER),
+        "production",
+        "d1",
+        "execute",
+        binding(target.lang),
+        "-c",
+        str(LEXICON / "wrangler.jsonc"),
+        "--local",
+        "--persist-to",
+        str(target.persist_to.resolve()),
+        *args,
+    ]
+    return subprocess.run(command, stdout=subprocess.PIPE, text=True, check=True).stdout
+
+
+def local_built_from(target: Local) -> str | None:
+    out = local_wrangler(target, "--json", "--command", "SELECT built_from FROM loaded")
+    results = cast(list[dict[str, list[dict[str, str | None]]]], json.loads(out))
+    rows = results[0]["results"] if results else []
+    return rows[0]["built_from"] if rows else None
+
+
+def loaded(db: Database, key: str) -> bool:
+    """Whether db has its loaded row, the last a load writes, for key."""
+    tables = cloudflare.query(db, "SELECT name FROM sqlite_master WHERE name = 'loaded'")
+    if not tables:
+        return False
+    rows = cloudflare.query(db, "SELECT built_from FROM loaded")
+    return bool(rows) and rows[0]["built_from"] == key
+
+
+def meta(db: sqlite3.Connection) -> tuple[str, str]:
+    rows = dict(cast(list[tuple[str, str]], db.execute("SELECT key, value FROM meta").fetchall()))
+    lang, version = rows.get("lang"), rows.get("version")
+    if lang is None or version is None:
+        raise SystemExit("the lexicon's meta table has no lang or version")
+    if lang not in LANGS:
+        raise SystemExit(f"the lexicon's lang isn't one of {', '.join(LANGS)}: {lang}")
+    return lang, version
 
 
 def sampled(db: sqlite3.Connection, words: frozenset[str]) -> frozenset[str]:
@@ -190,8 +192,8 @@ def exported(
 
 
 def content_version(db: sqlite3.Connection, lang: str, sample: int | None) -> str:
-    """The version D1 serves: a hash of the rows a load copies, so it changes exactly when
-    they do, and a lookup pinned to it can be cached for good."""
+    """The version the database serves: a hash of the rows a load copies, so it changes
+    exactly when they do, and a lookup pinned to it can be cached for good."""
     digest = hashlib.sha256()
     for table, columns, rows in exported(db, lang, sample):
         digest.update(json.dumps([table, columns]).encode() + b"\n")
@@ -200,17 +202,30 @@ def content_version(db: sqlite3.Connection, lang: str, sample: int | None) -> st
     return digest.hexdigest()[:VERSION_HEX]
 
 
-def statements(db: sqlite3.Connection, lang: str, version: str, sample: int | None) -> list[str]:
-    which = f"version = {quote(version)}"
-    out = [f"DELETE FROM {table} WHERE {which};" for table in TABLES]
+def schema(db: sqlite3.Connection) -> list[str]:
+    """The export's tables and indexes, as lexicon/migrations made them, without its meta or
+    SQLite's own (sqlite_stat1), which D1 won't make."""
+    rows = cast(
+        list[tuple[str]],
+        db.execute(
+            "SELECT sql FROM sqlite_master WHERE sql IS NOT NULL AND name != 'meta'"
+            " AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\' ORDER BY rowid"
+        ).fetchall(),
+    )
+    return [f"{sql};" for (sql,) in rows]
+
+
+def statements(
+    db: sqlite3.Connection, lang: str, version: str, key: str, sample: int | None
+) -> list[str]:
+    out: list[str] = []
     for table, columns, rows in exported(db, lang, sample):
         out += inserts(
             f"INSERT INTO {table} (version, {', '.join(columns)}) VALUES",
             ((version, *row) for row in rows),
         )
     out.append(
-        f"INSERT INTO loaded (id, version, built_from) VALUES (1, {quote(version)}, NULL) "
-        "ON CONFLICT (id) DO UPDATE SET version = excluded.version, built_from = NULL;"
+        f"INSERT INTO loaded (id, version, built_from) VALUES (1, {quote(version)}, {quote(key)});"
     )
     return out
 
@@ -242,97 +257,166 @@ def inserts(head: str, rows: Iterable[Sequence[Cell]]) -> list[str]:
     return out
 
 
-def clean(target: Target, version: str) -> None:
-    """Deletes the rows of other versions, in batches. Run on every load, so a load that
-    stopped after repointing loaded is cleaned up by the next."""
-    replaced = ", ".join(old_versions(target, version)) or "older versions"
-    for table, key in (
-        ("entry", "lemma_id, version"),
-        ("relation", "source_id, version, ord"),
-        ("form_pronunciation", "form, version, upos"),
-    ):
-        old = f"FROM {table} WHERE version != {quote(version)}"
-        batch = f"SELECT {key} {old} LIMIT {CLEAN_BATCH}"
-        delete = f"DELETE FROM {table} WHERE ({key}) IN ({batch})"
-        # wrangler's local output doesn't count a delete's changes, so ask what's left
-        count = f"SELECT count(*) AS n {old}"
-        while (left := remaining(target, count)) > 0:
-            print(f"{target.env}: deleting {target.lang} {table} {replaced}, {left} rows left")
-            wrangler(target, "--command", delete)
-    # A few thousand rows per version; last, so old_versions finds a stopped clean's versions
-    wrangler(target, "--command", f"DELETE FROM featureset WHERE version != {quote(version)}")
+def write_sql(sql: list[str], scratch: str, lang: str) -> Path:
+    path = Path(scratch) / f"lexicon-{lang}.sql"
+    path.write_text("\n".join(sql) + "\n")
+    return path
 
 
-def old_versions(target: Target, version: str) -> list[str]:
-    """The versions besides version that still have rows, by their featuresets, which go last."""
-    out = wrangler(
-        target,
-        "--json",
-        "--command",
-        f"SELECT DISTINCT version FROM featureset WHERE version != {quote(version)}",
+def load_remote(env: str, db: sqlite3.Connection, key: str, sample: int | None) -> None:
+    lang, built = meta(db)
+    name = database_name(lang, env, key)
+    existing = cloudflare.database(name)
+    if existing is not None and loaded(existing, key):
+        if not existing.replicated:
+            cloudflare.replicate(existing)
+        print(f"{env}: {name} is already loaded")
+        return
+    if existing is not None:
+        print(f"{env}: deleting {name}, which a load left part way")
+        cloudflare.result("DELETE", f"d1/database/{existing.uuid}")
+    made = cast(
+        JsonObject,
+        cloudflare.result("POST", "d1/database", {"name": name, "primary_location_hint": LOCATION}),
     )
-    results = cast(list[dict[str, list[dict[str, str]]]], json.loads(out))
-    return [row["version"] for row in results[0]["results"]]
+    target = cloudflare.as_database(made)
+    version = content_version(db, lang, sample)
+    with tempfile.TemporaryDirectory() as scratch:
+        sql = write_sql(schema(db) + statements(db, lang, version, key, sample), scratch, lang)
+        size = f"{sql.stat().st_size / 1e6:.0f} MB of SQL"
+        print(f"{env}: loading {name}, {lang} {version}, built {built} ({size})")
+        command = [str(WRANGLER), "account", "d1", "execute", name, "--remote", "--yes"]
+        subprocess.run([*command, "--file", str(sql)], stdout=subprocess.DEVNULL, check=True)
+    if not loaded(target, key):
+        raise SystemExit(f"{env}: {name} has no loaded row after loading it")
+    # Once it's loaded, so the load's writes go to the primary alone. state counts it, so a
+    # load that stopped before it runs again.
+    cloudflare.replicate(target)
+    print(f"{env}: {name} serves {lang} {version}")
 
 
-def remaining(target: Target, count: str) -> int:
-    results = cast(
-        list[dict[str, list[dict[str, int]]]],
-        json.loads(wrangler(target, "--json", "--command", count)),
+def load_local(target: Local, db: sqlite3.Connection, key: str, sample: int | None) -> None:
+    lang, built = meta(db)
+    version = content_version(db, lang, sample)
+    empty = [f"DELETE FROM {table};" for table in (*TABLES, "loaded")]
+    with tempfile.TemporaryDirectory() as scratch:
+        sql = write_sql(empty + statements(db, lang, version, key, sample), scratch, lang)
+        print(f"local: loading {lang} {version}, built {built}")
+        local_wrangler(target, "--yes", "--file", str(sql))
+    if local_built_from(target) != key:
+        raise SystemExit(f"local: {lang} has no loaded row for {key} after loading it")
+
+
+def worker(env: str) -> tuple[str, list[Json]]:
+    """The Worker's name and routes in env."""
+    match env:
+        case "production":
+            return "skolia-lexicon", [{"pattern": "lexicon.skolia.io", "custom_domain": True}]
+        case "staging":
+            return "skolia-lexicon-staging", [
+                {"pattern": "lexicon-staging.skolia.io", "custom_domain": True}
+            ]
+        case "local":
+            return "skolia-lexicon", []
+        case _:
+            return f"skolia-lexicon-{env}", []
+
+
+def render(template: str, values: Mapping[str, Json]) -> str:
+    """template with each "${name}" replaced by values[name] as JSON. Every placeholder needs a
+    value and every value a placeholder."""
+    names = set(cast(list[str], PLACEHOLDER.findall(template)))
+    if missing := names - values.keys():
+        raise SystemExit(f"{TEMPLATE.name}: no value for {', '.join(sorted(missing))}")
+    if unused := values.keys() - names:
+        raise SystemExit(f"{TEMPLATE.name}: nothing to replace for {', '.join(sorted(unused))}")
+    return PLACEHOLDER.sub(lambda match: json.dumps(values[match[1]]), template)
+
+
+def nix_out(lang: str) -> str:
+    return subprocess.run(
+        ["nix", "eval", "--raw", f"./analysis#d1-export-{lang}.outPath"],
+        cwd=ROOT,
+        stdout=subprocess.PIPE,
+        text=True,
+        check=True,
+    ).stdout
+
+
+def bound(env: str, sample: int | None) -> dict[str, str]:
+    """Each language's database in env: this checkout's build's, which must be loaded."""
+    if env == "local":
+        return {lang: f"skolia-lexicon-{lang}-local" for lang in LANGS}
+    names: dict[str, str] = {}
+    for lang in LANGS:
+        key = built_from_key(nix_out(lang), sample)
+        name = database_name(lang, env, key)
+        db = cloudflare.database(name)
+        if db is None or not loaded(db, key):
+            raise SystemExit(f"{env}: {name} isn't loaded; just load-lexicon {env} first")
+        names[lang] = name
+    return names
+
+
+def config(env: str, sample: int | None, check: bool) -> None:
+    names = bound(env, sample)
+    name, routes = worker(env)
+    text = render(
+        TEMPLATE.read_text(),
+        {"name": name, "routes": routes, **{binding(lang): names[lang] for lang in LANGS}},
     )
-    return results[0]["results"][0]["n"]
+    made = f"// Made by infra/load-lexicon.py config {env} from wrangler.template.jsonc\n" + text
+    path = LEXICON / ("wrangler.jsonc" if env == "local" else f"wrangler.{env}.jsonc")
+    if check:
+        if not path.exists() or path.read_text() != made:
+            raise SystemExit(f"{path.name} is out of date: infra/load-lexicon.py config {env}")
+        return
+    path.write_text(made)
+    print(path.relative_to(ROOT))
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Loads a language's lexicon into its D1 database.")
-    parser.add_argument("env", help="staging, production, pr-N or local")
-    parser.add_argument("sqlite", type=Path, nargs="?", help="analysis's {lang}.d1.sqlite")
-    parser.add_argument("--sample", type=int, help="only wordfreq's N most common words")
-    parser.add_argument("--persist-to", type=Path, help="wrangler dev's state directory (local)")
-    parser.add_argument(
-        "--built-from",
-        help="the Nix output containing the SQLite file. With no file, reports current or stale.",
-    )
-    parser.add_argument("--lang", help="the language, when there's no sqlite")
+    parser = argparse.ArgumentParser(description="Loads each language's lexicon into D1.")
+    commands = parser.add_subparsers(dest="command", required=True)
+    state = commands.add_parser("state", help="current if the build is loaded, else stale")
+    load = commands.add_parser("load", help="load a build")
+    configure = commands.add_parser("config", help="write the Worker's wrangler config")
+    for command in (state, load, configure):
+        command.add_argument("env", help="staging, production, pr-N or local")
+        command.add_argument("--sample", type=int, help="only wordfreq's N most common words")
+    for command in (state, load):
+        command.add_argument("--built-from", required=True, help="the Nix output of the build")
+        command.add_argument("--persist-to", type=Path, help="wrangler dev's state (local)")
+    state.add_argument("--lang", required=True, choices=LANGS)
+    load.add_argument("sqlite", type=Path, help="analysis's {lang}.d1.sqlite")
+    configure.add_argument("--check", action="store_true", help="fail if it's out of date")
     args = parser.parse_args()
+    command = cast(str, args.command)
     env = cast(str, args.env)
-    path = cast(Path | None, args.sqlite)
     sample = cast(int | None, args.sample)
-    persist_to = cast(Path | None, args.persist_to)
-    built_from = cast(str | None, args.built_from)
     if not re.fullmatch(r"staging|production|pr-[0-9]+|local", env):
         parser.error("env must be staging, production, pr-N or local")
+    if command == "config":
+        config(env, sample, cast(bool, args.check))
+        return
+    key = built_from_key(cast(str, args.built_from), sample)
+    persist_to = cast(Path | None, args.persist_to)
     if persist_to is not None and env != "local":
         parser.error("--persist-to is for local")
-    key = None if built_from is None else built_from_key(built_from, sample)
-    if path is None:
-        lang = cast(str | None, args.lang)
-        if key is None or lang is None or not re.fullmatch(r"[a-z]+", lang):
-            parser.error("without sqlite, give --built-from and --lang")
-        loaded = serving(Target(env, lang, persist_to))
-        print("current" if loaded is not None and loaded.built_from == key else "stale")
+    if command == "state":
+        lang = cast(str, args.lang)
+        if env == "local":
+            current = local_built_from(Local(lang, persist_to or DEV_STATE)) == key
+        else:
+            db = cloudflare.database(database_name(lang, env, key))
+            current = db is not None and db.replicated and loaded(db, key)
+        print("current" if current else "stale")
         return
-    db = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
-    lang, built = meta(db)
-    target = Target(env, lang, persist_to)
-    version = content_version(db, lang, sample)
-    loaded = serving(target)
-    if loaded is not None and loaded.version == version:
-        print(f"{env}: {lang} already serves {version}")
+    db = sqlite3.connect(f"file:{cast(Path, args.sqlite)}?mode=ro", uri=True)
+    if env == "local":
+        load_local(Local(meta(db)[0], persist_to or DEV_STATE), db, key, sample)
     else:
-        with tempfile.TemporaryDirectory() as scratch:
-            sql = Path(scratch) / f"lexicon-{lang}.sql"
-            sql.write_text("\n".join(statements(db, lang, version, sample)) + "\n")
-            size = f"{sql.stat().st_size / 1e6:.0f} MB of SQL"
-            print(f"{env}: loading {lang} {version}, built {built} ({size})")
-            wrangler(target, "--yes", "--file", str(sql))
-        loaded = serving(target)
-        if loaded is None or loaded.version != version:
-            raise SystemExit(f"{env}: {lang} doesn't serve {version} after loading it")
-        print(f"{env}: {lang} serves {version}")
-    clean(target, version)
-    if key is not None:
-        record_built_from(target, version, key)
+        load_remote(env, db, key, sample)
 
 
 if __name__ == "__main__":

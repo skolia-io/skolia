@@ -11,14 +11,15 @@ resource "cloudflare_d1_database" "skolia" {
   read_replication      = { mode = "auto" }
 }
 
-# Each language's lexicon for flashcards, skolia-lexicon-pl[-env] (infra/load-lexicon.py
-# loads it)
-resource "cloudflare_d1_database" "lexicon" {
-  for_each              = toset(local.langs)
-  account_id            = var.account_id
-  name                  = "skolia-lexicon-${each.key}${local.suffix}"
-  primary_location_hint = local.location
-  read_replication      = { mode = "auto" }
+# Each language's lexicon, skolia-lexicon-pl[-env], before each build had a database of its
+# own (infra/load-lexicon.py makes them). Forgotten rather than destroyed, since the lexicon
+# Worker binds them until it's deployed with its builds'; infra/gc-lexicon.py deletes them
+# once no version of it does.
+removed {
+  from = cloudflare_d1_database.lexicon
+  lifecycle {
+    destroy = false
+  }
 }
 
 # The ingest Worker's job history (ingest/migrations), apart from skolia so that one

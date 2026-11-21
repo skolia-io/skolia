@@ -4,7 +4,7 @@
 
 set shell := ["bash", "-euo", "pipefail", "-c"]
 
-# Each has its own lexicon database, LEXICON_{LANG} in lexicon/wrangler.jsonc (shared/api.ts LANGS)
+# Each has its own lexicon database, LEXICON_{LANG} in lexicon/wrangler.template.jsonc (shared/api.ts LANGS)
 langs := "en fr pl"
 
 _default:
@@ -41,6 +41,7 @@ lint project:
         pnpm exec biome ci {{ project }} package.json biome.json
         pnpm --filter ./{{ project }} run --if-present check
         case {{ project }} in api | lexicon) redocly lint {{ project }}/openapi.json ;; esac
+        case {{ project }} in lexicon) infra/load-lexicon.py config local --check ;; esac
         ;;
     esac
 
@@ -150,14 +151,9 @@ images:
 plan env:
     infra/tf.sh {{ env }} plan -input=false
 
-# Apply D1 migrations
+# Apply D1 migrations. The lexicon's databases are each made whole from a build (just load-lexicon).
 migrate env:
     infra/wrangler.sh {{ env }} d1 migrations apply DB --remote
-    case {{ env }} in \
-      pr-*) config=../lexicon/wrangler.{{ env }}.json ;; \
-      *) config=../lexicon/wrangler.jsonc ;; \
-    esac; \
-    for lang in {{ langs }}; do infra/wrangler.sh {{ env }} d1 migrations apply "LEXICON_$(tr a-z A-Z <<<"$lang")" -c "$config" --remote; done
     case {{ env }} in \
       pr-*) config=../ingest/wrangler.{{ env }}.json ;; \
       *) config=../ingest/wrangler.jsonc ;; \
@@ -179,9 +175,10 @@ lexicon-cli lang *args:
       uv run --project analysis --locked skolia-lexicon --db "$out/$lang.sqlite" "$@"
     fi
 
-# Load each language's lexicon into its D1 database (staging, production, pr-N or local), from its Nix D1 export.
+# Load each language's lexicon (staging, production, pr-N or local) from its Nix D1 export, into a D1 database
+# of the build's own (infra/load-lexicon.py); just deploy-lexicon binds it.
 # A preview gets each language's entries for wordfreq's 3,000 most common words (infra/load-lexicon.py --sample).
-# A language whose build evaluates to the Nix output D1 last loaded is skipped without building it.
+# A language whose build evaluates to a Nix output already loaded is skipped without building it.
 # With CACHIX_AUTH_TOKEN set (CI), a build is pushed to Cachix, so the next environment substitutes it.
 # flags go to infra/load-lexicon.py (e2e/e2e.sh: --sample, --persist-to).
 load-lexicon env *flags:
@@ -191,12 +188,12 @@ load-lexicon env *flags:
     for lang in {{ langs }}; do
       build="./analysis#d1-export-$lang"
       out=$(nix eval --raw "$build.outPath")
-      state=$(infra/load-lexicon.py {{ env }} --lang "$lang" --built-from "$out" $sample {{ flags }})
-      if [ "$state" = current ]; then echo "{{ env }}: $lang already serves $out"; continue; fi
+      state=$(infra/load-lexicon.py state {{ env }} --lang "$lang" --built-from "$out" $sample {{ flags }})
+      if [ "$state" = current ]; then echo "{{ env }}: $lang already has $out"; continue; fi
       out=$(nix build --no-link --print-out-paths "$build")
       if [ -n "${CACHIX_AUTH_TOKEN:-}" ]; then cachix push andyyu2004 "$out"; fi
       if [ {{ env }} != local ]; then infra/plan.py deploying {{ env }} lexicon; fi
-      infra/load-lexicon.py {{ env }} "$out/$lang.d1.sqlite" --built-from "$out" $sample {{ flags }}
+      infra/load-lexicon.py load {{ env }} "$out/$lang.d1.sqlite" --built-from "$out" $sample {{ flags }}
     done
     if [ {{ env }} != local ]; then infra/plan.py deployed {{ env }} lexicon; fi
 
@@ -244,19 +241,14 @@ deploy-internal env:
     infra/plan.py deployed {{ env }} internal
 
 # The lexicon Worker (lexicon/): its public API, and the LexiconService the skolia Worker binds, so before it.
-# Its databases' rows are just load-lexicon's.
+# Bound to the databases just load-lexicon loaded this checkout's builds into (lexicon/wrangler.template.jsonc).
 deploy-lexicon env:
     #!/usr/bin/env bash
     set -euo pipefail
-    config="$PWD/lexicon/wrangler.jsonc"
-    case {{ env }} in
-      pr-*)
-        config="$PWD/lexicon/wrangler.{{ env }}.json"
-        [ -f "$config" ] || infra/preview.py config {{ env }}
-        ;;
-    esac
+    case {{ env }} in pr-*) sample="--sample 3000" ;; *) sample= ;; esac
     infra/plan.py deploying {{ env }} lexicon-worker
-    infra/wrangler.sh {{ env }} deploy -c "$config"
+    infra/load-lexicon.py config {{ env }} $sample
+    pnpm --dir lexicon exec wrangler deploy -c wrangler.{{ env }}.jsonc
     infra/plan.py deployed {{ env }} lexicon-worker
 
 # The skolia Worker (reader and API) with wrangler, with Terraform's BETTER_AUTH_SECRET and, if set,

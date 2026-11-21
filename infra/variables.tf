@@ -15,7 +15,6 @@ locals {
   # skolia, skolia-staging, skolia-pr-12; skolia-ingest, skolia-ingest-staging. Wrangler
   # names the ingest Worker the same way for its "staging" environment.
   suffix = var.env == "production" ? "" : "-${var.env}"
-  # shared/api.ts LANGS
-  langs    = ["en", "fr", "pl"]
+  # infra/load-lexicon.py's LOCATION too
   location = "oc"
 }
