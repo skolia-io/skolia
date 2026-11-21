@@ -114,7 +114,7 @@
                     {@const parts = blankParts(card.data)}
                     <p class="front"
                       ><span class="sentence" lang={selected}>{parts.before}<mark>{parts.blank}</mark>{parts.after}</span>
-                      <a class="muted" href="#/doc/{card.data.documentId}">Open the text</a></p
+                      <a class="muted" href="#/doc/{card.data.documentId}">Source</a></p
                     >
                   {:else}
                     <p class="front kind">{kindsLabel(row)}</p>
@@ -202,10 +202,10 @@
   }
 
   mark {
-    background: none;
+    background: var(--line);
     color: inherit;
-    font-weight: 600;
-    border-bottom: 2px solid var(--accent);
+    border-radius: 0.2em;
+    padding: 0 0.1em;
   }
 
   .kind {
