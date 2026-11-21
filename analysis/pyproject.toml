@@ -76,7 +76,8 @@ allowed-confusables = ["ˈ", "ː", "ɪ", "ɑ", "ɡ"]
 
 [tool.ruff.lint.per-file-ignores]
 "*.pyi" = ["PIE790"]
-"tests/**" = ["SLF001"]
+# Builders of parser output take a word's fields as arguments
+"tests/**" = ["SLF001", "PLR0913"]
 
 [tool.pyright]
 include = ["src", "tests", "scripts"]
