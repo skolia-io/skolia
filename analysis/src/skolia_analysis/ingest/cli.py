@@ -59,7 +59,7 @@ def job_source() -> HttpJobs:
 
 def main() -> None:
     if "--help" in sys.argv or "-h" in sys.argv:
-        print(__doc__)
+        print(__doc__)  # noqa: T201 (usage, not a log)
         return
     configure_logging()
     # In a container ingest is PID 1, which ignores SIGTERM unless it handles it: the

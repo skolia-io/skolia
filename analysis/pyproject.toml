@@ -49,7 +49,7 @@ extend-exclude = ["scripts/vendor"]
 select = [
     "A", "ASYNC", "B", "BLE", "C4", "C90", "DTZ", "E", "EXE", "F", "FA", "FBT", "FLY", "FURB",
     "G", "I", "ICN", "INT", "ISC", "LOG", "PERF", "PGH", "PIE", "PL", "PT", "PTH", "RET",
-    "RSE", "RUF", "SIM", "SLF", "SLOT", "T10", "TID", "TRY", "UP", "W",
+    "RSE", "RUF", "SIM", "SLF", "SLOT", "T10", "T20", "TID", "TRY", "UP", "W",
 ]
 # Allow intra-package relative imports and assertions that describe a single invariant.
 ignore = [
@@ -77,6 +77,9 @@ allowed-confusables = ["ˈ", "ː", "ɪ", "ɑ", "ɡ"]
 "*.pyi" = ["PIE790"]
 # Builders of parser output take a word's fields as arguments
 "tests/**" = ["SLF001", "PLR0913"]
+# Their reports and generated code are what they print
+"scripts/**/eval_*.py" = ["T201"]
+"scripts/gen_ts_types.py" = ["T201"]
 
 [tool.pyright]
 include = ["src", "tests", "scripts"]
