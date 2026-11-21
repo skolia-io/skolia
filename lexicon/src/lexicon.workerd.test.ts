@@ -263,7 +263,7 @@ test("discovery and misses stay fresh while successful pinned lookups can be cac
   const first = await pinned(version);
   const etag = first.headers.get("etag");
   assert.ok(etag);
-  assert.equal(first.headers.get("cache-control"), "public, max-age=0, must-revalidate");
+  assert.equal(first.headers.get("cache-control"), "public, max-age=31536000, immutable");
   assert.equal(first.headers.get("cloudflare-cdn-cache-control"), "public, max-age=86400");
   const again = await pinned(version, { "If-None-Match": etag });
   assert.equal(again.headers.get("etag"), etag);

@@ -171,14 +171,17 @@ PDB is licensed CC BY-NC-SA 4.0 (non-commercial). Use it for evaluation only; do
 
 Public lookup clients fetch the current version at `GET /v1/lexicons/{lang}` and send it as `?version=…`
 on each lookup by ID or spelling. Cloudflare caches successful pinned lookups for a day by URL and Worker
-deployment. Browsers revalidate pinned lookups with the representation's ETag. Version discovery, unpinned
+deployment, and browsers keep them for a year (`immutable`). Version discovery, unpinned
 lookups, and errors use `Cache-Control: no-store`. The reader also reuses entry results in TanStack Query,
 keyed by lemma ID and version.
 
-`load-lexicon` publishes a new version by updating D1's `loaded` row. Discovery then returns a new URL key
-for every lookup in that language. An old pinned URL may still hit the edge until it expires. If it reaches
-the Worker after the version has changed, it returns `409` and the client can rediscover the current
-version. Publish word corrections in a new lexicon version so the old cache keys still identify the old data.
+A version is a hash of the rows `load-lexicon` copies into D1 (`content_version` in `infra/load-lexicon.py`),
+so it changes exactly when an entry does, and a pinned URL's response never changes. `load-lexicon` publishes
+a new version by updating D1's `loaded` row. Discovery then returns a new URL key for every lookup in that
+language. An old pinned URL may still hit the edge or a browser's cache, with the old version's data. If it
+reaches the Worker after the version has changed, it returns `409` and the client can rediscover the current
+version. Browsers don't revalidate, so a change to the shape of a `/v1` response must be one an older reader
+still reads (a new optional field); anything else is a new path.
 
 Large inputs and outputs live in `data/` at the repo root (git-ignored). The lexicon and valency files the images ship are built by Nix (`flake.nix`) from the inputs pinned in `inputs.sha256`, kept in R2 (`skolia-lexicon-sources/{sha256}-{name}.zst`, `infra/shared/sources.tf`) because kaikki.org overwrites its extract in place. `scripts/fetch_inputs.sh` puts them in the Nix store (needs `wrangler login`); `just images` and `deploy-ingest` run it. To build one language's files by themselves:
 
