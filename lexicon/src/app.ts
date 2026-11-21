@@ -40,7 +40,7 @@ const NOT_MODIFIED = { description: "The representation matches If-None-Match" }
 export type AppType = ReturnType<typeof createApp>;
 
 export type { EntriesBody, EntryBody } from "./schemas.ts";
-export type { Found, Lexicon } from "./ports.ts";
+export type { FormAudio, Found, Lexicon } from "./ports.ts";
 
 export function createApp(deps: Deps) {
   const responds = (specs: Parameters<typeof responses>[0]) => responses(specs, deps.checkResponses ?? false);
@@ -85,15 +85,20 @@ export function createApp(deps: Deps) {
       describe({ tags: [TAG], summary: "An entry by id" }),
       validator("param", api.IdParam, badRequest()),
       validator("query", api.IncludeQuery, badRequest()),
-      responds({ 200: json(api.Entries, "The entry, first in entries"), 304: NOT_MODIFIED, 404: NOT_FOUND, 409: VERSION_CHANGED }),
+      responds({
+        200: json(api.ResolvedEntry, "The resolved entry, first in entries"),
+        304: NOT_MODIFIED,
+        404: NOT_FOUND,
+        409: VERSION_CHANGED,
+      }),
       versioned((c) => langOf(schemas.LemmaId.parse(c.req.param("id")))),
       conditional,
       async (c) => {
         const { id } = c.req.valid("param");
         const lang = langOf(id);
-        const found = await deps.lexicon.byIds(lang, c.var.version, [id], c.req.valid("query").include);
+        const found = await deps.lexicon.resolve(lang, c.var.version, id, c.req.valid("query").include);
         if (found.entries.length === 0) return c.json({ error: `no entry ${id}` }, 404);
-        return c.json(entries(lang, found), 200);
+        return c.json({ ...entries(lang, found), requestedId: id }, 200);
       },
     )
     .get(
@@ -104,6 +109,25 @@ export function createApp(deps: Deps) {
       async (c) => {
         const { lang } = c.req.valid("param");
         return c.json({ lang, version: await deps.lexicon.served(lang), license: LICENSE, sources: [...sources(lang)] }, 200);
+      },
+    )
+    .get(
+      "/lexicons/:lang/forms/:form",
+      describe({ tags: [TAG], summary: "Pronunciation and recordings of a word form" }),
+      validator("param", api.FormParam, badRequest()),
+      validator("query", api.FormQuery, badRequest()),
+      responds({
+        200: json(api.FormAudio, "The form's pronunciation and recordings"),
+        304: NOT_MODIFIED,
+        404: NOT_FOUND,
+        409: VERSION_CHANGED,
+      }),
+      versioned((c) => schemas.Lang.parse(c.req.param("lang"))),
+      conditional,
+      async (c) => {
+        const { lang, form } = c.req.valid("param");
+        const { upos } = c.req.valid("query");
+        return c.json(await deps.lexicon.formAudio(lang, c.var.version, form, upos), 200);
       },
     )
     .get(

@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { Blob, Bundle, Entry, Feats, Schema, Token } from "@skolia/shared/schema";
+import type { Blob, Entry, Feats, Schema, Token } from "@skolia/shared/schema";
 import { layout } from "../../doc.ts";
-import { pronunciationsOf, rankSenses } from "../../lexicon.ts";
-import { lemmaTables, paradigmTables } from "../../paradigm.ts";
+import { rankSenses } from "../../lexicon.ts";
+import { lemmaTables, formTables } from "../../paradigm.ts";
 import { explainCase } from "./cases.ts";
 import { argumentsOf, describePhrase, frames } from "./frames.ts";
 import { polish } from "./index.ts";
@@ -83,22 +83,7 @@ const PIES: Entry = {
   ],
 };
 
-const BUNDLE: Bundle = {
-  schema: 2,
-  lang: "pl",
-  lexicon: "t",
-  attribution: "",
-  entries: { "pl:pies:NOUN": PIES },
-  lookup: {},
-  feats: [NOM_SG, GEN_SG, ACC_SG, NOM_PL],
-  pronunciations: { "psa:NOUN": [{ ipa: "/ˈpsa/" }], "pies:NOUN": [{ ipa: "/ˈpjɛs/" }] },
-  recordings: {},
-};
-
-test("a word is pronounced by its text and part of speech", () => {
-  assert.deepEqual(pronunciationsOf(BUNDLE, "psa", "NOUN"), [{ ipa: "/ˈpsa/" }]);
-  assert.deepEqual(pronunciationsOf(BUNDLE, "psa", "VERB"), []);
-});
+const FEATURE_SETS: readonly Feats[] = [NOM_SG, GEN_SG, ACC_SG, NOM_PL];
 
 test("the token's features pick the sense", () => {
   assert.deepEqual(
@@ -112,7 +97,7 @@ test("the token's features pick the sense", () => {
 
 test("the declension marks the token's own form and case", () => {
   const psa = token(0, 3, "psa", { lemma: "pies", lemma_id: "pl:pies:NOUN", feats: GEN_SG });
-  const [table] = paradigmTables(BUNDLE, PIES, psa, polish.paradigm, polish.mergeLabels);
+  const [table] = formTables((id) => FEATURE_SETS[id], PIES, psa, polish.paradigm, polish.mergeLabels);
   assert.ok(table);
   assert.deepEqual(table.columns, ["sg", "pl"]);
   const current = table.rows.flatMap((row) => row.cells.flatMap((cell) => cell.filter((f) => f.current).map(() => row.label)));

@@ -78,9 +78,7 @@ test("listings keep the published status, versions and error without status blob
     error: "ingest failed",
     artifacts: {
       analyzer: "pl/1",
-      lexicon: "lex/1",
       analysis: `doc/${id}/analysis/s2-a1.json.br`,
-      bundle: `doc/${id}/bundle/b1-a1-l1.json.br`,
     },
   });
   await expectStatus("save", api.me["reading-lists"][":listId"].documents[":id"].$put({ param: { listId: "1", id } }), 204);
@@ -258,7 +256,7 @@ test("another user importing the same text gets their own entry, and the first s
   assert.deepEqual(both.items.map((d) => d.title).sort(), ["Alice's", "Ivy's"]);
 });
 
-test("a text only privately imported is unknown to everyone else, its text, analysis, bundle and position too", async () => {
+test("a text only privately imported is unknown to everyone else, its text, analysis and position too", async () => {
   const app = setup();
   const id = await imported(app, importer, TEXT);
   await readyAt(id, "1");
@@ -273,7 +271,6 @@ test("a text only privately imported is unknown to everyone else, its text, anal
     await expectStatus(`${who}: get`, api.$get({ param: { id } }), 404);
     await expectStatus(`${who}: text`, api.text.$get({ param: { id } }), 404);
     await expectStatus(`${who}: analysis`, api.analysis[":name"].$get({ param: { id, name: reading.analysis } }), 404);
-    await expectStatus(`${who}: bundle`, api.bundle[":name"].$get({ param: { id, name: reading.bundle } }), 404);
     await expectStatus(`${who}: patch`, patch(app, headers, id, { title: "Mój" }), headers ? 404 : 401);
   }
   const position = { sentence: 0, token: 0, at: NOW };

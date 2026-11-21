@@ -1,6 +1,7 @@
 // The lexicon API's requests and responses. Entries are what the API's cards show and a
-// bundle carries (@skolia/shared/schema Entry), with what a reuser needs to credit them.
+// Worker serves (@skolia/shared/schema Entry), with what a reuser needs to credit them.
 import * as z from "zod";
+import { UPOS } from "@skolia/shared/api";
 import * as schemas from "@skolia/shared/schemas";
 import { MAX_INCOMING } from "./ports.ts";
 
@@ -55,6 +56,8 @@ export const Entries = z
   })
   .meta({ id: "Entries" });
 
+export const ResolvedEntry = Entries.extend({ requestedId: schemas.LemmaId }).meta({ id: "ResolvedEntry" });
+
 export const About = z
   .object({
     lang: schemas.Lang,
@@ -76,14 +79,19 @@ export const Include = z
   })
   .describe("What to bring besides the entries, comma-separated: related, incoming");
 
-export const IncludeQuery = z.object({
-  include: Include,
-  version: z.string().min(1).optional().describe("Pin the lookup to the version from GET /v1/lexicons/{lang} to enable edge caching"),
-});
+const Version = z.string().min(1).optional().describe("Pin the lookup to the version from GET /v1/lexicons/{lang} to enable edge caching");
+
+export const IncludeQuery = z.object({ include: Include, version: Version });
 
 export const LangParam = z.object({ lang: schemas.Lang });
 
 export const LemmaParam = z.object({ lang: schemas.Lang, lemma: z.string().min(1).max(100) });
+
+export const FormParam = z.object({ lang: schemas.Lang, form: z.string().min(1).max(100) });
+export const FormQuery = z.object({ upos: z.enum(UPOS), version: Version });
+export const FormAudio = z
+  .object({ pronunciations: z.array(schemas.Pronunciation), recordings: z.array(schemas.Recording) })
+  .meta({ id: "FormAudio" });
 
 export const IdParam = z.object({ id: schemas.LemmaId });
 

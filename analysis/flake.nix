@@ -204,6 +204,12 @@
           )
         ) (lib.filter (l: l != "") (lib.splitString "\n" (builtins.readFile ./inputs.sha256)))
       );
+      walenty = pkgs.runCommand "skolia-walenty" { nativeBuildInputs = [ venv pkgs.unzip ]; } ''
+        mkdir $out
+        unzip -q ${input."walenty_20180630-text.zip"} -d walenty
+        skolia-build-valency walenty/walenty_20180630-text $out/pl-valency.json
+      '';
+
       lexicon = {
         en = pkgs.runCommand "skolia-lexicon-en" { nativeBuildInputs = [ venv ]; } ''
           mkdir $out
@@ -218,15 +224,13 @@
             {
               nativeBuildInputs = [
                 venv
-                pkgs.unzip
               ];
             }
             ''
               mkdir $out
               skolia-build-lexicon pl ${input."kaikki.org-dictionary-Polish.jsonl"} $out/pl.sqlite \
                 --commons ${input."commons-recordings-pl.txt"}
-              unzip -q ${input."walenty_20180630-text.zip"} -d walenty
-              skolia-build-valency walenty/walenty_20180630-text $out/pl-valency.json
+              cp ${walenty}/pl-valency.json $out/
             '';
       };
 
@@ -257,14 +261,14 @@
           HF_HUB_CACHE = "${hub lang}";
           SKOLIA_HTTP_PORT = "8080";
           SKOLIA_LANGS = lang;
-          SKOLIA_DATA = "${lexicon.${lang}}";
         }
+        // lib.optionalAttrs (lang == "pl") { SKOLIA_DATA = "${walenty}"; }
         // lib.optionalAttrs (stanzaModels ? ${lang}) {
           STANZA_RESOURCES_DIR = "${stanzaResources lang}";
         };
 
       # One layer per model (Cloudflare's registry times out committing a 3 GB layer),
-      # PyTorch, the other dependencies and the lexicon; the code and the rest on top
+      # PyTorch, the other dependencies; the code and the rest on top
       root = pkgs.runCommand "root" { } "mkdir -p $out/tmp";
       # Nested layers come first, so Python is the bottom layer: Cloudflare fails to unpack an
       # image whose first layer is over about 504 MiB (cloudflare/containers#265)
@@ -288,7 +292,6 @@
             ++ [
               torchLayer
               depsLayer
-              (n2c.nix2container.buildLayer { deps = [ lexicon.${lang} ]; })
             ];
           copyToRoot = [ root ];
           perms = [

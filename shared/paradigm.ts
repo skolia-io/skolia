@@ -1,7 +1,7 @@
 // Paradigm tables for the word sheet, with the token's own form marked, and for review
 // cards, with the lemma marked (a cloze card's: its blanked form). Each language lays out its tables (lang/*/paradigm.ts) with
 // the Builder here.
-import type { Bundle, Entry, Feats, Token } from "@skolia/shared/schema";
+import type { Entry, Feats, Token } from "@skolia/shared/schema";
 import { featsMatch } from "./lexicon.ts";
 
 export interface FormCell {
@@ -34,7 +34,7 @@ export type Shown = Pick<Token, "text" | "feats">;
 /** A language's tables for an entry's forms, laid out with the builder. */
 export type Layout = (builder: Builder, forms: Form[], entry: Pick<Entry, "upos">, shown: Shown) => Table[];
 
-/** A feature set by its id: the bundle's feats, or a lexicon response's. */
+/** A feature set by its id: from a lexicon response. */
 export type FeatsOf = (id: number) => Feats | undefined;
 
 /** One label for merged rows or columns: "sg m. pers." + "sg m. anim." -> a shorter one. */
@@ -53,16 +53,6 @@ const DEGREE_LABEL: Record<string, string> = {
   Cmp: "comparative",
   Sup: "superlative",
 };
-
-export function paradigmTables(
-  bundle: Bundle,
-  entry: Entry,
-  token: Token,
-  layout: Layout,
-  mergeLabels: MergeLabels = (labels) => labels.join("/"),
-): Table[] {
-  return formTables((id) => bundle.feats[id], entry, token, layout, mergeLabels);
-}
 
 /** A card's tables: the lemma's own paradigm, with the lemma marked. */
 export function lemmaTables(

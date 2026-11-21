@@ -1,4 +1,4 @@
-"""Shape of the lexicon entries and the per-document bundle JSON."""
+"""Shape of the lexicon entries served by the Worker."""
 
 from typing import Literal, NotRequired, TypedDict
 
@@ -81,12 +81,12 @@ class Paradigm(TypedDict):
 
 
 type FormRow = tuple[str, list[int]]
-"""A form and every feature set it has, as indices into Bundle.feats:
+"""A form and every feature set it has, as feature set IDs:
 ["psa", [3, 7]] is psa as genitive and as accusative. Listing each (form, feats) pair in
 full made verb paradigms ~9x bigger: a participle declines for gender, number and case."""
 
 
-class BundleParadigm(TypedDict):
+class EntryParadigm(TypedDict):
     """To highlight a token's form, match its text and its feats minus PronType and ExtPos,
     which the sentence decides and paradigms leave out."""
 
@@ -116,8 +116,7 @@ class Recording(TypedDict):
 
 
 class Entry(TypedDict):
-    """A word as the lexicon serves it, whole: what the API's lookup returns, D1 stores
-    and a bundle carries, built once by lexicon/entry.py."""
+    """A whole word entry built by lexicon/entry.py, stored in D1 and served by the Worker."""
 
     lemma_id: str
     lemma: str
@@ -132,57 +131,8 @@ class Entry(TypedDict):
     relations: list[Relation]
     pronunciations: list[Pronunciation]
     """How the lemma is said."""
-    paradigms: list[BundleParadigm]
+    recordings: NotRequired[list[Recording]]
+    paradigms: list[EntryParadigm]
     frames: list[Schema]
     """How the word combines with others (Walenty valency schemata), for a verb both
     with and without się (Schema.reflexive). Empty when Walenty lacks the word."""
-
-
-type Match = Literal[
-    "exact",  # same lemma and part of speech
-    "other-pos",  # same lemma, the lexicon files it under another part of speech
-    "lowercase",  # the lemma lowercased (Krakowski -> krakowski)
-    "none",  # no senses; the entry has only the paradigm
-]
-
-
-BUNDLE_SCHEMA = 2
-"""The bundle's JSON shape. Documents keep their bundle until ingest redoes them. Add a
-field as NotRequired and bump BUNDLER_VERSION instead (pronunciations). Bump this only when
-the shape changes; the reader treats a bundle of an older schema as one being redone.
-
-2: entries are the lexicon's whole Entry (lemma_id, grammar, pronunciations, typed
-relations, senses resolved), and match is gone."""
-
-BUNDLER_VERSION = "6"
-"""The bundle-making code's version (lexicon/bundle.py and the plugins' bundlers). Bump it
-when a change gives different bundles for the same analysis and lexicon (the lookup
-fallbacks, how paradigms are made). It's in every bundle's name, so a bump re-bundles each
-document once; ingest reuses the analysis, so that costs a second or two a document."""
-
-
-class Bundle(TypedDict):
-    schema: int
-    """BUNDLE_SCHEMA when it was made."""
-    lang: str
-    lexicon: str
-    """Lexicon version: sources and their dates."""
-    attribution: str
-    entries: dict[str, Entry]
-    """By lemma_id."""
-    lookup: dict[str, str]
-    """Token lemma_id -> entry lemma_id, only where they differ (other-pos, lowercase)."""
-    feats: list[Feats]
-    """Every distinct feature set in the paradigms, referred to by index from FormRow."""
-    pronunciations: dict[str, list[Pronunciation]]
-    """By pronunciation_key(word, upos), for each token's text Wiktionary has one for (a
-    lemma's are on its entry). Words spelled alike can differ by part of speech (lead, the
-    metal, is /lɛd/; the verb is /liːd/)."""
-    recordings: dict[str, list[Recording]]
-    """By pronunciation_key, like pronunciations. Apart from them because Wiktionary doesn't
-    say which transcription a recording is of."""
-
-
-def pronunciation_key(word: str, upos: Upos) -> str:
-    """psa, NOUN -> psa:NOUN"""
-    return f"{word}:{upos}"

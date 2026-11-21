@@ -28,7 +28,7 @@ export function retryAfter(failures: number): number {
 }
 
 export function sameNames(a: ReadingNames | null, b: ReadingNames | null): boolean {
-  return a?.analysis === b?.analysis && a?.bundle === b?.bundle;
+  return a?.analysis === b?.analysis;
 }
 
 export function isBusy(summary: DocumentSummary): boolean {

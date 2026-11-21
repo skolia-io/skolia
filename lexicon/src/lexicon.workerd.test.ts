@@ -109,7 +109,7 @@ test("an entry says its licence, whom to credit and its Wiktionary page, and eve
   assert.equal(about.version, "lex/1");
   assert.deepEqual(
     about.sources.map((s) => s.url),
-    ["https://en.wiktionary.org", "http://morfeusz.sgjp.pl"],
+    ["https://en.wiktionary.org", "http://morfeusz.sgjp.pl", "http://zil.ipipan.waw.pl/Walenty"],
   );
 });
 
@@ -177,6 +177,50 @@ test("an entry by id, a lemma with a slash percent-encoded; 404 for one the lexi
     ["pl:i/lub:CCONJ"],
   );
   await expectStatus("kot", client(app).entries[":id"].$get({ param: { id: lemmaParam("pl:kot:NOUN") }, query: {} }), 404);
+});
+
+test("the single-entry endpoint resolves a token id, in fallback order", async () => {
+  const app = setup();
+  await loadLexicon(env, "pl", "lex/1", [
+    glossed("pl:łódzki:ADJ", "of Łódź"),
+    glossed("pl:Łódzki:PROPN", "a surname"),
+    glossed("pl:pies:NOUN", "dog"),
+    glossed("pl:pies:VERB", "a verb"),
+    glossed("pl:a:b:NOUN", "contains a colon"),
+  ]);
+  for (const [asked, expected] of [
+    ["pl:Łódzki:ADJ", "pl:łódzki:ADJ"],
+    ["pl:Łódzki:NOUN", "pl:Łódzki:PROPN"],
+    ["pl:Pies:AUX", "pl:pies:NOUN"],
+    ["pl:pies:AUX", "pl:pies:VERB"],
+    ["pl:A:b:NOUN", "pl:a:b:NOUN"],
+  ] as const) {
+    const result = await body(asked, client(app).entries[":id"].$get({ param: { id: lemmaParam(asked) }, query: {} }));
+    assert.equal(result.requestedId, asked);
+    assert.equal(result.entries[0]?.lemma_id, expected);
+  }
+});
+
+test("form audio is versioned and a homograph keeps its own pronunciation", async () => {
+  const app = setup();
+  await loadLexicon(env, "en", "lex/2", []);
+  const recording = { audio: "En-lead.ogg", mp3_url: "https://example.com/En-lead.mp3" };
+  for (const [version, upos, pronunciations, recordings] of [
+    ["lex/2", "NOUN", [{ ipa: "/lɛd/" }], []],
+    ["lex/2", "VERB", [{ ipa: "/liːd/" }], [recording]],
+    ["lex/1", "NOUN", [{ ipa: "/liːd/" }], [recording]],
+  ] as const) {
+    await env.LEXICON_EN.prepare("INSERT INTO form_pronunciation VALUES (?, ?, ?, ?)")
+      .bind("lead", upos, version, JSON.stringify({ pronunciations, recordings }))
+      .run();
+  }
+  const forms = client(app).lexicons[":lang"].forms[":form"];
+  const get = (form: string, upos: "NOUN" | "VERB", version = "lex/2") =>
+    forms.$get({ param: { lang: "en", form }, query: { upos, version } });
+  await expectStatus("old form version", get("lead", "NOUN", "lex/1"), 409);
+  assert.deepEqual(await body("noun", get("Lead", "NOUN")), { pronunciations: [{ ipa: "/lɛd/" }], recordings: [] });
+  assert.deepEqual(await body("verb", get("lead", "VERB")), { pronunciations: [{ ipa: "/liːd/" }], recordings: [recording] });
+  assert.deepEqual(await body("unknown word", get("missing", "NOUN")), { pronunciations: [], recordings: [] });
 });
 
 test("entries by spelling are the lemma's, one per part of speech; 404 for a spelling with none", async () => {
@@ -250,6 +294,10 @@ test("each lookup seeks an index, and none sorts rows the index doesn't give in 
     spelt: sql`SELECT * FROM entry WHERE lemma_id IN ${QUERIES.spelt("v", "zamek")}`,
     entries: QUERIES.entries("v", ids),
     entriesSpelt: QUERIES.entries("v", QUERIES.spelt("v", "zamek")),
+    withSenses: QUERIES.withSenses("v", "pl:pies:NOUN"),
+    candidates: QUERIES.candidates("v", "pies"),
+    lowercase: QUERIES.lowercase("v", "pies"),
+    formAudio: QUERIES.formAudio("v", ["Psa", "psa"]),
     incoming: QUERIES.incoming("v", "pl:golić:VERB"),
     featureSets: QUERIES.featureSets("v", [1, 2]),
   };
@@ -263,7 +311,7 @@ test("each lookup seeks an index, and none sorts rows the index doesn't give in 
     }),
   );
   const wrong = plans.filter(({ plan }) =>
-    plan.some((d) => /^SCAN (entry|relation|featureset|target|source)\b/u.test(d) || /USE TEMP B-TREE/u.test(d)),
+    plan.some((d) => /^SCAN (entry|relation|featureset|form_pronunciation|target|source)\b/u.test(d) || /USE TEMP B-TREE/u.test(d)),
   );
   assert.deepEqual(wrong, [], wrong.map(({ name, plan }) => `${name}: ${plan.join("; ")}`).join("\n"));
 });

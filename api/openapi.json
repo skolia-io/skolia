@@ -414,10 +414,16 @@
               "$ref": "#/components/schemas/Pronunciation"
             }
           },
+          "recordings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Recording"
+            }
+          },
           "paradigms": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/BundleParadigm"
+              "$ref": "#/components/schemas/EntryParadigm"
             }
           },
           "frames": {
@@ -1005,7 +1011,29 @@
           "US"
         ]
       },
-      "BundleParadigm": {
+      "Recording": {
+        "type": "object",
+        "properties": {
+          "audio": {
+            "type": "string"
+          },
+          "mp3_url": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "audio",
+          "mp3_url"
+        ],
+        "additionalProperties": false
+      },
+      "EntryParadigm": {
         "type": "object",
         "properties": {
           "homonym": {
@@ -2685,7 +2713,7 @@
             "$ref": "#/components/schemas/State"
           },
           "reading": {
-            "description": "The analysis and bundle to show, by name (GET .../analysis/{name}): the current ones, or while newer ones are queued or analysing (or failed), the previous ones. Absent until a first analysis is ready.",
+            "description": "The analysis to show by name (GET .../analysis/{name}). While an update is pending or failed, the previous analysis stays available.",
             "$ref": "#/components/schemas/ReadingNames"
           },
           "error": {
@@ -2750,14 +2778,10 @@
         "properties": {
           "analysis": {
             "type": "string"
-          },
-          "bundle": {
-            "type": "string"
           }
         },
         "required": [
-          "analysis",
-          "bundle"
+          "analysis"
         ],
         "additionalProperties": false
       },
@@ -5720,79 +5744,7 @@
             "description": "The client's copy is current"
           },
           "404": {
-            "description": "No such document, or it has no such analysis or bundle",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "406": {
-            "description": "The client doesn't accept Brotli",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        },
-        "parameters": [
-          {
-            "schema": {
-              "type": "string"
-            },
-            "in": "path",
-            "name": "id",
-            "required": true
-          },
-          {
-            "schema": {
-              "type": "string"
-            },
-            "in": "path",
-            "name": "name",
-            "required": true
-          }
-        ]
-      }
-    },
-    "/api/documents/{id}/bundle/{name}": {
-      "get": {
-        "operationId": "getApiDocumentsByIdBundleByName",
-        "tags": [
-          "Documents"
-        ],
-        "summary": "A document's lexicon bundle",
-        "description": "By its name in DocumentSummary.reading: the lexicon entries its words need (Bundle in shared/schema.gen.ts), Brotli-compressed.",
-        "security": [
-          {},
-          {
-            "session": []
-          },
-          {
-            "apiKey": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "The JSON, with Content-Encoding: br",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          },
-          "304": {
-            "description": "The client's copy is current"
-          },
-          "404": {
-            "description": "No such document, or it has no such analysis or bundle",
+            "description": "No such document, or it has no such analysis",
             "content": {
               "application/json": {
                 "schema": {

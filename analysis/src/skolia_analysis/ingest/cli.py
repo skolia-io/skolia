@@ -4,8 +4,7 @@ wrangler dev and on Cloudflare.
   SKOLIA_HTTP_PORT     takes jobs as POST /jobs on this port (see http.py)
   SKOLIA_BLOBS         the blob store's base URL (see HttpBlobs)
   SKOLIA_LANGS         languages to ingest, comma-separated, e.g. pl,en
-  SKOLIA_DATA          the languages' data directory: {lang}.sqlite (skolia-build-lexicon)
-                       and each plugin's own files (pl: pl-valency.json)
+  SKOLIA_DATA          optional language data directory (pl: pl-valency.json)
   SKOLIA_IMAGE         the container's image, named in each job's attempts; optional
   LOG_FORMAT           json for JSON Lines, otherwise logfmt
 """
@@ -20,10 +19,8 @@ from types import FrameType
 import structlog
 
 from .. import lang
-from ..lexicon.bundle import make as make_bundle
-from ..lexicon.store import Lexicon
 from ..log import configure_logging
-from ..plugin import Options, lexicon_path
+from ..plugin import Options
 from .blobs import HttpBlobs
 from .http import HttpJobs, serve
 from .worker import Ingester, Pipeline
@@ -38,19 +35,15 @@ def env(name: str) -> str:
     return value
 
 
-def pipeline(code: str, data: Path) -> Pipeline:
+def pipeline(code: str, data: Path | None) -> Pipeline:
     plugin = lang.plugin(code)
     log.info("loading pipeline", lang=code, model=plugin.DEFAULT_MODEL)
     parser = plugin.parser(plugin.DEFAULT_MODEL)
     analyzer = plugin.analyzer(parser, Options(plugin.DEFAULT_SNAP), data)
-    lexicon = Lexicon(lexicon_path(data, code))
-    extras = plugin.extras(data)
     return Pipeline(
         lang=code,
         analyze=analyzer,
-        bundle=lambda blob: make_bundle(blob, lexicon, extras),
         analyzer=analyzer.name,
-        lexicon_version=lexicon.version(),
     )
 
 
@@ -82,7 +75,8 @@ def main() -> None:
 
 def ingest(queue: HttpJobs) -> None:
     blobs = HttpBlobs(env("SKOLIA_BLOBS"))
-    data = Path(env("SKOLIA_DATA"))
+    data_path = os.environ.get("SKOLIA_DATA")
+    data = Path(data_path) if data_path else None
     codes = [c.strip() for c in env("SKOLIA_LANGS").split(",") if c.strip()]
     unknown = set(codes) - set(lang.LANGS)
     if unknown:

@@ -13,7 +13,9 @@ export type TestEntry = Pick<Entry, "lemma_id" | "lemma" | "upos"> & Partial<Omi
 
 /** A test entry with one sense, the gloss. */
 export function glossed(lemmaId: LemmaId, gloss: string, more: Partial<Entry> = {}): TestEntry {
-  const [, lemma = "", upos = "X"] = lemmaId.split(":");
+  const last = lemmaId.lastIndexOf(":");
+  const lemma = lemmaId.slice(lemmaId.indexOf(":") + 1, last);
+  const upos = lemmaId.slice(last + 1);
   return { lemma_id: lemmaId, lemma, upos: upos as Entry["upos"], senses: [{ gloss, tags: [] }], ...more };
 }
 
@@ -34,7 +36,8 @@ export async function loadLexicon(
     ...whole.map((e) =>
       prepare(
         db,
-        sql`INSERT INTO entry (lemma_id, version, lemma, upos, data) VALUES ${sql.tuple([e.lemma_id, version, e.lemma, e.upos, JSON.stringify(e)])}`,
+        sql`INSERT INTO entry (lemma_id, version, lemma, upos, data, lemma_lower, sense_count)
+              VALUES ${sql.tuple([e.lemma_id, version, e.lemma, e.upos, JSON.stringify(e), e.lemma.toLowerCase(), e.senses.length])}`,
       ),
     ),
     ...whole.flatMap((e) =>
@@ -65,6 +68,8 @@ export async function loadLexicon(
 /** Empties every language's lexicon. */
 export async function clearLexicons(env: LexiconBindings): Promise<void> {
   for (const db of Object.values(lexiconsOf(env))) {
-    await db.batch(["entry", "relation", "featureset", "loaded"].map((t) => prepare(db, sql`DELETE FROM ${sql.id(t)}`)));
+    await db.batch(
+      ["entry", "relation", "featureset", "form_pronunciation", "loaded"].map((t) => prepare(db, sql`DELETE FROM ${sql.id(t)}`)),
+    );
   }
 }

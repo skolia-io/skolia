@@ -31,7 +31,7 @@ from skolia_analysis.lexicon import schema as lexicon_schema
 # The top-level types the API and reader use; everything they refer to comes along
 ROOTS: list[object] = [
     schema.Blob,
-    lexicon_schema.Bundle,
+    lexicon_schema.Entry,
     ingest_schema.IngestJob,
     ingest_schema.JobAnswer,
     ingest_schema.JobResult,
@@ -44,7 +44,6 @@ ROOTS: list[object] = [
 # Numbers both sides must agree on
 CONSTANTS: dict[str, int] = {
     "SCHEMA": blob.SCHEMA,
-    "BUNDLE_SCHEMA": lexicon_schema.BUNDLE_SCHEMA,
     "MAX_TEXT_LENGTH": ingest_schema.MAX_TEXT_LENGTH,
 }
 

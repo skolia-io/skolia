@@ -202,9 +202,15 @@ export interface Pronunciation {
   accents?: Accent[];
 }
 
+export interface Recording {
+  audio: string;
+  mp3_url: string;
+  tags?: string[];
+}
+
 export type FormRow = [string, number[]];
 
-export interface BundleParadigm {
+export interface EntryParadigm {
   homonym: string;
   forms: FormRow[];
 }
@@ -464,26 +470,9 @@ export interface Entry {
   senses: Sense[];
   relations: Relation[];
   pronunciations: Pronunciation[];
-  paradigms: BundleParadigm[];
+  recordings?: Recording[];
+  paradigms: EntryParadigm[];
   frames: Schema[];
-}
-
-export interface Recording {
-  audio: string;
-  mp3_url: string;
-  tags?: string[];
-}
-
-export interface Bundle {
-  schema: number;
-  lang: string;
-  lexicon: string;
-  attribution: string;
-  entries: Record<string, Entry>;
-  lookup: Record<string, string>;
-  feats: Feats[];
-  pronunciations: Record<string, Pronunciation[]>;
-  recordings: Record<string, Recording[]>;
 }
 
 export interface IngestJob {
@@ -493,9 +482,7 @@ export interface IngestJob {
 
 export interface ReadyAnalysis {
   analyzer: string;
-  lexicon: string;
   analysis: string;
-  bundle: string;
 }
 
 export interface JobResult {
@@ -552,11 +539,8 @@ export type Status = QueuedStatus | ReadyStatus | FailedStatus;
 
 export interface Versions {
   analyzer: string;
-  lexicon: string;
   analysis: string;
-  bundle: string;
 }
 
 export const SCHEMA = 2;
-export const BUNDLE_SCHEMA = 2;
 export const MAX_TEXT_LENGTH = 20000;

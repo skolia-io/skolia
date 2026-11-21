@@ -5,7 +5,7 @@ import { hc, type ClientResponse } from "hono/client";
 import * as schemas from "@skolia/shared/schemas";
 import type { DocumentId, DocumentKey, DocumentSummary, Lang, LemmaId, NewClozeInput, Paginated } from "@skolia/shared/api";
 import type { Entry, Versions } from "@skolia/shared/schema";
-import { partKey, statusKey, versionsKey } from "@skolia/shared/keys";
+import { analysisKey, statusKey, versionsKey } from "@skolia/shared/keys";
 import { allPages, encodeCursor, type Cursor } from "@skolia/shared/page";
 import { createApp, type AppType } from "../app.ts";
 import type { Auth } from "../ports/auth.ts";
@@ -203,29 +203,23 @@ export async function refusesBadPages(
   }
 }
 
-/** A ready document whose analysis and bundle were made by version v, as ingest leaves it. */
+/** A ready document whose analysis was made by version v, as ingest leaves it. */
 export async function readyAt(id: DocumentId, v: string): Promise<void> {
   const blobs = new R2Blobs(local.env.BLOBS);
-  for (const [part, name] of [
-    ["analysis", `s2-a${v}`],
-    ["bundle", `b1-a${v}-l1`],
-  ] as const) {
-    await blobs.put(partKey(id, part, name), new Uint8Array(brotliCompressSync(`{"${part}":"${v}"}`)), "application/json");
-  }
+  const key = analysisKey(id, `s2-a${v}`);
+  await blobs.put(key, new Uint8Array(brotliCompressSync(`{"analysis":"${v}"}`)), "application/json");
   await putJson(statusKey(id), {
     state: "ready",
     updated: new Date(NOW).toISOString(),
     artifacts: {
       analyzer: `pl/${v}`,
-      lexicon: "lex/1",
-      analysis: partKey(id, "analysis", `s2-a${v}`),
-      bundle: partKey(id, "bundle", `b1-a${v}-l1`),
+      analysis: key,
     },
   });
 }
 
 export function publish(v: string): Promise<void> {
-  return putJson(versionsKey("pl"), { analyzer: `pl/${v}`, lexicon: "lex/1", analysis: `s2-a${v}`, bundle: `b1-a${v}-l1` });
+  return putJson(versionsKey("pl"), { analyzer: `pl/${v}`, analysis: `s2-a${v}` });
 }
 
 /** The summary as the importer sees it, since a private document is only theirs to see. */

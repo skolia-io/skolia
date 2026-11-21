@@ -405,9 +405,7 @@ export const Status = z.discriminatedUnion("state", [
 
 export const Versions = z.object({
   analyzer: z.string(),
-  lexicon: z.string(),
   analysis: z.string(),
-  bundle: z.string(),
 }) satisfies z.ZodType<VersionsType>;
 
 export const DocumentRow = z
@@ -544,8 +542,8 @@ export const JobResult = gen.JobResult;
  * its attempts for the history (ingest/schema.py) */
 export const JobAnswer = gen.JobAnswer;
 
-/** An IngestWorkflow instance (ingest/src/workflow.ts): one document made to one bundle
- * version, `{doc}-{short hash of the bundle name}` (api/src/worker/adapters/ingest.ts runId) */
+/** An IngestWorkflow instance (ingest/src/workflow.ts): one document made to one analysis
+ * version, `{doc}-{short hash of the analysis name}` (api/src/worker/adapters/ingest.ts runId) */
 export const IngestRunId = z
   .string()
   .regex(/^[0-9a-f]{64}-[0-9a-f]{12}$/u)
@@ -615,7 +613,7 @@ export const IngestOverview = z
   })
   .meta({ id: "IngestOverview" });
 
-export const ReadingNames = z.object({ analysis: z.string(), bundle: z.string() }).meta({ id: "ReadingNames" });
+export const ReadingNames = z.object({ analysis: z.string() }).meta({ id: "ReadingNames" });
 
 export const DocumentSummary = z
   .object({
@@ -636,7 +634,7 @@ export const DocumentSummary = z
     ),
     state: State,
     reading: ReadingNames.optional().describe(
-      "The analysis and bundle to show, by name (GET .../analysis/{name}): the current ones, or while newer ones are queued or analysing (or failed), the previous ones. Absent until a first analysis is ready.",
+      "The analysis to show by name (GET .../analysis/{name}). While an update is pending or failed, the previous analysis stays available.",
     ),
     error: z.string().optional(),
   })
@@ -655,11 +653,13 @@ export const FeatureSets = z.record(z.string(), gen.Feats).meta({
 export const Relation = gen.Relation;
 
 export const Entry = gen.Entry;
+export const Pronunciation = gen.Pronunciation;
+export const Recording = gen.Recording;
 
 export const Lookup = z.object({ entries: z.array(gen.Entry), featureSets: z.partialRecord(Lang, FeatureSets) }).meta({
   id: "Lookup",
   description:
-    'The entries asked for that the lexicon has, as a bundle carries them. Their paradigms\' forms point into feature sets, ["psa", [50, 51]], which featureSets has by language.',
+    'The entries asked for that the lexicon has, as the lexicon serves them. Their paradigms\' forms point into feature sets, ["psa", [50, 51]], which featureSets has by language.',
 });
 
 export const DueCard = z.intersection(ScheduledFields.extend({ entry: gen.Entry.nullable() }), CardContent).meta({ id: "DueCard" });

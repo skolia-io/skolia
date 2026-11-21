@@ -4,7 +4,7 @@ import { acceptsEncoding } from "./app.ts";
 import { STUCK_AFTER_MS, countWords, isOutdated, isStuck, nameOf, parseStatus, parseVersions } from "./controllers/documents.ts";
 
 const NOW = "2026-11-04T00:00:00Z";
-const ARTIFACTS = { analyzer: "a", lexicon: "l", analysis: "d/analysis/s2-a1.json.br", bundle: "d/bundle/b1-a1-l1.json.br" };
+const ARTIFACTS = { analyzer: "a", analysis: "d/analysis/s2-a1.json.br" };
 
 test("accept-encoding parsing", () => {
   assert.equal(acceptsEncoding("gzip, deflate, br, zstd", "br"), true);
@@ -23,7 +23,7 @@ test("stuck and outdated rules", () => {
   assert.equal(isStuck({ state: "queued", updated: "garbage" }, at), true);
   assert.equal(nameOf("doc/x/analysis/s2-a1.json.br"), "s2-a1");
   assert.equal(nameOf(undefined), undefined);
-  const latest = { analyzer: "a", lexicon: "l", analysis: "s2-a1", bundle: "b1-a1-l1" };
+  const latest = { analyzer: "a", analysis: "s2-a1" };
   const ready = { state: "ready", updated: NOW, artifacts: ARTIFACTS } as const;
   assert.equal(isOutdated(ready, latest), false);
   assert.equal(isOutdated(ready, { ...latest, analysis: "s3-a1" }), true);
@@ -32,7 +32,7 @@ test("stuck and outdated rules", () => {
 });
 
 test("versions parsing ignores malformed blobs", () => {
-  const versions = { analyzer: "a", lexicon: "l", analysis: "s2-a1", bundle: "b1-a1-l1" };
+  const versions = { analyzer: "a", analysis: "s2-a1" };
   assert.deepEqual(parseVersions(JSON.stringify(versions)), versions);
   assert.equal(parseVersions('{"analyzer":"a","lexicon":"l"}'), null);
   assert.equal(parseVersions("nope"), null);
@@ -44,7 +44,7 @@ test("status parsing ignores malformed blobs", () => {
   assert.equal(parseStatus(JSON.stringify({ state: "ready", updated: "x", bundle: 3 })), null);
   assert.equal(parseStatus(JSON.stringify({ state: "ready", updated: "x" })), null);
   assert.equal(parseStatus(JSON.stringify({ state: "failed", updated: "x" })), null);
-  assert.equal(parseStatus(JSON.stringify({ state: "queued", updated: "x", artifacts: { analysis: "partial" } })), null);
+  assert.equal(parseStatus(JSON.stringify({ state: "queued", updated: "x", artifacts: { analyzer: "partial" } })), null);
   const ready = { state: "ready", updated: "x", artifacts: ARTIFACTS };
   assert.deepEqual(parseStatus(JSON.stringify({ ...ready, extra: 1 })), ready);
   assert.equal(parseStatus(JSON.stringify({ state: "ready", updated: "x", ...ARTIFACTS })), null);

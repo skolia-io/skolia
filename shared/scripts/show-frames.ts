@@ -1,16 +1,16 @@
-// Print the frame patterns the word sheet would show, for some lemmas of a bundle.
-// usage: node shared/scripts/show-frames.ts BUNDLE.json pl:szukać:VERB pl:mieć:VERB ...
+// Print the frame patterns the word sheet would show, for some lemmas from a lexicon response.
+// usage: node shared/scripts/show-frames.ts ENTRIES.json pl:szukać:VERB pl:mieć:VERB ...
 import { readFileSync } from "node:fs";
-import type { Bundle } from "@skolia/shared/schema";
+import type { Entry } from "@skolia/shared/schema";
 import { frames } from "../lang/pl/frames.ts";
 
 const [path, ...ids] = process.argv.slice(2);
-if (!path) throw new Error("usage: show-frames.ts BUNDLE.json LEMMA_ID...");
-const bundle = JSON.parse(readFileSync(path, "utf-8")) as Bundle;
+if (!path) throw new Error("usage: show-frames.ts ENTRIES.json LEMMA_ID...");
+const { entries } = JSON.parse(readFileSync(path, "utf-8")) as { entries: Entry[] };
 for (const id of ids) {
-  const entry = bundle.entries[id];
+  const entry = entries.find((entry) => entry.lemma_id === id);
   if (!entry) {
-    console.log(`${id}: not in the bundle`);
+    console.log(`${id}: entry missing`);
     continue;
   }
   const shown = frames(entry.frames);

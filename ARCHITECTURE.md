@@ -42,7 +42,7 @@ flowchart LR
     end
   end
 
-  RD -->|"documents, text, analysis, bundle"| API
+  RD -->|"documents, text, analysis"| API
   RD -->|"set a word's status"| API
   RD -->|"cards due, reviews"| API
   RD -->|"import"| API
@@ -52,7 +52,7 @@ flowchart LR
   BA -->|"users, sessions, API keys"| DB
   BA -->|"sign-in"| G
   API -->|"document metadata"| DB
-  API -->|"text, status, analysis, bundle"| R2
+  API -->|"text, status, analysis"| R2
   API -->|"start a run"| WF
   API -->|"RPC: words, cards, clozes, reviews, settings"| UDO
   API -->|"RPC: entries for due cards; /api/lexicon/* passed on"| LXW
@@ -78,7 +78,7 @@ sequenceDiagram
   participant DO as Ingester DO (skolia-ingest)
   participant C as container
   participant IDB as D1 skolia-ingest
-  API->>WF: create {doc}-{bundle hash}
+  API->>WF: create {doc}-{analysis hash}
   WF->>DO: analyse (step, retried if it fails)
   DO->>DO: interceptOutboundHttp(blobs.internal, Blobs), on each start
   DO->>C: POST /jobs, held until the job has run
@@ -92,10 +92,10 @@ sequenceDiagram
 
 - **List documents:** one indexed D1 query returns entries and their `document_status` projections, including state, readable versions and error. Lists never read R2. New imports and ingest publications write the projection immediately; ingest has a service binding to the API, never access to its D1 database.
 - Status is a discriminated union: ready requires complete artifacts, failed requires an error, and queued or failed may retain the previous artifacts. D1 stores `state` and `updated_at` as columns and puts only variant fields in `data`; R2 stores the complete status. `document_status` has no foreign key because an import publishes queued status and starts ingest before inserting the document. Analysing is live queue information, not a persisted state.
-- **Open a document:** D1 has its metadata and R2's `status.json` the names of its current analysis and bundle, which the reader then fetches from R2 through the API, as stored. Browsers cache them by HTTP (`no-cache` with the blob's key as its ETag), asking before each use, so the API checks the viewer may still see the text and answers 304 without reading R2; there's no IndexedDB yet.
-- **Tap a word:** local, from the bundle already loaded (`shared/lexicon`, `shared/paradigm`). Setting a word's status goes to the User DO.
-- **Review:** the User DO gives the due cards and the API adds their entries from the lexicon Worker (RPC, `LexiconService.entries`), which reads its language's lexicon D1. The DO never reads the lexicon, and the reader's word sheet never reads the lexicon D1s, so the two can show different lexicon versions until a document is re-bundled.
-- **Import:** the API puts the text in R2, the metadata in D1 and a queued `status.json`, then starts a run of the ingest Worker's `IngestWorkflow` (`ingest/src/workflow.ts`), named for the document and the bundle version it's to make, so a run asked for twice is one run. The run asks the Ingester named after its language's image to analyse it, so a deploy that changes an image starts a new container, and the Ingester's `POST /jobs` is answered once the job has had its turn and run. A container that goes away first fails the request, and the step is tried again, up to 3 times, after 1, 2 and 4 minutes; one that doesn't answer within the hour times out the same way. While it waits, the importer's summary says where it is: the API asks the language's Ingester (a Durable Object binding to the ingest Worker), which asks a running container for its jobs (`GET /jobs`) and never starts one.
+- **Open a document:** D1 has its metadata and R2’s `status.json` names its current analysis. The reader fetches the analysis by name. Browsers revalidate using the blob key as an ETag, and the API checks document visibility before returning 304.
+- **Tap a word:** The reader prefetches distinct lemma IDs as paragraphs come into view, with six requests in flight. A press promotes the word in the queue. The word sheet reads the shared query cache and can look up pronunciation and recordings for inflected forms by spelling and part of speech. Setting a word’s status goes to the User DO.
+- **Review:** The User DO gives the due cards and the API adds their entries from the lexicon Worker (RPC, `LexiconService.entries`). The Worker reads the same per-language D1 databases that serve the reader.
+- **Import:** the API puts the text in R2, the metadata in D1 and a queued `status.json`, then starts a run of the ingest Worker's `IngestWorkflow` (`ingest/src/workflow.ts`), named for the document and the analysis version it's to make, so a run asked for twice is one run. The run asks the Ingester named after its language's image to analyse it, so a deploy that changes an image starts a new container, and the Ingester's `POST /jobs` is answered once the job has had its turn and run. A container that goes away first fails the request, and the step is tried again, up to 3 times, after 1, 2 and 4 minutes; one that doesn't answer within the hour times out the same way. While it waits, the importer's summary says where it is: the API asks the language's Ingester (a Durable Object binding to the ingest Worker), which asks a running container for its jobs (`GET /jobs`) and never starts one.
 - The ingest Worker's only D1 is `skolia-ingest`, and its R2 binding serves the containers' blobs: they have no R2 credentials.
 - **Analysis page:** each container reports its running and waiting jobs' stages (`GET /jobs`), and each run stores its job's attempts in `skolia-ingest`, its own D1 so the main one stays small. The API shows both, without the texts the viewer can't see.
 - Lexicon lookups only see the rows of each language's version in `loaded`.
@@ -190,7 +190,7 @@ flowchart TB
 ```
 
 - D1 is bound by name. If Terraform hasn't made a database, `wrangler deploy` creates one outside Terraform, so `deploy-infra` goes first.
-- The ingest image has `lexicon-{lang}` but not the D1 export. The D1 export is built from the lexicon by the same `lexicon/entry.py` as the bundles.
+- The D1 export builds each entry with `lexicon/entry.py`. Polish ingest carries Walenty for case analysis.
 - `load-lexicon` only substitutes from Cachix and never fetches the inputs, so it needs the lexicon there; `build-ingest-image` pushes it only when an image is rebuilt.
 - `deploy-web` waits for `deploy-lexicon`, which it binds, and for `load-lexicon` and `deploy-ingest`: the end-to-end tests read the lexicon.
 - Deploys don't wait for `check`. `infra/plan.py` has a dependency graph of projects (each pnpm package by its `package.json`, `analysis/`, `infra/`, `curated/`) and the targets CI builds, checks and deploys, each node keyed by a hash of its Nix content and its build and test dependencies' keys. CI skips each one whose key `skolia-ci` has a row for: in `build` for an image, the skolia Worker's bundle or a check, done once for every environment, and as the environment's last row in `deployment` for Terraform, the ingest Worker, the lexicon, the lexicon Worker, the skolia Worker, the end-to-end tests and the curated sync. Both tables only grow.
@@ -202,9 +202,9 @@ flowchart TB
 | Client | PWA, Svelte 5 + TypeScript; one layout for phone (bottom sheet) and desktop (side panel) | Reader, word/span sheet, paradigm tables, review sessions (online for now) |
 | API | Cloudflare Workers (TypeScript) | Auth, import job submission, cards and reviews, quotas; later the explain proxy and cache |
 | User data | D1, a Durable Object per user | D1: users, document metadata. Durable Object: words, cards, reviews (FSRS) |
-| Lexicon | D1, one per language (`skolia-lexicon-{lang}`) | For flashcards, by lemma id: senses, relations, pronunciations and paradigms, with the feature sets they point into; built from the same lexicon as the ingest images |
-| Blobs | R2 | Source texts, analysis blobs, bundles |
-| Analysis | Python on Cloudflare Containers, fed by a Workflow run per document | Segment, analyze, match lexicon, write blob |
+| Lexicon | D1, one per language (`skolia-lexicon-{lang}`) | Entries and form audio for the reader and flashcards |
+| Blobs | R2 | Source texts and analysis blobs |
+| Analysis | Python on Cloudflare Containers, fed by a Workflow run per document | Segment, analyze, write blob |
 | Lexicon build | Offline Python scripts | Kaikki/Wiktionary + Morfeusz → per-language lexicon files |
 
 ## Frontend / backend split
@@ -213,8 +213,8 @@ The backend does anything heavy, anything that happens once, and anything secret
 
 ```
 Import:       phone → API → queue → analysis container    (slow, once per text)
-Open:         phone ← document + its lexicon bundle        (one request, then cached)
-Tap/select:   phone only                                   (structure, paradigm, gloss)
+Open:         phone ← text and analysis
+Tap/select:   phone ← lexicon entry via cache or Worker     (paradigm, gloss)
 Translate/why: phone → API → cache or LLM                  (network, metered)
 Mark/review:  phone → API → user's Durable Object         (online; offline later)
 ```
@@ -260,11 +260,11 @@ entry(lemma_id, lemma, upos, grammar)  with senses, paradigms, relations in tabl
   paradigms: forms with UD features, for languages without a generator (English, French); empty for Polish
 ```
 
-What the lexicon Worker serves and a bundle carries is an `Entry`, made from a row in one place (`lexicon/entry.py`): its grammar adds what every form's features share (zgolić: Aspect=Perf), Wiktionary's tags for that grammar come off its senses, a word with no senses of its own takes those of the words it's derived from (zgolić, a perfective of golić, means what golić does), and it has its lemma's pronunciations, its paradigms (Morfeusz's for Polish) and its frames. Each lexicon D1 stores each `Entry` whole, with the relation rows beside it for finding what points at a word (`include=incoming`). The reader renders a relation's kind in English.
+What the lexicon Worker serves is an `Entry`, made from a row in one place (`lexicon/entry.py`): its grammar adds what every form's features share (zgolić: Aspect=Perf), Wiktionary's tags for that grammar come off its senses, a word with no senses of its own takes those of the words it's derived from (zgolić, a perfective of golić, means what golić does), and it has its lemma's pronunciations, its paradigms (Morfeusz's for Polish) and its frames. Each lexicon D1 stores each `Entry` whole, with the relation rows beside it for finding what points at a word (`include=incoming`). The reader renders a relation's kind in English.
 
-Polish paradigms aren't stored: Morfeusz generates them, in the analyser's feature conventions, when a document's bundle is made. A verb's paradigm includes its participles and gerunds. English paradigms are stored in UD EWT's conventions: a form lists every feature set it serves (`walk` is the infinitive, the imperative and the present for every person but the third singular), since the reader matches a token to the forms whose features include the token's. French paradigms are stored in UD French GSD's conventions (an imperfect is `Tense=Imp`, a conditional `Mood=Cnd`); Wiktionary gives only the masculine singular past participle, so its feminine and plural forms follow the regular rule (`pris`, `prise`, `prises`), with the few that never agree (`été`) left alone.
+Polish paradigms aren't stored: Morfeusz generates them, in the analyser's feature conventions, when the D1 export is built. A verb's paradigm includes its participles and gerunds. English paradigms are stored in UD EWT's conventions: a form lists every feature set it serves (`walk` is the infinitive, the imperative and the present for every person but the third singular), since the reader matches a token to the forms whose features include the token's. French paradigms are stored in UD French GSD's conventions (an imperfect is `Tense=Imp`, a conditional `Mood=Cnd`); Wiktionary gives only the masculine singular past participle, so its feminine and plural forms follow the regular rule (`pris`, `prise`, `prises`), with the few that never agree (`été`) left alone.
 
-Each imported document gets a bundle with the `Entry` of each lemma it uses, so taps stay offline. Lookup falls back from the exact `lemma_id` to the lemma lowercased under the same part of speech (*Old* Town is the adjective *old*), then to the same lemma under another part of speech (English *be* as AUX is Wiktionary's verb), then to the lemma lowercased under any. The reader marks the token's form in the paradigm by its text and features, counting only features the paradigm's forms have. A full-dictionary download for search is a possible later addition (meanings only, without paradigms).
+The lexicon Worker serves one entry per URL, shared across documents through the browser and edge caches. Lookup falls back from the exact `lemma_id` to the lemma lowercased under the same part of speech (*Old* Town is the adjective *old*), then to the same lemma under another part of speech (English *be* as AUX is Wiktionary's verb), then to the lemma lowercased under any. The reader marks the token's form in the paradigm by its text and features, counting only features the paradigm's forms have. A full-dictionary download for search is a possible later addition (meanings only, without paradigms).
 
 Later: showing a word's frames on its sheet ("`pomagać` + dative", from the same Walenty data the case reasons use) and `expression` (multi-word, matched by lemma sequence, from Wiktionary's phrase entries and Walenty's idioms).
 
@@ -272,19 +272,18 @@ Later: showing a word's frames on its sheet ("`pomagać` + dative", from the sam
 
 ```
 doc/{hash}/text.txt                                     -- permanent
-doc/{hash}/status.json                                  -- import state; points at the current analysis and bundle
+doc/{hash}/status.json                                  -- import state; points at the current analysis
 doc/{hash}/analysis/s{schema}-a{analyzer}.json.br       -- derived, disposable
-doc/{hash}/bundle/b{schema}-v{bundler}-a{analyzer}-l{lexicon}.json.br  -- derived, disposable
 versions/{lang}.json                                    -- what ingest produces now, written when it starts
 ```
 
-- Analyses and bundles are JSON compressed with Brotli (quality 11), stored with `Content-Encoding: br` and sent as stored to clients that accept it (the API decompresses for those that don't). On *Kamizelka*, Brotli was 41% (analysis) and 59% (bundle) the size of gzip, and smaller than zstd at level 22; MessagePack was no smaller than JSON once compressed.
+- Analyses are JSON compressed with Brotli (quality 11), stored with `Content-Encoding: br` and sent as stored to clients that accept it.
 - Texts are limited to 20,000 characters per import (about 3,000 words, roughly a minute of analysis), checked by the API and again by ingest. Imports aren't rate-limited yet.
-- Everything about a document is under one prefix, so it can be inspected in one place. `{analyzer}` and `{lexicon}` are short hashes of the version strings. Stale analyses and bundles are the ones `status.json` doesn't point at; clean them up by that rule, not by age (an old document's current analysis is old too).
+- A document’s text, analysis versions and status share one prefix. `{analyzer}` is a short hash of the analyser version. Legacy bundle blobs may still exist under that prefix.
 - Documents are deduped by a hash of language and text (`sha256("{lang}\n{text}")`): if many users import the same text, it's analyzed once. The text is stored once (`document`), and each user who imports it has their own entry (`user_document`) with their title, licence and visibility. A user sees their own entries and everyone's public ones; a text with no public entry is a 404 to anyone without an entry. Deleting an entry deletes only the entry: texts and their blobs are never deleted, so importing one again needn't analyse it again.
-- An analysis or bundle is named by everything it depends on: the blob shape (`SCHEMA`, `BUNDLE_SCHEMA`), the analyser (plugin version, models, Morfeusz, snap policy, Walenty) and, for the bundle, the bundle-making code (`BUNDLER_VERSION`) and the lexicon. Bump `PLUGIN_VERSION` whenever the analysis output changes, `BUNDLER_VERSION` whenever the bundle for the same analysis and lexicon does (lookup fallbacks, how paradigms are made), and the shape numbers whenever the JSON shape does. The generated `schema.gen.ts` carries the shape numbers, and the reader refuses a shape it doesn't know.
-- The reader fetches the analysis and bundle by those names (`/api/documents/{id}/analysis/{name}`), so what's at a URL never changes and a browser's copy only needs confirming, and an analysis and bundle always belong together.
-- Migration: when the API opens a ready document whose analysis or bundle name isn't the one in `versions/{lang}.json`, it queues the document again. Until the new analysis is ready, the status keeps the old keys, so the reader shows the old analysis and says it's updating. Ingest reuses an analysis and bundle whose keys already exist, so a document queued twice costs nothing, and a new lexicon or bundler only re-bundles (about 2 s for 5,000 words, against about 30 s to analyse them). A document opened after over 30 minutes queued is started again, in case its run was lost (its start failed or its run stopped): a run under way is left alone, and one that ended is run again. A storage failure puts the job back in the container's line; an analysis that fails is recorded and not retried. Ingest fails a job whose analysis names another analyser than it published, so a mismatch can't loop. Not done yet: backfilling the shared library ahead of time, and several ingest versions running at once during a deploy (each publishes its own versions). Add read-time upgrade functions only if re-analysis gets expensive.
+- The analysis name includes its shape (`SCHEMA`) and analyser version (plugin version, models, Morfeusz, snap policy and Walenty). Bump `PLUGIN_VERSION` when the analysis output changes and `SCHEMA` when its shape changes.
+- The reader fetches the analysis by name at `/api/documents/{id}/analysis/{name}`. The URL stays stable for that version.
+- Migration: The API queues an update when a ready document’s analysis name differs from `versions/{lang}.json`. The old analysis stays available until the new one is ready. Ingest reuses an analysis whose key already exists. A document queued for more than 30 minutes can restart a lost run. Storage failures are retried and analysis failures are recorded.
 
 Token shape in the blob:
 
@@ -315,7 +314,7 @@ After a re-analysis, overrides are re-applied by character offset. If a token bo
 
 ## Span selection
 
-Selections snap to word boundaries. Computed on the phone from the bundle:
+Selections snap to word boundaries. Computed on the phone from the analysis:
 - dependency structure within the span (head, attachments, agreement)
 - government (which word is triggering which case)
 - matched multi-word expressions

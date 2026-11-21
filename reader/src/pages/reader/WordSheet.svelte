@@ -1,26 +1,20 @@
 <script lang="ts">
   import { untrack } from "svelte";
+  import { createQueries, useQueryClient } from "@tanstack/svelte-query";
+  import { entryQuery, formAudioQuery, prefetchEntry, tokenLemma } from "../../lib/lexicon.ts";
   import type { DocumentId, Lang } from "@skolia/shared/api";
-  import type { Bundle, Token } from "@skolia/shared/schema";
+  import type { Token } from "@skolia/shared/schema";
   import { LANGUAGES } from "@skolia/shared/lang";
   import type { Piece } from "@skolia/shared/doc";
   import type { LemmaId } from "@skolia/shared/api";
-  import {
-    entryFor,
-    entryIdFor,
-    mainPronunciations,
-    pronunciationsOf,
-    rankSenses,
-    recordingsOf,
-    relationLabel,
-  } from "@skolia/shared/lexicon";
+  import { mainPronunciations, rankSenses, relationLabel } from "@skolia/shared/lexicon";
   import type { Recording } from "@skolia/shared/schema";
   import { LemmaId as LemmaIdSchema } from "@skolia/shared/schemas";
   import { createForgetCards, createLearnWord, createWordCards, wordState } from "../../lib/words.ts";
   import { createAddCloze, createClozes } from "../../lib/clozes.ts";
   import { MAX_CLOZE_SENTENCE, MAX_CLOZE_WHY, blankOut } from "@skolia/shared/api";
   import type { ReaderMode } from "../../lib/mode.ts";
-  import { paradigmTables } from "@skolia/shared/paradigm";
+  import { formTables } from "@skolia/shared/paradigm";
   import { CASE_NAME, featureWords, roleLabel, UPOS_LABEL } from "@skolia/shared/ud";
   import Button from "../../components/Button.svelte";
   import ParadigmTable from "../../components/ParadigmTable.svelte";
@@ -33,7 +27,7 @@
 
   let {
     lang,
-    bundle,
+    version,
     piece,
     mode,
     headText,
@@ -45,7 +39,7 @@
   }: {
     /** The document's language, also for the lang attribute of its text */
     lang: Lang;
-    bundle: Bundle;
+    version: string | null | undefined;
     piece: WordPiece;
     mode: ReaderMode;
     headText: (sentence: number, index: number) => string | null;
@@ -143,34 +137,62 @@
       .map((part) => ({ text: part, label: part.startsWith("[") }));
   }
 
+  const client = useQueryClient();
+  const tokens = $derived(piece.words.filter((w) => w.token.upos !== "PUNCT"));
+  const ids = $derived([...new Set(tokens.flatMap(({ token }) => tokenLemma(token) ?? []))]);
+  $effect.pre(() => {
+    if (version === undefined) return;
+    for (const id of ids.toReversed()) prefetchEntry(client, id, version, true);
+  });
+  const entries = createQueries(() => ({ queries: ids.map((id) => entryQuery(client, id, version)) }));
+  const forms = createQueries(() => ({
+    queries: tokens.map(({ token }) => {
+      const index = ids.findIndex((id) => id === tokenLemma(token));
+      const lookup = entries[index];
+      const lemma = lookup?.data?.entries[0]?.lemma;
+      return formAudioQuery(
+        client,
+        lang,
+        token,
+        version,
+        index === -1 || (!!lookup && !lookup.isPending && (lemma === undefined || !sameWord(lemma, token.text))),
+      );
+    }),
+  }));
+
   const words = $derived(
-    piece.words
-      .filter((w) => w.token.upos !== "PUNCT")
-      .map((w) => {
-        const entry = entryFor(bundle, w.token);
-        const partOfWord = language.partOfWord(w.token);
-        const role = roleLabel(w.token.deprel);
-        const head = w.token.head === null ? null : headText(w.sentence, w.token.head);
-        const tokens = sentenceTokens(w.sentence);
-        const uses = entry && partOfWord === null ? language.uses(entry, tokens, w.index) : [];
-        const parsedId = LemmaIdSchema.safeParse(entryIdFor(bundle, w.token));
-        const said = mainPronunciations(pronunciationsOf(bundle, w.token.text, w.token.upos));
-        return {
-          ref: w,
-          entry,
-          lemmaId: parsedId.success ? parsedId.data : null,
-          said,
-          lemmaSaid: said.length === 0 && entry && !sameWord(entry.lemma, w.token.text) ? mainPronunciations(entry.pronunciations) : [],
-          heard: recordingsOf(bundle, w.token.text, w.token.upos).slice(0, 1),
-          partOfWord,
-          role: role && head ? { role, head } : null,
-          caseWhy: language.explainCase(tokens, w.index),
-          senses: entry ? rankSenses(entry.senses, w.token.feats) : [],
-          uses: uses.filter((u) => !u.idiom),
-          idioms: uses.filter((u) => u.idiom),
-          tables: entry && partOfWord === null ? paradigmTables(bundle, entry, w.token, language.paradigm, language.mergeLabels) : [],
-        };
-      }),
+    tokens.map((w, i) => {
+      const lookup = entries[ids.findIndex((id) => id === tokenLemma(w.token))];
+      const entry = lookup?.data?.entries[0];
+      const audio = entry && sameWord(entry.lemma, w.token.text) ? entry : forms[i]?.data;
+      const partOfWord = language.partOfWord(w.token);
+      const role = roleLabel(w.token.deprel);
+      const head = w.token.head === null ? null : headText(w.sentence, w.token.head);
+      const tokens = sentenceTokens(w.sentence);
+      const uses = entry && partOfWord === null ? language.uses(entry, tokens, w.index) : [];
+      const parsedId = LemmaIdSchema.safeParse(entry?.lemma_id ?? (lookup?.isSuccess ? w.token.lemma_id : undefined));
+      const said = mainPronunciations(audio?.pronunciations ?? []);
+      return {
+        ref: w,
+        entry,
+        loading: lookup?.isPending ?? false,
+        lookupError: lookup?.isError ?? false,
+        lemmaId: parsedId.success ? parsedId.data : null,
+        said,
+        lemmaSaid: said.length === 0 && entry && !sameWord(entry.lemma, w.token.text) ? mainPronunciations(entry.pronunciations) : [],
+        heard: audio?.recordings?.slice(0, 1) ?? [],
+        partOfWord,
+        role: role && head ? { role, head } : null,
+        caseWhy: language.explainCase(tokens, w.index),
+        senses: entry ? rankSenses(entry.senses, w.token.feats) : [],
+        uses: uses.filter((u) => !u.idiom),
+        idioms: uses.filter((u) => u.idiom),
+        tables:
+          entry && partOfWord === null
+            ? formTables((id) => lookup?.data?.featureSets[lang]?.[id], entry, w.token, language.paradigm, language.mergeLabels)
+            : [],
+      };
+    }),
   );
 
   let playing: HTMLAudioElement | null = null;
@@ -550,6 +572,10 @@
               {allSenses ? "Fewer meanings" : `All ${word.senses.length} meanings`}
             </Button>
           {/if}
+        {:else if word.loading}
+          <p class="muted" role="status">Loading dictionary entry…</p>
+        {:else if word.lookupError}
+          <p class="muted" role="status">Couldn’t load the dictionary entry.</p>
         {:else}
           <p class="muted">No dictionary meaning yet.</p>
         {/if}

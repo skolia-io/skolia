@@ -346,8 +346,7 @@ class Lexicon:
         return dict(self._db.execute("SELECT key, value FROM meta").fetchall())
 
     def version(self) -> str:
-        """The lexicon's version: its sources and their dates. Bundle names depend on it,
-        so a lexicon without one is refused."""
+        """The lexicon's version: its sources and their dates. The D1 export depends on it."""
         version = self.meta().get("version")
         if not version:
             raise ValueError("the lexicon has no version in its meta table")
@@ -375,6 +374,12 @@ class Lexicon:
             (lemma,),
         ):
             yield source_id, make_relation(kind, lemma, target_id, data)
+
+    def spoken_forms(self) -> Iterator[str]:
+        for (word,) in self._db.execute(
+            "SELECT word FROM pronunciation UNION SELECT word FROM recording"
+        ):
+            yield str(word)
 
     def pronunciations(self, word: str) -> dict[Upos, list[Pronunciation]]:
         """By part of speech: lead is /lɛd/ as a noun, /liːd/ as a verb."""

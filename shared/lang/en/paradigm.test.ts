@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { Bundle, Entry, Feats, Token } from "@skolia/shared/schema";
-import { paradigmTables, type Table } from "../../paradigm.ts";
+import type { Entry, Feats, Token } from "@skolia/shared/schema";
+import { formTables, type Table } from "../../paradigm.ts";
 import { english } from "./index.ts";
 
 function token(text: string, lemma: string, upos: Token["upos"], feats: Feats): Token {
@@ -75,21 +75,11 @@ const FIRST: Entry = {
   ],
 };
 
-const BUNDLE: Bundle = {
-  schema: 2,
-  lang: "en",
-  lexicon: "t",
-  attribution: "",
-  entries: { "en:be:VERB": BE, "en:first:ADJ": FIRST },
-  lookup: { "en:be:AUX": "en:be:VERB" },
-  feats: [PRES_1SG, PRES_3SG, { VerbForm: "Inf" }, { Degree: "Pos" }, { Degree: "Sup" }],
-  pronunciations: {},
-  recordings: {},
-};
+const FEATURE_SETS: readonly Feats[] = [PRES_1SG, PRES_3SG, { VerbForm: "Inf" }, { Degree: "Pos" }, { Degree: "Sup" }];
 
 test("a curly apostrophe matches the lexicon's straight one", () => {
   const m = token("’m", "be", "AUX", PRES_1SG);
-  assert.deepEqual(current(paradigmTables(BUNDLE, BE, m, english.paradigm)), ["'m"]);
+  assert.deepEqual(current(formTables((id) => FEATURE_SETS[id], BE, m, english.paradigm)), ["'m"]);
 });
 
 const PAST = (person: "1" | "2" | "3", number: "Sing" | "Plur"): Feats => ({
@@ -124,27 +114,23 @@ const BURN: Entry = {
   ],
 };
 
-const BURN_BUNDLE: Bundle = {
-  ...BUNDLE,
-  entries: { "en:burn:VERB": BURN },
-  feats: [{ VerbForm: "Inf" }, ...PAST_ALL, PART_PAST, PART_PASS],
-};
+const BURN_FEATURE_SETS: readonly Feats[] = [{ VerbForm: "Inf" }, ...PAST_ALL, PART_PAST, PART_PASS];
 
 test("in merged rows only the token's own variant is marked", () => {
   const burned = token("burned", "burn", "VERB", PAST("3", "Plur"));
-  const past = paradigmTables(BURN_BUNDLE, BURN, burned, english.paradigm).find((t) => t.title === "Past");
+  const past = formTables((id) => BURN_FEATURE_SETS[id], BURN, burned, english.paradigm).find((t) => t.title === "Past");
   assert.ok(past);
   assert.deepEqual(current([past]), ["burned"]);
 });
 
 test("a passive participle is marked among the past participles", () => {
   const burned = token("burned", "burn", "VERB", PART_PASS);
-  const participle = paradigmTables(BURN_BUNDLE, BURN, burned, english.paradigm).find((t) => t.title === "Past participle");
+  const participle = formTables((id) => BURN_FEATURE_SETS[id], BURN, burned, english.paradigm).find((t) => t.title === "Past participle");
   assert.ok(participle);
   assert.deepEqual(current([participle]), ["burned"]);
 });
 
 test("features no form has don't stop a match", () => {
   const first = token("first", "first", "ADJ", { Degree: "Pos", NumForm: "Word", NumType: "Ord" });
-  assert.deepEqual(current(paradigmTables(BUNDLE, FIRST, first, english.paradigm)), ["first"]);
+  assert.deepEqual(current(formTables((id) => FEATURE_SETS[id], FIRST, first, english.paradigm)), ["first"]);
 });

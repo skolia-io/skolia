@@ -2,7 +2,7 @@
 
 usage: uv run python scripts/eval_lexicon.py LEXICON.sqlite BLOB.json [BLOB.json ...]
 
-Counts word tokens (not punctuation, symbols or X) by how bundle.resolve found their
+Counts word tokens (not punctuation, symbols or X) by how the lookup found their
 entry, and lists the most frequent lemma_ids with no senses.
 """
 
@@ -10,16 +10,34 @@ import argparse
 import json
 from collections import Counter
 from pathlib import Path
-from typing import cast
+from typing import Literal, cast
 
-from skolia_analysis.lexicon.bundle import resolve
-from skolia_analysis.lexicon.schema import Match
 from skolia_analysis.lexicon.store import Lexicon
-from skolia_analysis.schema import Blob, Upos
+from skolia_analysis.schema import Blob, Token, Upos
+
+type Match = Literal["exact", "other-pos", "lowercase", "none"]
 
 NOT_WORDS: set[Upos] = {"PUNCT", "SYM", "X"}
 MATCHES: tuple[Match, ...] = ("exact", "other-pos", "lowercase", "none")
 SHOW_MISSES = 40
+
+
+def match_of(lexicon: Lexicon, token: Token, token_id: str) -> Match:
+    exact = lexicon.get(token_id)
+    if exact is not None:
+        return "exact" if exact.senses else "none"
+    lang, rest = token_id.split(":", 1)
+    lemma, _ = rest.rsplit(":", 1)
+    lower = lemma.lower()
+    if lower != lemma:
+        lowered = lexicon.get(f"{lang}:{lower}:{token['upos']}")
+        if lowered is not None and lowered.senses:
+            return "lowercase"
+    if any(row.senses for row in lexicon.by_lemma(lemma)):
+        return "other-pos"
+    if lower != lemma and any(row.senses for row in lexicon.by_lowercase(lower)):
+        return "lowercase"
+    return "none"
 
 
 def main() -> None:
@@ -40,7 +58,7 @@ def main() -> None:
                 by_match["none"] += 1
                 continue
             if token_id not in cache:
-                cache[token_id] = resolve(lexicon, token_id)[1]
+                cache[token_id] = match_of(lexicon, token, token_id)
             match = cache[token_id]
             by_match[match] += 1
             if match == "none":

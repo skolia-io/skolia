@@ -3,7 +3,7 @@
   import { LICENCE_INFO } from "@skolia/shared/api";
   import type { Token } from "@skolia/shared/schema";
   import { getDocument, getText, loadReading, type Reading } from "../../lib/api.ts";
-  import { layout, tokenKey, type Layout } from "@skolia/shared/doc";
+  import { layout, tokenKey, type Layout, type Piece } from "@skolia/shared/doc";
   import { afterPoll, notice as noticeFor, queueText, retryAfter } from "../../lib/reading.ts";
   import Button from "../../components/Button.svelte";
   import EditDocument from "./EditDocument.svelte";
@@ -24,7 +24,8 @@
   import type { ReaderMode } from "../../lib/mode.ts";
   import { createClozes } from "../../lib/clozes.ts";
   import SaveToLists from "../../components/SaveToLists.svelte";
-  import { createQuery } from "@tanstack/svelte-query";
+  import { createQuery, useQueryClient } from "@tanstack/svelte-query";
+  import { lexiconInfoQuery, prefetchEntry, tokenLemma } from "../../lib/lexicon.ts";
   import { audioQuery, userQuery } from "../../lib/queries.ts";
   import { type AudioAnnotation, inRange, placeAudio } from "../../lib/annotations.ts";
 
@@ -42,6 +43,53 @@
   const notice = $derived(noticeFor(summary, reading !== null, error));
 
   const doc: Layout | null = $derived(reading ? layout(reading.text, reading.analysis) : null);
+  const client = useQueryClient();
+  const lexicon = createQuery(() => lexiconInfoQuery(reading?.lang));
+  const lexiconVersion = $derived(lexicon.data?.version ?? (lexicon.isPending ? undefined : null));
+  function lookup(piece: Piece, version: string | null, priority = false): void {
+    if (piece.kind !== "word") return;
+    for (const { token } of priority ? piece.words.toReversed() : piece.words) {
+      const id = tokenLemma(token);
+      if (id !== undefined) prefetchEntry(client, id, version, priority);
+    }
+  }
+
+  const paragraphs = $derived.by(() => {
+    const paragraphs: { piece: Piece; index: number }[][] = [[]];
+    for (const [index, piece] of (doc?.pieces ?? []).entries()) {
+      if (piece.kind === "gap" && piece.text.includes("\n")) {
+        const newline = piece.text.indexOf("\n");
+        const before = piece.text.slice(0, newline);
+        if (before) paragraphs.at(-1)?.push({ piece: { ...piece, text: before }, index });
+        paragraphs.push([{ piece: { ...piece, text: piece.text.slice(newline + 1) }, index }]);
+      } else {
+        paragraphs.at(-1)?.push({ piece, index });
+      }
+    }
+    return paragraphs;
+  });
+
+  $effect(() => {
+    const version = lexiconVersion;
+    if (version === undefined) return;
+    const groups = paragraphs;
+    const blocks = article?.querySelectorAll(".paragraph");
+    if (!blocks?.length) return;
+    const observer = new IntersectionObserver(
+      (records) => {
+        for (const record of records) {
+          if (!record.isIntersecting) continue;
+          const index = Number((record.target as HTMLElement).dataset.paragraph);
+          for (const { piece } of groups[index] ?? []) lookup(piece, version);
+          observer.unobserve(record.target);
+        }
+      },
+      { rootMargin: `0px 0px ${window.innerHeight}px 0px` },
+    );
+    blocks.forEach((block) => observer.observe(block));
+    return () => observer.disconnect();
+  });
+
   const piece = $derived(doc && selected !== null ? doc.words[selected] : undefined);
 
   /** The piece holding the selected word's head, to mark it in the text. */
@@ -134,7 +182,7 @@
             reading = next;
           }
         }
-        // No reading yet, or only one this reader can't use (an old bundle schema)
+        // No reading yet, or only one this reader can't use (an unsupported analysis schema)
         if (reading === null && plain === null) {
           const text = await getText(id);
           if (cancelled) return;
@@ -459,61 +507,78 @@
 
     {#if doc}
       <article class={["text", { narrated: places.size > 0 }]} lang={reading?.lang} bind:this={article}>
-        {#each doc.pieces as p, i (i)}
-          <!-- Words are spans, not buttons: a button is laid out as an inline block, so a
+        {#each paragraphs as paragraph, group (group)}
+          <div class="paragraph" data-paragraph={group}>
+            {#each paragraph as { piece: p, index: i } (i)}
+              <!-- Words are spans, not buttons: a button is laid out as an inline block, so a
                line could break between a word and the punctuation after it. A play button is
                taken out of the line, into the gutter beside it. -->
-          {#each places.get(i) ?? [] as placed (placed.id)}
-            {@const label = `${isPlaying(placed) ? "Pause" : "Play"} “${snippet(reading?.text ?? "", placed.start, 30)}”`}
-            <button
-              type="button"
-              class={["play", { on: isPlaying(placed) }]}
-              aria-label={label}
-              title={label}
-              onclick={() => playOrPause(placed)}
-            >
-              {#if isPlaying(placed)}
-                <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 3.5v9M10.5 3.5v9" /></svg>
+              {#each places.get(i) ?? [] as placed (placed.id)}
+                {@const label = `${isPlaying(placed) ? "Pause" : "Play"} “${snippet(reading?.text ?? "", placed.start, 30)}”`}
+                <button
+                  type="button"
+                  class={["play", { on: isPlaying(placed) }]}
+                  aria-label={label}
+                  title={label}
+                  onclick={() => playOrPause(placed)}
+                >
+                  {#if isPlaying(placed)}
+                    <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 3.5v9M10.5 3.5v9" /></svg>
+                  {:else}
+                    <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 3.5v9l7-4.5z" /></svg>
+                  {/if}
+                </button>
+              {/each}{#if p.kind === "gap"}
+                {#if lit(i)}
+                  <span class="playing">{p.text}</span>
+                {:else}
+                  {p.text}
+                {/if}
+              {:else if p.punct}
+                <span class={["punct", { playing: lit(i) }]}>{p.text}</span>
               {:else}
-                <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 3.5v9l7-4.5z" /></svg>
+                <span
+                  role="button"
+                  tabindex={p.id === tabStop ? 0 : -1}
+                  class={[
+                    "w",
+                    {
+                      selected: p.id === selected,
+                      head: p.id === headPiece,
+                      trigger: p.id === triggerPiece,
+                      playing: lit(i),
+                    },
+                  ]}
+                  onpointerdown={(event) => {
+                    if (event.button === 0 && lexiconVersion !== undefined) lookup(p, lexiconVersion, true);
+                  }}
+                  onclick={() => toggle(p.id)}
+                  onkeydown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      toggle(p.id);
+                    }
+                  }}
+                  >{p.text}</span
+                >
               {/if}
-            </button>
-          {/each}{#if p.kind === "gap"}
-            {#if lit(i)}
-              <span class="playing">{p.text}</span>
-            {:else}
-              {p.text}
-            {/if}
-          {:else if p.punct}
-            <span class={["punct", { playing: lit(i) }]}>{p.text}</span>
-          {:else}
-            <span
-              role="button"
-              tabindex={p.id === tabStop ? 0 : -1}
-              class={[
-                "w",
-                {
-                  selected: p.id === selected,
-                  head: p.id === headPiece,
-                  trigger: p.id === triggerPiece,
-                  playing: lit(i),
-                },
-              ]}
-              onclick={() => toggle(p.id)}
-              onkeydown={(event) => {
-                if (event.key === "Enter" || event.key === " ") {
-                  event.preventDefault();
-                  toggle(p.id);
-                }
-              }}
-              >{p.text}</span
-            >
-          {/if}
+            {/each}
+          </div>
         {/each}
       </article>
       <audio bind:this={audio} bind:paused onended={() => (clip = null)} preload="none"></audio>
-      {#if reading}
-        <footer>{reading.bundle.attribution}</footer>
+      {#if lexicon.data?.sources.length}
+        <footer>
+          Dictionary sources
+          {#each lexicon.data.sources as source (source.title)}
+            <a href={source.url}>{source.title}</a>
+            ({source.license})
+          {/each}
+          {#if reading?.lang === "pl"}
+            <a href="https://commons.wikimedia.org">Wikimedia Commons</a>
+            (recordings credited and licensed on their file pages)
+          {/if}
+        </footer>
       {/if}
     {:else if plain !== null}
       <article class="text" lang={summary?.lang} bind:this={article}>{plain}</article>
@@ -524,7 +589,7 @@
     <!-- Not remade per word: focus, scroll and the sheet's height carry over -->
     <WordSheet
       lang={reading.lang}
-      bundle={reading.bundle}
+      version={lexiconVersion}
       {piece}
       {mode}
       {headText}

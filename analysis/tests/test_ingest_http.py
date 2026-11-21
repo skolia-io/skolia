@@ -16,9 +16,7 @@ from skolia_analysis.ingest.schema import IngestJob, JobAnswer, JobResult, Ready
 JOB: IngestJob = {"doc": "a" * 64, "lang": "pl"}
 ANALYSIS: ReadyAnalysis = {
     "analyzer": "pl/1",
-    "lexicon": "lex/1",
     "analysis": f"doc/{'a' * 64}/analysis/s2-a1.json.br",
-    "bundle": f"doc/{'a' * 64}/bundle/b1-v1-a1-l1.json.br",
 }
 READY: JobResult = {"outcome": "ready", "analysis": ANALYSIS, "error": None}
 ISO = re.compile(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z")
