@@ -26,7 +26,7 @@ VALENCY = Valency(
 )
 
 
-def tok(  # noqa: PLR0913
+def tok(
     text: str,
     lemma: str,
     upos: Upos,
