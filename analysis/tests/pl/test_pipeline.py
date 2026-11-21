@@ -1,7 +1,8 @@
-"""pl.assemble on hand-built parser output: from ParsedSentence to the analysis blob, with
-Morfeusz candidates and Walenty valency, but no parser model."""
+"""The Polish analyzer on hand-built parser output: from ParsedSentence to the analysis
+blob, with Morfeusz candidates and Walenty valency, but no parser model."""
 
 from collections.abc import Sequence
+from importlib.metadata import version
 
 from skolia_analysis.blob import CandidateLookup
 from skolia_analysis.lang.pl import plugin as pl
@@ -60,12 +61,25 @@ def sentence(text: str, start: int, tokens: Sequence[tuple[ParsedWord, ...]]) ->
     )
 
 
+class Unparsing:
+    """A parser by name only: the tests hand the analyzer its parse."""
+
+    name = MODEL
+
+    def __call__(self, text: str) -> list[ParsedSentence]:
+        raise AssertionError("not parsed in these tests")
+
+
 def assemble(
     text: str, parsed: list[ParsedSentence], expressions: Sequence[ExpressionDef] = ()
 ) -> Blob:
-    return pl.assemble(
-        text, parsed, MODEL, candidates=CANDIDATES, expressions=expressions, valency=VALENCY
+    analyzer = pl.PolishAnalyzer(
+        parser=Unparsing(),
+        candidates=CANDIDATES,
+        expressions=tuple(expressions),
+        valency=VALENCY,
     )
+    return analyzer.assemble(text, parsed)
 
 
 def szukam_starego_psa(text: str, start: int = 0) -> ParsedSentence:
@@ -205,10 +219,12 @@ def test_cases_are_corrected_before_they_are_explained() -> None:
     assert starego.get("case_reason") == {"rule": "agreement", "trigger": 2}
 
 
-def test_analyzer_matches_analyzer_name() -> None:
+def test_blob_names_its_analyzer() -> None:
     text = "Szukam starego psa."
     blob = assemble(text, [szukam_starego_psa(text)])
-    assert blob["analyzer"] == pl.analyzer_name(MODEL, valency=VALENCY)
+    morfeusz = version("morfeusz2")
+    expected = f"pl/{pl.PLUGIN_VERSION}+{MODEL}+morfeusz-{morfeusz}+snap-upos+walenty-test"
+    assert blob["analyzer"] == expected
 
 
 def test_no_lemma_means_no_lemma_id() -> None:

@@ -3,15 +3,14 @@ keeps the document's status (ingest/src/workflow.ts), from the job's result."""
 
 import json
 import time
-from collections.abc import Callable, Generator
+from collections.abc import Callable, Generator, Mapping
 from contextlib import contextmanager
-from dataclasses import dataclass
 
 import brotli
 import structlog
 
 from ..blob import SCHEMA
-from ..schema import Blob
+from ..plugin import Analyzer
 from .blobs import BROTLI, BlobError, Blobs
 from .jobs import NO_PROGRESS, JobQueue, Progress, Received, Stage
 from .schema import (
@@ -40,21 +39,8 @@ class JobError(Exception):
     """A job that can't succeed as given; recorded in the status, not retried."""
 
 
-@dataclass
-class Pipeline:
-    """What one language needs to ingest a text. Loading it is slow (models), so it's
-    built once per worker."""
-
-    lang: str
-    analyze: Callable[[str], Blob]
-    analyzer: str
-    """The name analyze() puts in its blobs, known without analysing anything."""
-
-    def versions(self) -> Versions:
-        return {
-            "analyzer": self.analyzer,
-            "analysis": analysis_name(SCHEMA, self.analyzer),
-        }
+def versions(analyzer: Analyzer) -> Versions:
+    return {"analyzer": analyzer.name, "analysis": analysis_name(SCHEMA, analyzer.name)}
 
 
 def compressed_json(value: object) -> bytes:
@@ -80,14 +66,16 @@ def timed(
 
 
 class Ingester:
-    def __init__(self, blobs: Blobs, pipelines: dict[str, Pipeline]) -> None:
+    def __init__(self, blobs: Blobs, analyzers: Mapping[str, Analyzer]) -> None:
+        """analyzers by language. Loading one is slow (models), so they're built once per
+        worker."""
         self._blobs = blobs
-        self._pipelines = pipelines
+        self._analyzers = analyzers
 
     def publish_versions(self) -> None:
         """Tell the API what's current, so it can queue documents analysed before."""
-        for lang, pipeline in self._pipelines.items():
-            self._blobs.put(versions_key(lang), json.dumps(pipeline.versions()).encode(), JSON)
+        for lang, analyzer in self._analyzers.items():
+            self._blobs.put(versions_key(lang), json.dumps(versions(analyzer)).encode(), JSON)
 
     def process(self, job: IngestJob, progress: Progress = NO_PROGRESS) -> JobResult:
         """Raises BlobError when storage fails: that's worth retrying, unlike a failed
@@ -109,9 +97,9 @@ class Ingester:
 
     def _process(self, job: IngestJob, progress: Progress) -> ReadyAnalysis:
         doc = job["doc"]
-        pipeline = self._pipelines.get(job["lang"])
-        if pipeline is None:
-            raise JobError(f"no pipeline for language {job['lang']!r}")
+        analyzer = self._analyzers.get(job["lang"])
+        if analyzer is None:
+            raise JobError(f"no analyzer for language {job['lang']!r}")
         with timed(progress, doc, None, "reading"):
             raw = self._blobs.get(text_key(doc))
             if raw is None:
@@ -123,22 +111,18 @@ class Ingester:
                 raise JobError("text and language don't match the document id")
             if len(text) > MAX_TEXT_LENGTH:
                 raise JobError(f"text is longer than {MAX_TEXT_LENGTH} characters")
-        versions = pipeline.versions()
-        a_key = analysis_key(doc, versions["analysis"])
+        names = versions(analyzer)
+        a_key = analysis_key(doc, names["analysis"])
         if not self._blobs.exists(a_key):
             with timed(progress, doc, words, "analysing"):
-                analysis = pipeline.analyze(text)
-            if analysis["analyzer"] != pipeline.analyzer:
-                raise JobError(
-                    f"analysed as {analysis['analyzer']!r}, but published {pipeline.analyzer!r}"
-                )
+                analysis = analyzer(text)
             with timed(progress, doc, words, "compressing-analysis"):
                 data = compressed_json(analysis)
             with timed(progress, doc, words, "uploading-analysis", size_bytes=len(data)):
                 self._blobs.put(a_key, data, JSON, BROTLI)
         else:
-            log.info("analysis already exists", doc=doc, words=words, analysis=versions["analysis"])
-        return {"analyzer": pipeline.analyzer, "analysis": a_key}
+            log.info("analysis already exists", doc=doc, words=words, analysis=names["analysis"])
+        return {"analyzer": analyzer.name, "analysis": a_key}
 
     def run(
         self,

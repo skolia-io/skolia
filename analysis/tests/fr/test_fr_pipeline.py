@@ -1,5 +1,5 @@
-"""fr.assemble on hand-built parser output: from ParsedSentence to the analysis blob, with
-no Stanza model."""
+"""The French analyzer on hand-built parser output: from ParsedSentence to the analysis
+blob, with no Stanza model."""
 
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -10,6 +10,7 @@ import pytest
 from skolia_analysis.blob import SCHEMA
 from skolia_analysis.ingest import cli
 from skolia_analysis.ingest.schema import analysis_name
+from skolia_analysis.ingest.worker import versions
 from skolia_analysis.lang.fr import plugin as fr
 from skolia_analysis.parsed import ParsedSentence, ParsedToken, ParsedWord, align
 from skolia_analysis.plugin import Options
@@ -96,8 +97,12 @@ class FakeParser:
         return self.sentences
 
 
+def assemble() -> Blob:
+    return fr.analyzer(FakeParser(MODEL, []), OPTIONS, None).assemble(TEXT, parse())
+
+
 def test_tokens_have_utf16_offsets_lemma_ids_and_readings() -> None:
-    blob = fr.assemble(TEXT, parse(), MODEL, OPTIONS)
+    blob = assemble()
     first, second = blob["sentences"]
     assert (first["start"], first["end"]) == (0, 15)
     # 😀 is past the BMP: two UTF-16 units, so the period after it moves by one
@@ -137,7 +142,7 @@ def test_tokens_have_utf16_offsets_lemma_ids_and_readings() -> None:
 
 
 def test_pronouns_and_possessives_get_their_dictionary_lemmas() -> None:
-    first, second = fr.assemble(TEXT, parse(), MODEL, OPTIONS)["sentences"]
+    first, second = assemble()["sentences"]
     j, _, ma, mere, _ = first["tokens"]
     assert (j["lemma"], j["lemma_id"]) == ("je", "fr:je:PRON")
     assert (ma["lemma"], ma["lemma_id"]) == ("mon", "fr:mon:DET")
@@ -148,22 +153,21 @@ def test_pronouns_and_possessives_get_their_dictionary_lemmas() -> None:
 
 
 def test_expressions_match_inside_a_fused_word() -> None:
-    first, second = fr.assemble(TEXT, parse(), MODEL, OPTIONS)["sentences"]
+    first, second = assemble()["sentences"]
     assert first["expressions"] == []
     assert second["expressions"] == [{"from": 1, "to": 2, "id": "fr:parler de"}]
 
 
 def test_blob_names_its_analyzer() -> None:
-    blob = fr.assemble(TEXT, parse(), MODEL, OPTIONS)
-    assert blob["analyzer"] == fr.analyzer_name(MODEL)
-    assert blob["analyzer"] != fr.analyzer_name("another-model")
+    blob = assemble()
+    assert blob["analyzer"] == f"fr/{fr.PLUGIN_VERSION}+{MODEL}"
 
 
 def test_analyzer_parses_then_assembles() -> None:
     analyzer = fr.analyzer(FakeParser(MODEL, parse()), OPTIONS, None)
     blob: Blob = analyzer(TEXT)
     assert analyzer.name == blob["analyzer"]
-    assert blob == fr.assemble(TEXT, parse(), MODEL, OPTIONS)
+    assert blob == assemble()
     assert analyzer.assemble(TEXT, parse()) == blob
     assert blob["sentences"][0]["tokens"][0]["lemma"] == "je"
 
@@ -177,10 +181,10 @@ def test_ingest_pipeline_publishes_the_analyzer_s_name(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     monkeypatch.setitem(fr.MODELS, fr.DEFAULT_MODEL, lambda: FakeParser(MODEL, parse()))
-    pipeline = cli.pipeline("fr", tmp_path)
-    blob = pipeline.analyze(TEXT)
-    assert pipeline.lang == blob["lang"] == "fr"
-    assert pipeline.versions() == {
+    analyzer = cli.analyzer("fr", tmp_path)
+    blob = analyzer(TEXT)
+    assert blob["lang"] == "fr"
+    assert versions(analyzer) == {
         "analyzer": blob["analyzer"],
         "analysis": analysis_name(SCHEMA, blob["analyzer"]),
     }

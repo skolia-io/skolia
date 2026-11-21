@@ -6,15 +6,14 @@ candidates, no snapping): the parser's reading is the token's.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
+from collections.abc import Callable
 from pathlib import Path
 
-from ...blob import build
 from ...lexicon.entry import Extras
-from ...parsed import ParsedSentence, Parser
+from ...parsed import Parser
 from ...parsers.stanza_parser import StanzaParser
-from ...plugin import Options, ParsingAnalyzer
-from ...schema import Blob
+from ...plugin import Options
+from ..plain import PlainAnalyzer
 from .lemmas import relemmatize
 from .lexicon import Source
 
@@ -38,33 +37,17 @@ def parser(model: str = DEFAULT_MODEL) -> Parser:
     return MODELS[model]()
 
 
-def analyzer_name(model_name: str) -> str:
-    """The version of everything that shapes an analysis. A document analysed under
-    another name is out of date."""
-    return f"{LANG}/{PLUGIN_VERSION}+{model_name}"
-
-
-def assemble(
-    text: str, parsed: Iterable[ParsedSentence], model_name: str, options: Options
-) -> Blob:
-    return build(
-        relemmatize(parsed),
-        lang=LANG,
-        analyzer=analyzer_name(model_name),
-        text=text,
-        expressions=options.expressions,
-    )
-
-
-def analyzer(parser: Parser, options: Options, data: Path | None) -> ParsingAnalyzer:
+def analyzer(parser: Parser, options: Options, data: Path | None) -> PlainAnalyzer:
     """French uses nothing from data besides the lexicon, and has no candidate lookup:
     Options.candidates has no effect."""
     if options.snap is not None:
         raise ValueError(f"French has no candidates to snap to (snap {options.snap!r})")
-    return ParsingAnalyzer(
-        analyzer_name(parser.name),
-        parser,
-        lambda text, parsed: assemble(text, parsed, parser.name, options),
+    return PlainAnalyzer(
+        lang=LANG,
+        version=PLUGIN_VERSION,
+        parser=parser,
+        expressions=options.expressions,
+        preprocess=relemmatize,
     )
 
 
