@@ -36,7 +36,7 @@ SZUKAM: Feats = {
 PERIOD: Feats = {"PunctType": "Peri"}
 
 
-def word(  # noqa: PLR0913
+def word(
     text: str,
     lemma: str | None,
     upos: Upos,
