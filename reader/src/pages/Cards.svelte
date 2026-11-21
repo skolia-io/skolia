@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createQuery } from "@tanstack/svelte-query";
-  import { LANGS, LANGUAGE_INFO, blankParts, type Card, type Lang, type User } from "@skolia/shared/api";
+  import { LANGS, LANGUAGE_INFO, blankParts, type Card, type Lang, type LemmaId, type User } from "@skolia/shared/api";
   import { signIn } from "../lib/api.ts";
   import { createCardList, createDeleteCard, type CardPage } from "../lib/cards.ts";
   import { countsQuery } from "../lib/queries.ts";
@@ -23,24 +23,54 @@
   const remove = createDeleteCard();
   const pages = $derived(list.data?.pages ?? []);
   const cards = $derived(pages.flatMap((page) => page.items.map((card) => ({ card, page }))));
+  const now = new Date();
+  const groups = $derived(groupByLemma(cards));
   let error = $state<string | null>(null);
   const failure = $derived(error ?? (cardCounts.error ?? list.error)?.message ?? null);
-  const now = new Date();
 
-  function lemmaOf(card: Card, page: CardPage): string {
-    return page.entries.get(card.lemmaId)?.lemma ?? card.lemmaId.split(":")[1] ?? card.lemmaId;
+  /** One or more of a lemma's cards, shown and deleted together. */
+  type Row = readonly [Card, ...Card[]];
+
+  /** A lemma's cards, in the order its first card came. Its recognition and production cards
+   * share a row when they're at the same point in their schedules; each cloze card has its own. */
+  type Group = { readonly lemmaId: LemmaId; readonly page: CardPage; readonly rows: readonly Row[] };
+
+  function groupByLemma(cards: readonly { card: Card; page: CardPage }[]): readonly Group[] {
+    const byLemma = new Map<LemmaId, { page: CardPage; cards: Card[] }>();
+    for (const { card, page } of cards) {
+      const group = byLemma.get(card.lemmaId);
+      if (group) group.cards.push(card);
+      else byLemma.set(card.lemmaId, { page, cards: [card] });
+    }
+    return [...byLemma].map(([lemmaId, { page, cards }]) => {
+      const ofKind = (kind: Card["kind"]) => cards.filter((card) => card.kind === kind);
+      const [recognition] = ofKind("recognition");
+      const [production] = ofKind("production");
+      const words: readonly Row[] =
+        recognition && production && scheduleLabel(recognition, now) === scheduleLabel(production, now)
+          ? [[recognition, production]]
+          : [recognition, production].flatMap((card) => (card ? [[card] as const] : []));
+      return { lemmaId, page, rows: [...words, ...ofKind("cloze").map((card) => [card] as const)] };
+    });
   }
 
-  function glossOf(card: Card, page: CardPage): string | null {
-    const entry = page.entries.get(card.lemmaId);
-    return entry?.senses[0]?.gloss ?? null;
+  function lemmaOf(lemmaId: LemmaId, page: CardPage): string {
+    return page.entries.get(lemmaId)?.lemma ?? lemmaId.split(":")[1] ?? lemmaId;
   }
 
-  async function deleteOne(card: Card): Promise<void> {
-    if (!confirm("Delete this card and its reviews?")) return;
+  function glossOf(lemmaId: LemmaId, page: CardPage): string | null {
+    return page.entries.get(lemmaId)?.senses[0]?.gloss ?? null;
+  }
+
+  function kindsLabel(row: Row): string {
+    return row.length === 2 ? "Recognition & production" : CARD_KIND_LABELS[row[0].kind];
+  }
+
+  async function deleteRow(row: Row): Promise<void> {
+    if (!confirm(row.length === 1 ? "Delete this card and its reviews?" : `Delete these ${row.length} cards and their reviews?`)) return;
     error = null;
     try {
-      await remove.mutateAsync(card.id);
+      await Promise.all(row.map((card) => remove.mutateAsync(card.id)));
     } catch (e: unknown) {
       error = e instanceof Error ? e.message : String(e);
     }
@@ -70,37 +100,39 @@
       <p class="muted"> No cards in {LANGUAGE_INFO[selected].name} yet. Words you look up in the reader turn into cards here. </p>
     {:else}
       <ul class="cards" class:stale={list.isPlaceholderData}>
-        {#each cards as { card, page } (card.id)}
+        {#each groups as { lemmaId, page, rows } (lemmaId)}
           <li>
-            <div class="front">
-              {#if card.kind === "cloze"}
-                {@const parts = blankParts(card.data)}
-                <p class="sentence" lang={selected}>{parts.before}<mark>{parts.blank}</mark>{parts.after}</p>
-                <p class="muted">
-                  <span lang={selected}>{lemmaOf(card, page)}</span>
-                  · <a href="#/doc/{card.data.documentId}">Open the text</a>
-                </p>
-              {:else}
-                <p
-                  ><strong class="lemma" lang={selected}>{lemmaOf(card, page)}</strong>
-                  <span class="kind">{CARD_KIND_LABELS[card.kind]}</span></p
-                >
-                {#if glossOf(card, page)}
-                  <p class="muted">{glossOf(card, page)}</p>
-                {/if}
-              {/if}
-            </div>
-            <div class="side">
-              <span class="schedule" class:paused={card.state === "known"}>{scheduleLabel(card, now)}</span>
-              <Button
-                variant="quiet"
-                small
-                disabled={remove.isPending}
-                title="Delete this card and its reviews"
-                onclick={() => void deleteOne(card)}
-                >Delete</Button
-              >
-            </div>
+            <p><strong class="lemma" lang={selected}>{lemmaOf(lemmaId, page)}</strong></p>
+            {#if glossOf(lemmaId, page)}
+              <p class="muted">{glossOf(lemmaId, page)}</p>
+            {/if}
+            <ul class="rows">
+              {#each rows as row (row[0].id)}
+                {@const card = row[0]}
+                <li>
+                  {#if card.kind === "cloze"}
+                    {@const parts = blankParts(card.data)}
+                    <p class="front"
+                      ><span class="sentence" lang={selected}>{parts.before}<mark>{parts.blank}</mark>{parts.after}</span>
+                      <a class="muted" href="#/doc/{card.data.documentId}">Source</a></p
+                    >
+                  {:else}
+                    <p class="front kind">{kindsLabel(row)}</p>
+                  {/if}
+                  <div class="side">
+                    <span class="schedule" class:paused={card.state === "known"}>{scheduleLabel(card, now)}</span>
+                    <Button
+                      variant="quiet"
+                      small
+                      disabled={remove.isPending}
+                      title={row.length === 1 ? "Delete this card and its reviews" : "Delete these cards and their reviews"}
+                      onclick={() => void deleteRow(row)}
+                      >Delete</Button
+                    >
+                  </div>
+                </li>
+              {/each}
+            </ul>
           </li>
         {/each}
       </ul>
@@ -125,25 +157,35 @@
     opacity: 0.6;
   }
 
-  .cards li {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 1rem;
+  .cards > li {
     padding: 0.75rem 0;
     border-bottom: 1px solid var(--line);
   }
 
-  .front {
-    min-width: 0;
-  }
-
-  .front p {
+  .cards p {
     margin: 0;
   }
 
-  .front p + p {
+  .cards p + p {
     margin-top: 0.2rem;
+  }
+
+  .rows {
+    list-style: none;
+    margin: 0.35rem 0 0;
+    padding: 0;
+  }
+
+  .rows li {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.2rem 0;
+  }
+
+  .front {
+    min-width: 0;
   }
 
   .sentence,
@@ -155,17 +197,26 @@
     font-size: 1.1rem;
   }
 
+  .sentence {
+    margin-right: 0.35rem;
+  }
+
+  mark {
+    background: var(--line);
+    color: inherit;
+    border-radius: 0.2em;
+    padding: 0 0.1em;
+  }
+
   .kind {
-    margin-left: 0.35rem;
     color: var(--muted);
-    font-size: 0.8rem;
+    font-size: 0.9rem;
   }
 
   .side {
     display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 0.25rem;
+    align-items: center;
+    gap: 0.75rem;
     flex-shrink: 0;
     white-space: nowrap;
   }
