@@ -137,8 +137,9 @@ def test_schema_columns() -> None:
             " + controllee2{prepadjp(za,acc)}"
         ),
         (
-            "oczekiwać: pewny: _: : imperf: subj{np(str)} + {cp(aż)} + {lex(xp(mod[prepnp(z,inst)]),"  # noqa: E501
-            "_,'serce',ratr1({lex(pactp(agr),agr,agr,aff,'bić',,atr1({advp(mod)}))}))}"
+            "oczekiwać: pewny: _: : imperf: subj{np(str)} + {cp(aż)} + "
+            "{lex(xp(mod[prepnp(z,inst)]),_,'serce',ratr1({lex(pactp(agr),agr,agr,aff,'bić',,"
+            "atr1({advp(mod)}))}))}"
         ),
         "strach: pewny: : : : {np(gen)} + {possp}",
         "pewny: pewny: : pred: : {cp(że)}",
