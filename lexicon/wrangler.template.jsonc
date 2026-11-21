@@ -7,7 +7,7 @@
 // it is the switch.
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "${name}",
+  "name": "skolia-lexicon",
   "main": "src/main.ts",
   "compatibility_date": "2026-10-19",
   "minify": true,
@@ -19,15 +19,18 @@
   "observability": { "enabled": true, "issues": { "enabled": true } },
   // Runs near D1 when that's faster than near the caller
   "placement": { "mode": "smart" },
-  "routes": "${routes}",
-  // migrations/ makes the schema for wrangler dev and the tests; a deployed database gets
-  // it from its build's export
-  "d1_databases": [
-    { "binding": "LEXICON_EN", "database_name": "${LEXICON_EN}", "migrations_dir": "migrations" },
-    { "binding": "LEXICON_FR", "database_name": "${LEXICON_FR}", "migrations_dir": "migrations" },
-    { "binding": "LEXICON_PL", "database_name": "${LEXICON_PL}", "migrations_dir": "migrations" }
-  ],
-  // Staging's and production's: the above again, deployed with --env so their traces are
-  // tagged deployment.environment.name. Routes and bindings aren't inherited.
-  "env": "${env}"
+  // The one environment's name, routes and databases, deployed with --env so its traces are
+  // tagged deployment.environment.name; local's is dev. migrations/ makes the databases'
+  // schema for wrangler dev and the tests; a deployed database gets it from its build's export.
+  "env": {
+    "${environment}": {
+      "name": "${name}",
+      "routes": "${routes}",
+      "d1_databases": [
+        { "binding": "LEXICON_EN", "database_name": "${LEXICON_EN}", "migrations_dir": "migrations" },
+        { "binding": "LEXICON_FR", "database_name": "${LEXICON_FR}", "migrations_dir": "migrations" },
+        { "binding": "LEXICON_PL", "database_name": "${LEXICON_PL}", "migrations_dir": "migrations" }
+      ]
+    }
+  }
 }

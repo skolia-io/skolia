@@ -1,7 +1,8 @@
 // skolia-ingest: each document's runs of ingest (src/workflow.ts) and the analysis containers
 // they hand jobs to, one per language and image (src/main.ts). Deployed with wrangler, since
 // Terraform's Cloudflare provider has no container resource. The database and bucket are
-// created by Terraform (infra/).
+// created by Terraform (infra/). The top level is what every environment shares; each "env"
+// block has what's its own (as api/wrangler.jsonc's).
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "skolia-ingest",
@@ -11,29 +12,6 @@
   "workers_dev": false,
   "preview_urls": false,
   "observability": { "enabled": true, "traces": { "enabled": true }, "issues": { "enabled": true } },
-  // One container application, whose Ingesters start each language's image
-  // (src/main.ts). infra/deploy-ingest.sh puts the pushed images, pinned by
-  // digest, in place of the Dockerfiles, which are for wrangler dev.
-  "containers": [
-    {
-      "name": "skolia-ingest",
-      "class_name": "Ingester",
-      "scheduling_policy": "durable_object",
-      // Not inherited from the Worker's for this policy
-      "observability": { "logs": { "enabled": true } },
-      "images": {
-        "pl": { "dockerfile": "../analysis/image/Dockerfile", "build_vars": { "SKOLIA_LANG": "pl" } },
-        "en": { "dockerfile": "../analysis/image/Dockerfile", "build_vars": { "SKOLIA_LANG": "en" } },
-        "fr": { "dockerfile": "../analysis/image/Dockerfile", "build_vars": { "SKOLIA_LANG": "fr" } }
-      }
-    }
-  ],
-  "durable_objects": {
-    "bindings": [{ "name": "INGESTER", "class_name": "Ingester" }]
-  },
-  // The jobs the containers ran, which each run of IngestWorkflow adds to
-  "services": [{ "binding": "DOCUMENT_STATUS", "service": "skolia-internal", "entrypoint": "DocumentStatus" }],
-  "d1_databases": [{ "binding": "INGEST_DB", "database_name": "skolia-ingest", "migrations_dir": "migrations" }],
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["Ingest"] },
     // Ingest was Polish's before there were other languages; its container application
@@ -43,14 +21,36 @@
     // applications aren't deleted with them either
     { "tag": "v3", "deleted_classes": ["IngestPl", "IngestEn"], "new_sqlite_classes": ["Ingester"] }
   ],
-  // The containers' blobs, served to them through an intercept (Blobs in src/main.ts)
-  "r2_buckets": [{ "binding": "BLOBS", "bucket_name": "skolia-documents" }],
-  // INGEST_WORKFLOW: a run of ingest for a document (src/workflow.ts), started by the API
-  "workflows": [{ "name": "skolia-ingest", "binding": "INGEST_WORKFLOW", "class_name": "IngestWorkflow" }],
-  // Production keeps the top level's name, deployed with --env so its traces are tagged
-  // deployment.environment.name; staging is skolia-ingest-staging. Bindings and containers
-  // aren't inherited.
+  // Containers and bindings aren't inherited. containers: one application, whose Ingesters
+  // start each language's image (src/main.ts), named, since wrangler would otherwise make a
+  // name; infra/deploy-ingest.sh puts the pushed images, pinned by digest, in place of the
+  // Dockerfiles, which are for wrangler dev. DOCUMENT_STATUS: the jobs the containers ran,
+  // which each run of IngestWorkflow adds to. BLOBS: the containers' blobs, served to them
+  // through an intercept (Blobs in src/main.ts). INGEST_WORKFLOW: a run of ingest for a
+  // document (src/workflow.ts), started by the API.
   "env": {
+    "dev": {
+      "name": "skolia-ingest",
+      "containers": [
+        {
+          "name": "skolia-ingest",
+          "class_name": "Ingester",
+          "scheduling_policy": "durable_object",
+          // Not inherited from the Worker's for this policy
+          "observability": { "logs": { "enabled": true } },
+          "images": {
+            "pl": { "dockerfile": "../analysis/image/Dockerfile", "build_vars": { "SKOLIA_LANG": "pl" } },
+            "en": { "dockerfile": "../analysis/image/Dockerfile", "build_vars": { "SKOLIA_LANG": "en" } },
+            "fr": { "dockerfile": "../analysis/image/Dockerfile", "build_vars": { "SKOLIA_LANG": "fr" } }
+          }
+        }
+      ],
+      "durable_objects": { "bindings": [{ "name": "INGESTER", "class_name": "Ingester" }] },
+      "services": [{ "binding": "DOCUMENT_STATUS", "service": "skolia-internal", "entrypoint": "DocumentStatus" }],
+      "d1_databases": [{ "binding": "INGEST_DB", "database_name": "skolia-ingest", "migrations_dir": "migrations" }],
+      "r2_buckets": [{ "binding": "BLOBS", "bucket_name": "skolia-documents" }],
+      "workflows": [{ "name": "skolia-ingest", "binding": "INGEST_WORKFLOW", "class_name": "IngestWorkflow" }]
+    },
     "production": {
       "name": "skolia-ingest",
       "containers": [
@@ -67,15 +67,14 @@
           }
         }
       ],
-      "durable_objects": {
-        "bindings": [{ "name": "INGESTER", "class_name": "Ingester" }]
-      },
+      "durable_objects": { "bindings": [{ "name": "INGESTER", "class_name": "Ingester" }] },
       "services": [{ "binding": "DOCUMENT_STATUS", "service": "skolia-internal", "entrypoint": "DocumentStatus" }],
       "d1_databases": [{ "binding": "INGEST_DB", "database_name": "skolia-ingest", "migrations_dir": "migrations" }],
       "r2_buckets": [{ "binding": "BLOBS", "bucket_name": "skolia-documents" }],
       "workflows": [{ "name": "skolia-ingest", "binding": "INGEST_WORKFLOW", "class_name": "IngestWorkflow" }]
     },
     "staging": {
+      "name": "skolia-ingest-staging",
       "containers": [
         {
           "name": "skolia-ingest-staging",
@@ -90,9 +89,7 @@
           }
         }
       ],
-      "durable_objects": {
-        "bindings": [{ "name": "INGESTER", "class_name": "Ingester" }]
-      },
+      "durable_objects": { "bindings": [{ "name": "INGESTER", "class_name": "Ingester" }] },
       "services": [{ "binding": "DOCUMENT_STATUS", "service": "skolia-internal-staging", "entrypoint": "DocumentStatus" }],
       "d1_databases": [{ "binding": "INGEST_DB", "database_name": "skolia-ingest-staging", "migrations_dir": "migrations" }],
       "r2_buckets": [{ "binding": "BLOBS", "bucket_name": "skolia-documents-staging" }],

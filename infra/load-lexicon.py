@@ -113,6 +113,8 @@ def local_wrangler(target: Local, *args: str) -> str:
         binding(target.lang),
         "-c",
         str(LEXICON / "wrangler.jsonc"),
+        "--env",
+        wrangler_env("local"),
         "--local",
         "--persist-to",
         str(target.persist_to.resolve()),
@@ -321,23 +323,9 @@ def worker(env: str) -> tuple[str, list[Json]]:
             return f"skolia-lexicon-{env}", []
 
 
-def environments(env: str, name: str, routes: list[Json], names: Mapping[str, str]) -> Json:
-    """The config's env blocks: staging's or production's, deployed with --env so its traces
-    are tagged deployment.environment.name, holds what the top level does, since routes and
-    bindings aren't inherited. Local and previews have none."""
-    match env:
-        case "staging" | "production":
-            databases: list[Json] = [
-                {
-                    "binding": binding(lang),
-                    "database_name": names[lang],
-                    "migrations_dir": "migrations",
-                }
-                for lang in LANGS
-            ]
-            return {env: {"name": name, "routes": routes, "d1_databases": databases}}
-        case _:
-            return {}
+def wrangler_env(env: str) -> str:
+    """The config's environment, which wrangler is run with: local's is wrangler dev's, dev."""
+    return "dev" if env == "local" else env
 
 
 def render(template: str, values: Mapping[str, Json]) -> str:
@@ -382,9 +370,9 @@ def config(env: str, sample: int | None, check: bool) -> None:
     text = render(
         TEMPLATE.read_text(),
         {
+            "environment": wrangler_env(env),
             "name": name,
             "routes": routes,
-            "env": environments(env, name, routes, names),
             **{binding(lang): names[lang] for lang in LANGS},
         },
     )

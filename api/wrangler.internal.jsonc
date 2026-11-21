@@ -1,5 +1,7 @@
 // API-owned, private capability: document status publication.
 // Deploy after D1 migrations, before ingest. No dependency on either public Worker.
+// The top level is what every environment shares; each "env" block has what's its own
+// (as api/wrangler.jsonc's).
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "skolia-internal",
@@ -9,15 +11,19 @@
   "workers_dev": false,
   "preview_urls": false,
   "observability": { "enabled": true, "traces": { "enabled": true }, "issues": { "enabled": true } },
-  "d1_databases": [{ "binding": "DB", "database_name": "skolia", "migrations_dir": "migrations" }],
-  "r2_buckets": [{ "binding": "BLOBS", "bucket_name": "skolia-documents" }],
   "env": {
+    "dev": {
+      "name": "skolia-internal",
+      "d1_databases": [{ "binding": "DB", "database_name": "skolia", "migrations_dir": "migrations" }],
+      "r2_buckets": [{ "binding": "BLOBS", "bucket_name": "skolia-documents" }]
+    },
     "production": {
       "name": "skolia-internal",
       "d1_databases": [{ "binding": "DB", "database_name": "skolia", "migrations_dir": "migrations" }],
       "r2_buckets": [{ "binding": "BLOBS", "bucket_name": "skolia-documents" }]
     },
     "staging": {
+      "name": "skolia-internal-staging",
       "d1_databases": [{ "binding": "DB", "database_name": "skolia-staging", "migrations_dir": "migrations" }],
       "r2_buckets": [{ "binding": "BLOBS", "bucket_name": "skolia-documents-staging" }]
     }

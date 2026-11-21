@@ -1,9 +1,8 @@
 // skolia on Cloudflare: one Worker serves the reader (static assets) and the API.
 // Deployed with wrangler (infra/wrangler.sh <env> deploy), which also applies the
 // Durable Object migrations. Terraform (infra/) makes the D1 database, R2 bucket and
-// queue it binds. The top level is wrangler dev's; production is env.production, deployed
-// with --env so its traces are tagged deployment.environment.name, and staging env.staging.
-// Ingest is a separate Worker: ingest/wrangler.jsonc.
+// queue it binds. The top level is what every environment shares; each "env" block has
+// what's its own. Ingest is a separate Worker: ingest/wrangler.jsonc.
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "skolia",
@@ -12,14 +11,13 @@
   "minify": true,
   "workers_dev": true,
   "preview_urls": false,
-  // Workers Logs, traces and Issues, inherited by each environment and previews; log events are src/log.ts's
+  // Workers Logs, traces and Issues; log events are src/log.ts's
   "observability": { "enabled": true, "traces": { "enabled": true }, "issues": { "enabled": true } },
   // Deploys after all status publishers: backfills never race an old publisher.
   "triggers": { "crons": ["* * * * *"] },
   // Runs /api/* near D1 and R2 when that's faster than near the user; assets are still
-  // served from the nearest location. Inherited by env.staging and previews.
+  // served from the nearest location.
   "placement": { "mode": "smart" },
-  "routes": [{ "pattern": "skolia.io", "custom_domain": true }],
   // wrangler dev would otherwise rewrite each request's Host to the route's, and the
   // ingest container's S3 requests, signed for localhost:8787, would fail
   "dev": { "host": "localhost:8787" },
@@ -28,53 +26,47 @@
     "not_found_handling": "single-page-application",
     "run_worker_first": ["/api/*"]
   },
-  "d1_databases": [
-    {
-      "binding": "DB",
-      "database_name": "skolia",
-      "migrations_dir": "migrations"
-    }
-  ],
-  // LEXICON: the lexicon Worker (lexicon/wrangler.jsonc), whose LexiconService the cards
-  // use and whose API is passed through at /api/lexicon/
-  "services": [{ "binding": "LEXICON", "service": "skolia-lexicon", "entrypoint": "LexiconService" }],
-  "r2_buckets": [{ "binding": "BLOBS", "bucket_name": "skolia-documents" }],
-  // wrangler dev takes BASE_URL from api/.env, and the auth secrets from api/.env.local (DEVELOP.md); deployed, they're wrangler secrets.
-  "vars": { "BASE_URL": "https://skolia.io" },
-  // INGEST_WORKFLOW: the ingest Worker's runs of ingest (ingest/wrangler.jsonc), one started
-  // for each document to analyse
-  "workflows": [{ "name": "skolia-ingest", "binding": "INGEST_WORKFLOW", "class_name": "IngestWorkflow", "script_name": "skolia-ingest" }],
-  // INGESTER: the ingest Worker's, asked where a document is in its container's line
-  "durable_objects": {
-    "bindings": [{ "name": "USER", "class_name": "User" }, { "name": "INGESTER", "class_name": "Ingester", "script_name": "skolia-ingest" }]
-  },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["User"] }],
-  // Bindings and routes aren't inherited, so each environment lists its own (Terraform's
-  // names). Wrangler looks D1 databases up by name, and creates one it can't find, so
-  // Terraform must make it first (just deploy-infra). Production keeps the top level's
-  // name; staging is deployed as skolia-staging.
+  // Bindings, routes and vars aren't inherited, so each environment lists its own
+  // (Terraform's names), and its name, which wrangler would otherwise suffix with the
+  // environment's. Wrangler looks D1 databases up by name, and creates one it can't find,
+  // so Terraform must make it first (just deploy-infra). Deployed with --env, so traces are
+  // tagged deployment.environment.name; dev is wrangler dev's and the tests'. A preview's
+  // config is staging's with its own names (infra/preview.py).
+  //
+  // DB, BLOBS: the documents. LEXICON: the lexicon Worker (lexicon/wrangler.jsonc), whose
+  // LexiconService the cards use and whose API is passed through at /api/lexicon/.
+  // INGEST_WORKFLOW: the ingest Worker's runs of ingest (ingest/wrangler.jsonc), one
+  // started for each document to analyse. INGESTER: the ingest Worker's, asked where a
+  // document is in its container's line. Deployed, the auth secrets are wrangler secrets;
+  // wrangler dev takes them from api/.env.local (DEVELOP.md).
   "env": {
+    "dev": {
+      "name": "skolia",
+      "d1_databases": [{ "binding": "DB", "database_name": "skolia", "migrations_dir": "migrations" }],
+      "services": [{ "binding": "LEXICON", "service": "skolia-lexicon", "entrypoint": "LexiconService" }],
+      "r2_buckets": [{ "binding": "BLOBS", "bucket_name": "skolia-documents" }],
+      // The reader's Vite server (sign-in redirects)
+      "vars": { "BASE_URL": "http://localhost:5173" },
+      "workflows": [
+        { "name": "skolia-ingest", "binding": "INGEST_WORKFLOW", "class_name": "IngestWorkflow", "script_name": "skolia-ingest" }
+      ],
+      "durable_objects": {
+        "bindings": [
+          { "name": "USER", "class_name": "User" },
+          { "name": "INGESTER", "class_name": "Ingester", "script_name": "skolia-ingest" }
+        ]
+      }
+    },
     "production": {
       "name": "skolia",
-      "triggers": { "crons": ["* * * * *"] },
       "routes": [{ "pattern": "skolia.io", "custom_domain": true }],
-      "d1_databases": [
-        {
-          "binding": "DB",
-          "database_name": "skolia",
-          "migrations_dir": "migrations"
-        }
-      ],
+      "d1_databases": [{ "binding": "DB", "database_name": "skolia", "migrations_dir": "migrations" }],
       "services": [{ "binding": "LEXICON", "service": "skolia-lexicon", "entrypoint": "LexiconService" }],
       "r2_buckets": [{ "binding": "BLOBS", "bucket_name": "skolia-documents" }],
       "vars": { "BASE_URL": "https://skolia.io" },
       "workflows": [
-        {
-          "name": "skolia-ingest",
-          "binding": "INGEST_WORKFLOW",
-          "class_name": "IngestWorkflow",
-          "script_name": "skolia-ingest"
-        }
+        { "name": "skolia-ingest", "binding": "INGEST_WORKFLOW", "class_name": "IngestWorkflow", "script_name": "skolia-ingest" }
       ],
       "durable_objects": {
         "bindings": [
@@ -84,15 +76,9 @@
       }
     },
     "staging": {
-      "triggers": { "crons": ["* * * * *"] },
+      "name": "skolia-staging",
       "routes": [{ "pattern": "staging.skolia.io", "custom_domain": true }],
-      "d1_databases": [
-        {
-          "binding": "DB",
-          "database_name": "skolia-staging",
-          "migrations_dir": "migrations"
-        }
-      ],
+      "d1_databases": [{ "binding": "DB", "database_name": "skolia-staging", "migrations_dir": "migrations" }],
       "services": [{ "binding": "LEXICON", "service": "skolia-lexicon-staging", "entrypoint": "LexiconService" }],
       "r2_buckets": [{ "binding": "BLOBS", "bucket_name": "skolia-documents-staging" }],
       "vars": { "BASE_URL": "https://staging.skolia.io" },

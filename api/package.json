@@ -10,7 +10,7 @@
   },
   "scripts": {
     "check": "tsc --noEmit && tsc --noEmit -p src/worker && tsc --noEmit -p tsconfig.workerd-test.json",
-    "pretest": "pnpm --filter @skolia/reader build && wrangler deploy --dry-run --outdir dist --env=''",
+    "pretest": "pnpm --filter @skolia/reader build && wrangler deploy --dry-run --outdir dist --env dev",
     "test": "node --test \"src/**/*.test.ts\""
   },
   "dependencies": {

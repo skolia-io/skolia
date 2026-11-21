@@ -152,7 +152,7 @@ deploy() {
       }
       { print }
     ' "$root/ingest/wrangler.jsonc" > "$config"
-    # The top level (wrangler dev's), production and staging
+    # dev, production and staging
     copies=3
   fi
   for pair in "${images[@]}"; do

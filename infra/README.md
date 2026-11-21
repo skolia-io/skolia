@@ -31,7 +31,9 @@ Account `22d39fac63e580576e28d9ed133ab62d` (skolia-io, owned by admin@skolia.io)
 | URL | https://skolia.io | https://staging.skolia.io | https://skolia-pr-N.skolia-io.workers.dev |
 | Names | `skolia`, `skolia-ingest` | `skolia-staging`, `skolia-ingest-staging` | `skolia-pr-N`, `skolia-ingest-pr-N` |
 | Terraform state | `skolia.tfstate` | `skolia-staging.tfstate` | `skolia-pr-N.tfstate` |
-| Wrangler | top level of `api/wrangler.jsonc`, `api/wrangler.internal.jsonc`, `ingest/wrangler.jsonc` | `env.staging` | `api/wrangler.pr-N.json`, `api/wrangler.internal.pr-N.json`, `ingest/wrangler.pr-N.json` (generated) |
+| Wrangler | `env.production` of `api/wrangler.jsonc`, `api/wrangler.internal.jsonc`, `ingest/wrangler.jsonc` | `env.staging` | `api/wrangler.pr-N.json`, `api/wrangler.internal.pr-N.json`, `ingest/wrangler.pr-N.json` (generated) |
+
+A Wrangler config's top level is what every environment shares, and each `env` block what's its own: name, routes, vars and bindings, which wrangler doesn't inherit. `env.dev` is wrangler dev's and the tests'. Deploying with `--env` tags the Worker with its environment, which its traces carry as `deployment.environment.name`; a preview's config has no environments, so its traces have none.
 
 All are on the same account. What there's one of per account (billing alerts, the provider mirror, the lexicon's sources, `skolia-ci`) is in `infra/shared/`, its own environment `shared` with its own state, `skolia-shared.tfstate`; CI's `deploy-shared` applies it from main when something a plan reads changed. `infra/tf.sh <env>` and `infra/wrangler.sh <env>` run terraform and wrangler for one environment. Each Worker’s Wrangler config names its D1 databases and wrangler looks up its id. If the name isn't there, `wrangler deploy` creates it outside Terraform, so Terraform goes first (`deploy-infra`); `d1 migrations apply` fails instead.
 

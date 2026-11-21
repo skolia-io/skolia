@@ -83,7 +83,7 @@ screenshot *args:
 # The reader and the API bundle (api/dist, for the workerd tests)
 build:
     pnpm --filter @skolia/reader build
-    pnpm --dir api exec wrangler deploy --dry-run --outdir dist --env=''
+    pnpm --dir api exec wrangler deploy --dry-run --outdir dist --env dev
 
 # Write the API's and the lexicon's OpenAPI specs (api/openapi.json, lexicon/openapi.json) from their routes;
 # api/src/openapi.test.ts and lexicon/src/spec.test.ts fail until you do
@@ -115,11 +115,11 @@ dev-sync-curated:
 [working-directory('api')]
 dev-api: install images env-local
     pnpm --filter @skolia/reader build
-    pnpm exec wrangler d1 migrations apply DB --local --env='' </dev/null
-    for lang in {{ langs }}; do pnpm exec wrangler d1 migrations apply "LEXICON_$(tr a-z A-Z <<<"$lang")" -c ../lexicon/wrangler.jsonc --local --persist-to .wrangler/state --env='' </dev/null; done
-    pnpm exec wrangler d1 migrations apply INGEST_DB -c ../ingest/wrangler.jsonc --local --persist-to .wrangler/state --env='' </dev/null
+    pnpm exec wrangler d1 migrations apply DB --local --env dev </dev/null
+    for lang in {{ langs }}; do pnpm exec wrangler d1 migrations apply "LEXICON_$(tr a-z A-Z <<<"$lang")" -c ../lexicon/wrangler.jsonc --local --persist-to .wrangler/state --env dev </dev/null; done
+    pnpm exec wrangler d1 migrations apply INGEST_DB -c ../ingest/wrangler.jsonc --local --persist-to .wrangler/state --env dev </dev/null
     just load-lexicon local
-    pnpm exec wrangler dev -c wrangler.jsonc -c wrangler.internal.jsonc -c ../ingest/wrangler.jsonc -c ../lexicon/wrangler.jsonc --port 8787
+    pnpm exec wrangler dev -c wrangler.jsonc -c wrangler.internal.jsonc -c ../ingest/wrangler.jsonc -c ../lexicon/wrangler.jsonc --env dev --port 8787
 
 # The Node packages, as pnpm-lock.yaml has them
 install:
@@ -248,8 +248,7 @@ deploy-lexicon env:
     case {{ env }} in pr-*) sample="--sample 3000" ;; *) sample= ;; esac
     infra/plan.py deploying {{ env }} lexicon-worker
     infra/load-lexicon.py config {{ env }} $sample
-    case {{ env }} in staging | production) flags=(--env {{ env }}) ;; *) flags=() ;; esac
-    pnpm --dir lexicon exec wrangler deploy -c wrangler.{{ env }}.jsonc ${flags[@]+"${flags[@]}"}
+    pnpm --dir lexicon exec wrangler deploy -c wrangler.{{ env }}.jsonc --env {{ env }}
     infra/plan.py deployed {{ env }} lexicon-worker
 
 # The skolia Worker (reader and API) with wrangler, with Terraform's BETTER_AUTH_SECRET and, if set,
@@ -368,7 +367,7 @@ d1-sql env script persist="":
     set -euo pipefail
     sql=$(node "$2")
     if [ "$1" = local ]; then
-      pnpm --dir api exec wrangler d1 execute DB --local --env='' ${3:+--persist-to "$3"} --command "$sql" >/dev/null
+      pnpm --dir api exec wrangler d1 execute DB --local --env dev ${3:+--persist-to "$3"} --command "$sql" >/dev/null
     else
       infra/wrangler.sh "$1" d1 execute DB --remote --yes --command "$sql" >/dev/null
     fi
