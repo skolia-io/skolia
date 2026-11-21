@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createQuery } from "@tanstack/svelte-query";
-  import { LANGS, LANGUAGE_INFO, blankParts, type Card, type Lang, type LemmaId, type User } from "@skolia/shared/api";
+  import { LANGS, LANGUAGE_INFO, blankParts, parseLemmaId, type Card, type Lang, type LemmaId, type User } from "@skolia/shared/api";
   import { signIn } from "../lib/api.ts";
   import { createCardList, createDeleteCard, type CardPage } from "../lib/cards.ts";
   import { countsQuery } from "../lib/queries.ts";
@@ -55,7 +55,7 @@
   }
 
   function lemmaOf(lemmaId: LemmaId, page: CardPage): string {
-    return page.entries.get(lemmaId)?.lemma ?? lemmaId.split(":")[1] ?? lemmaId;
+    return page.entries.get(lemmaId)?.lemma ?? parseLemmaId(lemmaId).lemma;
   }
 
   function glossOf(lemmaId: LemmaId, page: CardPage): string | null {

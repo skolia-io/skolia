@@ -324,8 +324,16 @@ export function lemmaParam(id: LemmaId): LemmaId {
   return encodeURIComponent(id) as LemmaId;
 }
 
+/** A lemma id's parts. The lemma is between the first colon and the last: it can have one
+ * itself, the language and part of speech can't. */
+export function parseLemmaId(id: LemmaId): { readonly lang: Lang; readonly lemma: string; readonly upos: Upos } {
+  const first = id.indexOf(":");
+  const last = id.lastIndexOf(":");
+  return { lang: id.slice(0, first) as Lang, lemma: id.slice(first + 1, last), upos: id.slice(last + 1) as Upos };
+}
+
 export function langOf(id: LemmaId): Lang {
-  return id.slice(0, id.indexOf(":")) as Lang;
+  return parseLemmaId(id).lang;
 }
 
 export type Settings = z.output<typeof schemas.Settings>;
