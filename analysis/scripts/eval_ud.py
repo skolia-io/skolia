@@ -20,13 +20,18 @@ import tempfile
 import time
 from pathlib import Path
 
+import structlog
+
 from skolia_analysis import lang, reconcile
 from skolia_analysis.conllu import write
+from skolia_analysis.log import configure_logging
 from skolia_analysis.parsed import Parser
 from skolia_analysis.plugin import Options
 from skolia_analysis.treebank import CachedParser, gold_text
 
 EVALUATOR = Path(__file__).parent / "vendor" / "conll18_ud_eval.py"
+
+log = structlog.get_logger(module=__name__)
 METRICS = [
     *("Tokens", "Sentences", "Words"),
     *("UPOS", "XPOS", "UFeats", "AllTags", "Lemmas"),
@@ -68,6 +73,7 @@ def main() -> None:
         "parser (Polish: case correction from verb frames)",
     )
     args = parser.parse_args()
+    configure_logging()
     plugin = lang.plugin(args.lang)
     model_name: str = args.model or plugin.DEFAULT_MODEL
     if model_name not in plugin.MODELS:
@@ -90,7 +96,7 @@ def main() -> None:
     started = time.perf_counter()
     parsed = model(text)
     seconds = time.perf_counter() - started
-    print(f"{model_name}: parsed {len(parsed)} sentences in {seconds:.0f} s", file=sys.stderr)
+    log.info("parsed", model=model_name, sentences=len(parsed), ms=round(seconds * 1000))
 
     out: Path = args.out or Path(tempfile.mkdtemp())
     out.mkdir(parents=True, exist_ok=True)

@@ -13,6 +13,7 @@ byte-seconds; its total to 2026-11-07 was within 0.1% of the dashboard's. A cont
 application that no longer exists, almost always a torn-down preview's, is counted as
 "deleted". The free allowance is 25 GiB-hours a month.
 """
+# ruff: noqa: T201 (the report is its output)
 
 import argparse
 import datetime as dt

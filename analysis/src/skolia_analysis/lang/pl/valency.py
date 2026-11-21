@@ -15,6 +15,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TypedDict, cast
 
+import structlog
+
+from ...log import configure_logging
 from ...schema import Case, Upos
 from .walenty.model import Expansions, Phrase, Schema
 from .walenty.parse import parse_expansions, parse_schema, schema_lines
@@ -87,6 +90,7 @@ def build_main() -> None:
     parser.add_argument("release", type=Path, help="the unzipped walenty_YYYYMMDD-text folder")
     parser.add_argument("out", type=Path, help="output .json")
     args = parser.parse_args()
+    configure_logging()
     root: Path = args.release
     expansions = sorted(root.glob(EXPANSIONS_FILE.format(date="*")))
     if not expansions:
@@ -97,9 +101,12 @@ def build_main() -> None:
     content = read_release(root, date.group(1))
     write(content, args.out)
     lemmas = {(s["pos"], s["lemma"], s["reflexive"]) for s in content["schemata"]}
-    print(
-        f"{content['version']}: {len(content['schemata'])} schemata for {len(lemmas)} lemmas",
-        file=sys.stderr,
+    structlog.get_logger(module=__name__).info(
+        "parsed Walenty",
+        out=str(args.out),
+        version=content["version"],
+        schemata=len(content["schemata"]),
+        lemmas=len(lemmas),
     )
 
 

@@ -4,9 +4,14 @@ import sqlite3
 import sys
 from pathlib import Path
 
+import structlog
+
 from .. import lang
+from ..log import configure_logging
 from . import build, commons, store
 from .store import Lexicon
+
+log = structlog.get_logger(module=__name__)
 
 
 def lookup_main() -> None:
@@ -61,6 +66,7 @@ def build_main() -> None:
         help="the language's data directory, for its valency frames (Polish: pl-valency.json)",
     )
     args = parser.parse_args()
+    configure_logging()
     plugin = lang.plugin(args.lang)
     contents, stats = build.build(
         args.lang,
@@ -69,13 +75,15 @@ def build_main() -> None:
         plugin.frames(args.data),
     )
     store.write(args.out, args.migrations, contents)
-    print(
-        f"{len(contents.entries)} lemma entries from {stats.entries} Kaikki entries "
-        f"({stats.skipped} skipped: inflected forms, phrases, affixes); "
-        f"{stats.pronounced} (word, part of speech) pairs with a pronunciation, "
-        f"{stats.recorded} with a recording; "
-        f"{stats.commons} spellings with a recording from Commons",
-        file=sys.stderr,
+    log.info(
+        "built lexicon",
+        out=str(args.out),
+        lemma_entries=len(contents.entries),
+        kaikki_entries=stats.entries,
+        skipped=stats.skipped,
+        pronounced=stats.pronounced,
+        recorded=stats.recorded,
+        commons_spellings=stats.commons,
     )
 
 
@@ -88,4 +96,7 @@ def fetch_commons_main() -> None:
     parser.add_argument("lang", choices=sorted(commons.CATEGORIES))
     parser.add_argument("out", type=Path, help="output .txt file (replaced)")
     args = parser.parse_args()
-    print(f"{commons.fetch(args.lang, args.out)} files", file=sys.stderr)
+    configure_logging()
+    log.info(
+        "fetched Commons recordings", out=str(args.out), files=commons.fetch(args.lang, args.out)
+    )
