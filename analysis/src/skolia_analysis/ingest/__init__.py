@@ -1,10 +1,8 @@
-"""skolia-ingest: takes import jobs off a queue, analyses the text.
+"""skolia-ingest's analysis container: analyses a document's text into its blob.
 
-The API stores the text at doc/{doc}/text.txt, writes doc/{doc}/status.json as queued, and
-enqueues {"doc": ..., "lang": ...}. Ingest writes the analysis (Brotli-compressed
-JSON) and updates the status, which the API reads to tell the reader when it's ready.
-
-Jobs arrive over HTTP from the queue consumer Worker (ingest/src/main.ts), and blobs
-are read and written over R2's S3 API: on Cloudflare, and under wrangler dev through its
-local R2's S3 endpoint.
+The API stores the text at doc/{doc}/text.txt and starts an ingest run for the document
+(ingest/src/workflow.ts), which POSTs the job here (http.py) and writes the document's
+status from the answer. The worker (worker.py) writes the analysis, Brotli-compressed
+JSON, beside the text. Blobs are read and written through the ingest Worker's R2 binding
+(blobs.py, ingest/src/main.ts).
 """
