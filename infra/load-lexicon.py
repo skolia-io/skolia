@@ -364,7 +364,7 @@ def bound(env: str, sample: int | None) -> dict[str, str]:
     return names
 
 
-def config(env: str, sample: int | None, check: bool) -> None:
+def config(env: str, sample: int | None, *, check: bool) -> None:
     names = bound(env, sample)
     name, routes = worker(env)
     text = render(
@@ -408,7 +408,7 @@ def main() -> None:
     if not re.fullmatch(r"staging|production|pr-[0-9]+|local", env):
         parser.error("env must be staging, production, pr-N or local")
     if command == "config":
-        config(env, sample, cast(bool, args.check))
+        config(env, sample, check=cast(bool, args.check))
         return
     key = built_from_key(cast(str, args.built_from), sample)
     persist_to = cast(Path | None, args.persist_to)

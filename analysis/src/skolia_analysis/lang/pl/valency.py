@@ -114,7 +114,7 @@ class Requirement:
     partitive: bool
     """An np(part) object: genitive or accusative (nalać)."""
 
-    def allowed(self, negated: bool) -> frozenset[Case]:
+    def allowed(self, *, negated: bool) -> frozenset[Case]:
         cases = set(self.lexical)
         if self.structural:
             cases.add("Gen" if negated else "Acc")
@@ -140,7 +140,7 @@ class Valency:
     def load(cls, path: Path) -> Valency:
         return cls(cast(ValencyFile, json.loads(path.read_text("utf-8"))))
 
-    def schemata(self, lemma: str, reflexive: bool, pos: PartOfSpeech = "verb") -> list[Schema]:
+    def schemata(self, lemma: str, *, reflexive: bool, pos: PartOfSpeech = "verb") -> list[Schema]:
         return self._schemata.get((pos, Lemma(lemma), reflexive), [])
 
     def frames(self, lemma: str, upos: Upos) -> list[Schema]:
@@ -149,21 +149,23 @@ class Valency:
         pos = WALENTY_POS.get(upos)
         if pos is None:
             return []
-        both = self.schemata(lemma, False, pos) + self.schemata(lemma, True, pos)
+        both = self.schemata(lemma, reflexive=False, pos=pos) + self.schemata(
+            lemma, reflexive=True, pos=pos
+        )
         return [s for s in both if s["certainty"] != "wrong"]
 
     def bare_objects(
-        self, lemma: str, reflexive: bool, negated: bool, pos: PartOfSpeech = "verb"
+        self, lemma: str, *, reflexive: bool, negated: bool, pos: PartOfSpeech = "verb"
     ) -> Requirement | None:
         """Cases of the word's non-subject noun complements without a preposition, from
         the schemata that apply with or without negation, leaving out idioms and schemata
         marked wrong. None if Walenty lacks the word."""
-        schemata = self.schemata(lemma, reflexive, pos)
+        schemata = self.schemata(lemma, reflexive=reflexive, pos=pos)
         if not schemata:
             return None
         lexical: set[Case] = set()
         structural = partitive = False
-        for phrase in _bare_complements(schemata, negated):
+        for phrase in _bare_complements(schemata, negated=negated):
             match phrase["kind"]:
                 case "np" | "adjp" | "nump":
                     if phrase["case"] == "str":
@@ -177,7 +179,7 @@ class Valency:
         return Requirement(frozenset(lexical), structural, partitive)
 
 
-def _bare_complements(schemata: list[Schema], negated: bool) -> Iterator[Phrase]:
+def _bare_complements(schemata: list[Schema], *, negated: bool) -> Iterator[Phrase]:
     for schema in schemata:
         if schema["certainty"] == "wrong":
             continue

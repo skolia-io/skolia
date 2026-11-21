@@ -132,10 +132,14 @@ def test_schema_columns() -> None:
     [
         "szukać: pewny: _: : imperf: subj{np(str)} + obj{np(gen)} + {prepnp(w,loc)}",
         "dać: pewny: _: : perf: {infp(_)} + {lex(np(str),sg,'rada',natr)}",
-        "uważać: pewny: _: : imperf: subj,controller{np(str)} + controllee,controller2{infp(_)}"
-        " + controllee2{prepadjp(za,acc)}",
-        "oczekiwać: pewny: _: : imperf: subj{np(str)} + {cp(aż)} + {lex(xp(mod[prepnp(z,inst)]),"
-        "_,'serce',ratr1({lex(pactp(agr),agr,agr,aff,'bić',,atr1({advp(mod)}))}))}",
+        (
+            "uważać: pewny: _: : imperf: subj,controller{np(str)} + controllee,controller2{infp(_)}"
+            " + controllee2{prepadjp(za,acc)}"
+        ),
+        (
+            "oczekiwać: pewny: _: : imperf: subj{np(str)} + {cp(aż)} + {lex(xp(mod[prepnp(z,inst)]),"  # noqa: E501
+            "_,'serce',ratr1({lex(pactp(agr),agr,agr,aff,'bić',,atr1({advp(mod)}))}))}"
+        ),
         "strach: pewny: : : : {np(gen)} + {possp}",
         "pewny: pewny: : pred: : {cp(że)}",
     ],

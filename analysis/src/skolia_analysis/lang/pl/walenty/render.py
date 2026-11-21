@@ -38,7 +38,7 @@ def _words(words: Sequence[str]) -> str:
     return "[" + ";".join(words) + "]" if words else ""
 
 
-def render_phrase(phrase: Phrase) -> str:
+def render_phrase(phrase: Phrase) -> str:  # noqa: C901, PLR0912
     match phrase["kind"]:
         case "np" | "adjp" | "nump" | "ppasp" | "pactp":
             return f"{phrase['kind']}({phrase['case']})"
@@ -81,7 +81,7 @@ def _lex(lex: Lex) -> str:
     lemmas = _lemmas(lex["lemmas"])
     # Active participles have a się slot after the lemma; passive ones don't
     active = inflects_like(lex["phrase"])["kind"] == "pactp"
-    middle = _form_with_lemmas(lex["form"], inflection, lemmas, active)
+    middle = _form_with_lemmas(lex["form"], inflection, lemmas, active=active)
     return f"lex({render_phrase(lex['phrase'])},{middle},{_modification(lex['modification'])})"
 
 
@@ -110,7 +110,7 @@ def _form(form: LexForm) -> list[str]:
             assert_never(form)
 
 
-def _form_with_lemmas(form: LexForm, inflection: list[str], lemmas: str, active: bool) -> str:
+def _form_with_lemmas(form: LexForm, inflection: list[str], lemmas: str, *, active: bool) -> str:
     """Inflection, lemmas, and the się slot that follows the lemmas for verbal shapes."""
     slots = [*inflection, lemmas]
     match form["shape"]:

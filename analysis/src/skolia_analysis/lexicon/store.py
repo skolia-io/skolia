@@ -143,7 +143,7 @@ class VerbDerivative(NamedTuple):
     derivative: str
 
 
-def write(
+def write(  # noqa: PLR0913
     path: Path,
     rows: Iterable[Row],
     meta: dict[str, str],
