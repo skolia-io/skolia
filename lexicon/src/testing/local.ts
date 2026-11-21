@@ -14,7 +14,7 @@ export let env: LexiconBindings;
 
 export function useLocal(): void {
   before(async () => {
-    server = createTestHarness({ root: ROOT, workers: [{ configPath: "./wrangler.jsonc", env: "" }] });
+    server = createTestHarness({ root: ROOT, workers: [{ configPath: "./wrangler.jsonc", env: "dev" }] });
     await server.listen();
     const worker = server.getWorker<LexiconBindings>();
     for (const lang of LANGS) await worker.applyD1Migrations(lexiconBinding(lang));

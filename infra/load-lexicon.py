@@ -107,13 +107,14 @@ def quote(value: str) -> str:
 
 def local_wrangler(target: Local, *args: str) -> str:
     command = [
-        str(WRANGLER),
-        "production",
+        str(ROOT / "api" / "node_modules" / ".bin" / "wrangler"),
         "d1",
         "execute",
         binding(target.lang),
         "-c",
         str(LEXICON / "wrangler.jsonc"),
+        "--env",
+        wrangler_env("local"),
         "--local",
         "--persist-to",
         str(target.persist_to.resolve()),
@@ -322,6 +323,11 @@ def worker(env: str) -> tuple[str, list[Json]]:
             return f"skolia-lexicon-{env}", []
 
 
+def wrangler_env(env: str) -> str:
+    """The config's environment, which wrangler is run with: local's is wrangler dev's, dev."""
+    return "dev" if env == "local" else env
+
+
 def render(template: str, values: Mapping[str, Json]) -> str:
     """template with each "${name}" replaced by values[name] as JSON. Every placeholder needs a
     value and every value a placeholder."""
@@ -363,7 +369,12 @@ def config(env: str, sample: int | None, check: bool) -> None:
     name, routes = worker(env)
     text = render(
         TEMPLATE.read_text(),
-        {"name": name, "routes": routes, **{binding(lang): names[lang] for lang in LANGS}},
+        {
+            "environment": wrangler_env(env),
+            "name": name,
+            "routes": routes,
+            **{binding(lang): names[lang] for lang in LANGS},
+        },
     )
     made = f"// Made by infra/load-lexicon.py config {env} from wrangler.template.jsonc\n" + text
     path = LEXICON / ("wrangler.jsonc" if env == "local" else f"wrangler.{env}.jsonc")

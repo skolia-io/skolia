@@ -17,15 +17,21 @@
   "workers_dev": false,
   "preview_urls": false,
   "cache": { "enabled": true },
-  "observability": { "enabled": true },
+  "observability": { "enabled": true, "issues": { "enabled": true } },
   // Runs near D1 when that's faster than near the caller
   "placement": { "mode": "smart" },
-  "routes": [],
-  // migrations/ makes the schema for wrangler dev and the tests; a deployed database gets
-  // it from its build's export
-  "d1_databases": [
-    { "binding": "LEXICON_EN", "database_name": "skolia-lexicon-en-local", "migrations_dir": "migrations" },
-    { "binding": "LEXICON_FR", "database_name": "skolia-lexicon-fr-local", "migrations_dir": "migrations" },
-    { "binding": "LEXICON_PL", "database_name": "skolia-lexicon-pl-local", "migrations_dir": "migrations" }
-  ]
+  // The one environment's name, routes and databases, deployed with --env so its traces are
+  // tagged deployment.environment.name; local's is dev. migrations/ makes the databases'
+  // schema for wrangler dev and the tests; a deployed database gets it from its build's export.
+  "env": {
+    "dev": {
+      "name": "skolia-lexicon",
+      "routes": [],
+      "d1_databases": [
+        { "binding": "LEXICON_EN", "database_name": "skolia-lexicon-en-local", "migrations_dir": "migrations" },
+        { "binding": "LEXICON_FR", "database_name": "skolia-lexicon-fr-local", "migrations_dir": "migrations" },
+        { "binding": "LEXICON_PL", "database_name": "skolia-lexicon-pl-local", "migrations_dir": "migrations" }
+      ]
+    }
+  }
 }

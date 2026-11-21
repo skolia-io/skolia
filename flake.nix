@@ -100,7 +100,7 @@
               runHook preBuild
               export HOME=$TMPDIR WRANGLER_SEND_METRICS=false
               pnpm --filter @skolia/reader build
-              (cd api && pnpm exec wrangler deploy --dry-run --outdir "$TMPDIR/worker" --env="")
+              (cd api && pnpm exec wrangler deploy --dry-run --outdir "$TMPDIR/worker" --env dev)
               runHook postBuild
             '';
             installPhase = ''

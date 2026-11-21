@@ -59,10 +59,10 @@ export async function startLocal(): Promise<Local> {
   const server = createTestHarness({
     root: API,
     workers: [
-      { configPath: "./wrangler.jsonc", env: "", prebuiltWorkerDir: DIST, vars: { MUTABLE_FINAL_USER_MIGRATION: "true" } },
+      { configPath: "./wrangler.jsonc", env: "dev", prebuiltWorkerDir: DIST, vars: { MUTABLE_FINAL_USER_MIGRATION: "true" } },
       { configPath: "./src/testing/ingest-recorder.jsonc" },
-      { configPath: "./wrangler.internal.jsonc", env: "" },
-      { configPath: "../lexicon/wrangler.jsonc", env: "" },
+      { configPath: "./wrangler.internal.jsonc", env: "dev" },
+      { configPath: "../lexicon/wrangler.jsonc", env: "dev" },
     ],
   });
   await server.listen();

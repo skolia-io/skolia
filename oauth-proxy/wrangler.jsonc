@@ -9,11 +9,18 @@
   "minify": true,
   "workers_dev": false,
   "preview_urls": false,
-  "observability": { "enabled": true, "traces": { "enabled": true } },
-  "routes": [{ "pattern": "oauth-proxy.skolia.io", "custom_domain": true }],
-  "vars": {
-    "BASE_URL": "https://oauth-proxy.skolia.io",
-    // The previews' origins (infra/preview.py), the only ones it redirects to
-    "PREVIEWS": "^https://skolia-pr-[0-9]+\\.skolia-io\\.workers\\.dev$"
+  "observability": { "enabled": true, "traces": { "enabled": true }, "issues": { "enabled": true } },
+  // Only production's; deployed with --env so its traces are tagged deployment.environment.name.
+  // Routes and vars aren't inherited.
+  "env": {
+    "production": {
+      "name": "skolia-oauth-proxy",
+      "routes": [{ "pattern": "oauth-proxy.skolia.io", "custom_domain": true }],
+      "vars": {
+        "BASE_URL": "https://oauth-proxy.skolia.io",
+        // The previews' origins (infra/preview.py), the only ones it redirects to
+        "PREVIEWS": "^https://skolia-pr-[0-9]+\\.skolia-io\\.workers\\.dev$"
+      }
+    }
   }
 }

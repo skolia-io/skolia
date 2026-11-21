@@ -95,11 +95,15 @@ def config(env: str) -> None:
     web = promote("wrangler.jsonc", env)
     web["workers_dev"] = True
     web["preview_urls"] = False
-    # Google sign-in goes through the OAuth proxy (oauth-proxy/)
-    proxy = as_string(
-        as_object(read("../oauth-proxy/wrangler.jsonc").get("vars"), "oauth-proxy vars").get(
-            "BASE_URL"
+    # Google sign-in goes through the OAuth proxy (oauth-proxy/), which is only production's
+    oauth_proxy = as_object(
+        as_object(read("../oauth-proxy/wrangler.jsonc").get("env"), "oauth-proxy env").get(
+            "production"
         ),
+        "oauth-proxy env.production",
+    )
+    proxy = as_string(
+        as_object(oauth_proxy.get("vars"), "oauth-proxy vars").get("BASE_URL"),
         "oauth-proxy BASE_URL",
     )
     web["vars"] = {

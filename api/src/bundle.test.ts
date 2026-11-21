@@ -10,6 +10,6 @@ test(`the Worker bundle is at most ${BUDGET_KIB} KiB gzipped`, () => {
   assert.ok(
     kib <= BUDGET_KIB,
     `api/dist/main.js is ${kib.toFixed(1)} KiB gzipped. If that's expected, raise BUDGET_KIB in api/src/bundle.test.ts; ` +
-      "if not, see what grew with: pnpm --dir api exec wrangler deploy --dry-run --outdir dist --env='' --metafile meta.json",
+      "if not, see what grew with: pnpm --dir api exec wrangler deploy --dry-run --outdir dist --env dev --metafile meta.json",
   );
 });
