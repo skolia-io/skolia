@@ -90,10 +90,10 @@
 
     <div class="modal-body">
       <Field label="Title" for="edit-title">
-        <input id="edit-title" bind:value={title} maxlength={MAX_TITLE_LENGTH} required>
+        <input id="edit-title" bind:value={title} maxlength={MAX_TITLE_LENGTH} required />
       </Field>
-      <SourceFields bind:licence bind:ownWork bind:author bind:source bind:share />
-      <TagFields bind:tags id="edit" />
+      <SourceFields bind:licence={licence} bind:ownWork={ownWork} bind:author={author} bind:source={source} bind:share={share} />
+      <TagFields bind:tags={tags} id="edit" />
 
       <div class="danger-zone">
         {#if confirmingDelete}

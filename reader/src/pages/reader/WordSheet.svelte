@@ -391,8 +391,7 @@
               const other = sheet.view === "word" ? "sentence" : "word";
               show(other);
               document.getElementById(`sheet-tab-${other}`)?.focus();
-            }}
-            >{label}</button
+            }}>{label}</button
           >
         {/each}
       </div>
@@ -434,7 +433,7 @@
       </div>
     </div>
     <SentenceDiagram
-      {lang}
+      lang={lang}
       sentence={parseSentence(tokens, {
         keep: clause && !sheet.whole ? clause : undefined,
         cases: language.cases,
@@ -451,10 +450,10 @@
     <section class="word">
       <div class="head">
         <h2>
-          <span {lang}>{token.text}</span>
+          <span lang={lang}>{token.text}</span>
           {@render speakers(word.heard, token.text)}
           {#if token.lemma && !sameWord(token.lemma, token.text)}
-            <span class="lemma">(<span {lang}>{word.entry?.lemma ?? token.lemma}</span>)</span>
+            <span class="lemma">(<span lang={lang}>{word.entry?.lemma ?? token.lemma}</span>)</span>
           {/if}
         </h2>
         {#if known.data && learnable(word)}
@@ -500,8 +499,7 @@
             class="speaker"
             aria-label={`Play ${word}${r.tags ? ` (${r.tags.join(", ")})` : ""}`}
             title={r.tags?.join(", ")}
-            onclick={() => play(r)}
-            >🔊</button
+            onclick={() => play(r)}>🔊</button
           >
         {/each}
       {/snippet}
@@ -517,11 +515,10 @@
           {word.role.role}
           <button
             type="button"
-            {lang}
+            lang={lang}
             class="word-link mark-head"
             title="Show {word.role.head}"
-            onclick={() => onselectToken(word.ref.sentence, head)}
-            >{word.role.head}</button
+            onclick={() => onselectToken(word.ref.sentence, head)}>{word.role.head}</button
           >
         </p>
       {/if}
@@ -529,15 +526,14 @@
         {@const trigger = word.caseWhy.trigger}
         <p class="why">
           <span class="why-label">Why {CASE_NAME[token.feats.Case]}?</span>
-          <span {lang}
+          <span lang={lang}
             >{#each word.caseWhy.parts as part, j (j)}
               {#if part.trigger && trigger !== null}
                 <button
                   type="button"
                   class="word-link mark-trigger"
                   title="Show {part.text}"
-                  onclick={() => onselectToken(word.ref.sentence, trigger)}
-                  >{part.text}</button
+                  onclick={() => onselectToken(word.ref.sentence, trigger)}>{part.text}</button
                 >
               {:else}
                 {part.text}
@@ -558,7 +554,7 @@
                 {/if}
                 {#each sense.examples ?? [] as example, j (j)}
                   <div class="example">
-                    <span {lang}>{example.text}</span>
+                    <span lang={lang}>{example.text}</span>
                     {#if example.translation}
                       <span class="muted"> — {example.translation}</span>
                     {/if}
@@ -585,7 +581,7 @@
             {#each word.entry.relations as relation (relation.kind + relation.lemma)}
               <li>
                 {relationLabel(relation)}
-                <span {lang}>{relation.lemma}</span>
+                <span lang={lang}>{relation.lemma}</span>
               </li>
             {/each}
           </ul>
@@ -594,7 +590,7 @@
         {#if word.uses.length > 0}
           <div class="frames">
             <h3>Used with</h3>
-            <ul {lang}>
+            <ul lang={lang}>
               {#each allUses ? word.uses : word.uses.slice(0, SHOWN_USES) as frame, i (i)}
                 <li class={{ here: frame.here }}>
                   {#if frame.here}
@@ -625,7 +621,7 @@
         {#if word.idioms.length > 0}
           <details class="frames">
             <summary>Idioms ({word.idioms.length})</summary>
-            <ul {lang}>
+            <ul lang={lang}>
               {#each word.idioms as frame, i (i)}
                 <li class={{ here: frame.here }}>
                   {#if frame.here}
@@ -651,8 +647,8 @@
 
         {#each word.tables as table (table.title)}
           <ParadigmTable
-            {lang}
-            {table}
+            lang={lang}
+            table={table}
             bind:open={() => sheet.forms[table.title] ?? false, (open) => (sheet.forms[table.title] = open ?? false)}
           />
         {/each}

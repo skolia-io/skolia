@@ -16,8 +16,6 @@ import {
   type Due,
   type FeatureSets,
   type Lang,
-  type LemmaId,
-  type Lookup,
   type NewCard,
   type Reviewed,
   type ReviewRequest,

@@ -58,7 +58,7 @@ const MAX_CLUES = 4;
  * only a definition is shown whole. */
 export function clue(gloss: string): string {
   let plain = gloss;
-  for (let prev = ""; prev !== plain; ) [prev, plain] = [plain, plain.replace(/\s*\([^()]*\)/g, "")];
+  for (let prev = ""; prev !== plain;) [prev, plain] = [plain, plain.replace(/\s*\([^()]*\)/g, "")];
   const parts = plain
     .split(";")
     .map((p) => p.trim().replace(/\s+/g, " "))

@@ -7,7 +7,7 @@ import type { Context, TypedResponse } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import type { JSONParsed } from "hono/utils/types";
 import * as z from "zod";
-import { ANNOTATION_BATCH, LANGS, MAX_TEXT_LENGTH, type ApiError, type User, type Version } from "@skolia/shared/api";
+import { ANNOTATION_BATCH, MAX_TEXT_LENGTH, type ApiError, type User, type Version } from "@skolia/shared/api";
 import * as schemas from "@skolia/shared/schemas";
 import * as annotations from "./controllers/annotations.ts";
 import * as cards from "./controllers/cards.ts";

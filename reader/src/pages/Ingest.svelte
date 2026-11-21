@@ -52,7 +52,7 @@
             {@const busy = container !== null && container.jobs.length > 0}
             <li class="language">
               <div class="row">
-                <span {lang}>{LANGUAGE_INFO[lang].flag} {LANGUAGE_INFO[lang].endonym}</span>
+                <span lang={lang}>{LANGUAGE_INFO[lang].flag} {LANGUAGE_INFO[lang].endonym}</span>
                 <span class={["state", { active: container !== null }]}>
                   {#if container === null}
                     Idle

@@ -204,7 +204,7 @@
   }
 </script>
 
-<svelte:window {onkeydown} />
+<svelte:window onkeydown={onkeydown} />
 
 {#snippet lemma(c: DueCard)}
   <p class="prompt" lang={langOf(c)}>{lemmaOf(c)}</p>
@@ -247,7 +247,7 @@
   {@const lang = langOf(c)}
   {@const said = c.entry?.pronunciations ?? []}
   {#if said.length > 0}
-    <Pronunciations {said} />
+    <Pronunciations said={said} />
   {/if}
   {@render meanings(c)}
   {@const tables = tablesOf(c)}
@@ -255,7 +255,7 @@
     <details class="forms">
       <summary>Forms</summary>
       {#each tables as table (table.title)}
-        <ParadigmTable {lang} {table} />
+        <ParadigmTable lang={lang} table={table} />
       {/each}
     </details>
   {/if}
@@ -363,7 +363,7 @@
             {@render prompt(card)}
           {/if}
           {#if revealed}
-            <hr>
+            <hr />
             {#if card.kind === "cloze"}
               {@render why(card.data)}
             {:else if card.kind === "production"}
@@ -392,8 +392,7 @@
                   disabled={busy}
                   aria-keyshortcuts={String(rating)}
                   bind:element={goodButton}
-                  onclick={() => grade(rating)}
-                  >{GRADE_LABELS[rating]}</Button
+                  onclick={() => grade(rating)}>{GRADE_LABELS[rating]}</Button
                 >
               {:else}
                 <Button variant="quiet" disabled={busy} aria-keyshortcuts={String(rating)} onclick={() => grade(rating)}

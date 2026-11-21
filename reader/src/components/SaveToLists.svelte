@@ -72,14 +72,13 @@
       onclick={() => {
         void lists.refetch();
         void memberships.refetch();
-      }}
-      >Try again</button
+      }}>Try again</button
     >
   {:else if !lists.data || !memberships.data}
     <p role="status">Loading…</p>
   {:else}
     {#if lists.data.length > 6}
-      <input type="search" aria-label="Find a reading list" placeholder="Find a list…" bind:value={search}>
+      <input type="search" aria-label="Find a reading list" placeholder="Find a list…" bind:value={search} />
     {/if}
     <div class="choices">
       {#each shown as list (list.id)}
@@ -95,7 +94,7 @@
               if (change.isPending) input.checked = !input.checked;
               else change.mutate({ listId: list.id, id, action: input.checked ? "add" : "remove" });
             }}
-          >
+          />
           <span>{list.name}</span>
         </label>
       {:else}
@@ -120,7 +119,7 @@
             );
           }}
         >
-          <input aria-label="New list name" placeholder="New list name" maxlength="100" required bind:value={name}>
+          <input aria-label="New list name" placeholder="New list name" maxlength="100" required bind:value={name} />
           <Button small variant="primary" type="submit" disabled={edit.isPending || !name.trim()}>Create</Button>
         </form>
       {:else}

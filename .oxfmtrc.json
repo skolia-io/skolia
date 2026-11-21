@@ -1,0 +1,36 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "useTabs": false,
+  "tabWidth": 2,
+  "printWidth": 140,
+  "singleQuote": false,
+  "jsxSingleQuote": false,
+  "quoteProps": "as-needed",
+  "trailingComma": "all",
+  "semi": true,
+  "arrowParens": "always",
+  "bracketSameLine": false,
+  "bracketSpacing": true,
+  "ignorePatterns": [
+    "pnpm-lock.yaml",
+    "shared/schema.gen.ts",
+    "shared/schema.zod.gen.ts",
+    "api/openapi.json",
+    "reader/screenshots/fixtures",
+    "**/*.md",
+    "**/*.svg"
+  ],
+  "svelte": {
+    "allowShorthand": false
+  },
+  "htmlWhitespaceSensitivity": "strict",
+  "sortPackageJson": false,
+  "overrides": [
+    {
+      "files": ["**/*.jsonc"],
+      "options": {
+        "trailingComma": "none"
+      }
+    }
+  ]
+}

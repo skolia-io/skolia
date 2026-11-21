@@ -153,12 +153,10 @@ test("include=incoming gives the relations pointing at each entry, from their so
 
 test(`at most ${MAX_INCOMING} incoming relations come, by source id, and the entry says there are more`, async () => {
   const app = setup();
-  const sources = Array.from(
-    { length: MAX_INCOMING + 1 },
-    (_, i): TestEntry =>
-      glossed(`pl:w${String(i).padStart(3, "0")}:NOUN`, "a word", {
-        relations: [{ kind: "derived-from", lemma: "golić", lemma_id: "pl:golić:VERB", how: "noun-from-verb" }],
-      }),
+  const sources = Array.from({ length: MAX_INCOMING + 1 }, (_, i): TestEntry =>
+    glossed(`pl:w${String(i).padStart(3, "0")}:NOUN`, "a word", {
+      relations: [{ kind: "derived-from", lemma: "golić", lemma_id: "pl:golić:VERB", how: "noun-from-verb" }],
+    }),
   );
   await loadLexicon(env, "pl", "lex/1", [glossed("pl:golić:VERB", "to shave"), ...sources]);
   const { entries } = await body("golić", lookup(app, "pl:golić:VERB", "incoming"));

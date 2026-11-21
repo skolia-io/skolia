@@ -398,8 +398,8 @@
   });
 </script>
 
-<svelte:window {onkeydown} {onscroll} onhashchange={followLink} />
-<svelte:document {onvisibilitychange} />
+<svelte:window onkeydown={onkeydown} onscroll={onscroll} onhashchange={followLink} />
+<svelte:document onvisibilitychange={onvisibilitychange} />
 
 <div
   class={["reader", { "sheet-open": piece !== undefined, "sentence-open": piece !== undefined && sheet.view === "sentence" }]}
@@ -412,7 +412,7 @@
         <h1>{summary.title}</h1>
         <div class="title-actions">
           {#if signedIn.data}
-            <SaveToLists {id} />
+            <SaveToLists id={id} />
             <div class="mode">
               <Button
                 variant="quiet"
@@ -486,7 +486,7 @@
       {/if}
       {#if editing}
         <EditDocument
-          {summary}
+          summary={summary}
           onsaved={(saved) => {
             summary = saved;
             editing = false;
@@ -558,15 +558,14 @@
                       event.preventDefault();
                       toggle(p.id);
                     }
-                  }}
-                  >{p.text}</span
+                  }}>{p.text}</span
                 >
               {/if}
             {/each}
           </div>
         {/each}
       </article>
-      <audio bind:this={audio} bind:paused onended={() => (clip = null)} preload="none"></audio>
+      <audio bind:this={audio} bind:paused={paused} onended={() => (clip = null)} preload="none"></audio>
       {#if lexicon.data?.sources.length}
         <footer>
           Dictionary sources
@@ -590,11 +589,11 @@
     <WordSheet
       lang={reading.lang}
       version={lexiconVersion}
-      {piece}
-      {mode}
-      {headText}
-      {sentenceTokens}
-      {sentenceText}
+      piece={piece}
+      mode={mode}
+      headText={headText}
+      sentenceTokens={sentenceTokens}
+      sentenceText={sentenceText}
       documentId={id}
       onselectToken={(sentence, index) => (selected = doc?.pieceOf.get(tokenKey(sentence, index)) ?? selected)}
       onclose={() => (selected = null)}

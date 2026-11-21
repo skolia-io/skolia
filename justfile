@@ -30,7 +30,7 @@ lint project:
         uv run pyright
         ;;
       terraform)
-        pnpm exec biome ci infra
+        pnpm exec oxfmt --check infra
         terraform -chdir=infra fmt -check -recursive
         for dir in infra infra/shared infra/tokens; do
           TF_DATA_DIR=.terraform-validate terraform -chdir=$dir init -backend=false -input=false >/dev/null
@@ -38,7 +38,8 @@ lint project:
         done
         ;;
       *)
-        pnpm exec biome ci {{ project }} package.json biome.json
+        pnpm exec oxfmt --check {{ project }} package.json .oxfmtrc.json .oxlintrc.json
+        pnpm exec oxlint {{ project }}
         pnpm --filter ./{{ project }} run --if-present check
         case {{ project }} in api | lexicon) redocly lint {{ project }}/openapi.json ;; esac
         case {{ project }} in lexicon) infra/load-lexicon.py config local --check ;; esac
@@ -58,7 +59,7 @@ unit project:
 
 # Format everything just check checks the format of
 fmt:
-    pnpm exec biome format --write
+    pnpm exec oxfmt --write api e2e ingest lexicon oauth-proxy reader shared util infra package.json .oxfmtrc.json .oxlintrc.json
     cd analysis && uv run --locked ruff format . ../infra/*.py
     terraform -chdir=infra fmt -recursive
 

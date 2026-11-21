@@ -18,14 +18,14 @@
 
 {#snippet body()}
   {#if isList}
-    <p {lang} class="form-list">
+    <p lang={lang} class="form-list">
       {#each table.rows[0]?.cells[0] ?? [] as form, i (i)}
         {i > 0 ? ", " : ""}<span class={{ current: form.current }}>{form.text}</span>
       {/each}
     </p>
   {:else}
     <div class="scroll">
-      <table {lang}>
+      <table lang={lang}>
         <thead>
           <tr>
             <th></th>
@@ -57,7 +57,7 @@
     {@render body()}
   </div>
 {:else}
-  <details class="paradigm" bind:open>
+  <details class="paradigm" bind:open={open}>
     <summary>{table.title}</summary>
     {@render body()}
   </details>

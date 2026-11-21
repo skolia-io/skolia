@@ -59,7 +59,7 @@
       <section class="panel">
         <div class="pair">
           <Field label="Title" for="upload-title">
-            <input id="upload-title" bind:value={title} maxlength="200" required>
+            <input id="upload-title" bind:value={title} maxlength="200" required />
           </Field>
           <Field label="Language" for="upload-lang">
             <select id="upload-lang" bind:value={lang} required>
@@ -81,15 +81,14 @@
             placeholder={lang === "" ? "Paste the text here" : `Paste ${LANGUAGE_INFO[lang].name} text here`}
             rows="14"
             maxlength={MAX_TEXT_LENGTH}
-            required
-          ></textarea>
+            required></textarea>
         </Field>
-        <TagFields bind:tags id="upload" />
+        <TagFields bind:tags={tags} id="upload" />
       </section>
 
       <section class="panel">
         <h2>Provenance</h2>
-        <SourceFields bind:licence bind:ownWork bind:author bind:source bind:share />
+        <SourceFields bind:licence={licence} bind:ownWork={ownWork} bind:author={author} bind:source={source} bind:share={share} />
       </section>
 
       {#if error}

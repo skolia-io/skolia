@@ -17,7 +17,7 @@
   <button onclick={() => void texts.refetch()}>Try again</button>
 {:else}
   <DocumentList
-    {controls}
+    controls={controls}
     compactAside
     documents={texts.data?.pages.flatMap((page) => page.items.map((item) => item.document))}
     hasMore={texts.hasNextPage}

@@ -4,7 +4,7 @@ import { D1IngestHistory } from "@skolia/ingest/history";
 import type { DocumentId, Lang, Timestamp } from "@skolia/shared/api";
 import type { JobAttempt } from "@skolia/shared/schema";
 import { ALICE, client, importer, ingestJobs, local, setup, useLocal, type App } from "./testing/app.ts";
-import { body, expectStatus } from "@skolia/util/responses";
+import { body } from "@skolia/util/responses";
 
 useLocal();
 

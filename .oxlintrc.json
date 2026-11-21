@@ -1,0 +1,23 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "categories": {
+    "correctness": "error"
+  },
+  "ignorePatterns": ["shared/schema.gen.ts", "shared/schema.zod.gen.ts"],
+  "rules": {
+    "eslint/no-unused-vars": [
+      "error",
+      {
+        "argsIgnorePattern": "^_",
+        "varsIgnorePattern": "^_"
+      }
+    ],
+    "eslint/complexity": [
+      "error",
+      {
+        "max": 32,
+        "variant": "modified"
+      }
+    ]
+  }
+}
