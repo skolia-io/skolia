@@ -30,9 +30,11 @@ Needs the credentials infra/wrangler.sh needs.
 import argparse
 import hashlib
 import json
+import logging
 import re
 import sqlite3
 import subprocess
+import sys
 import tempfile
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
@@ -47,6 +49,8 @@ INFRA = Path(__file__).resolve().parent
 ROOT = INFRA.parent
 WRANGLER = INFRA / "wrangler.sh"
 LEXICON = ROOT / "lexicon"
+
+log = logging.getLogger("load-lexicon")
 TEMPLATE = LEXICON / "wrangler.template.jsonc"
 # Where just dev-api's wrangler dev keeps its local state, every Worker's
 DEV_STATE = ROOT / "api" / ".wrangler" / "state"
@@ -271,10 +275,10 @@ def load_remote(env: str, db: sqlite3.Connection, key: str, sample: int | None) 
     if existing is not None and loaded(existing, key):
         if not existing.replicated:
             cloudflare.replicate(existing)
-        print(f"{env}: {name} is already loaded")
+        log.info("%s: %s is already loaded", env, name)
         return
     if existing is not None:
-        print(f"{env}: deleting {name}, which a load left part way")
+        log.info("%s: deleting %s, which a load left part way", env, name)
         cloudflare.result("DELETE", f"d1/database/{existing.uuid}")
     made = cast(
         JsonObject,
@@ -284,8 +288,10 @@ def load_remote(env: str, db: sqlite3.Connection, key: str, sample: int | None) 
     version = content_version(db, lang, sample)
     with tempfile.TemporaryDirectory() as scratch:
         sql = write_sql(schema(db) + statements(db, lang, version, key, sample), scratch, lang)
-        size = f"{sql.stat().st_size / 1e6:.0f} MB of SQL"
-        print(f"{env}: loading {name}, {lang} {version}, built {built} ({size})")
+        mb = round(sql.stat().st_size / 1e6)
+        log.info(
+            "%s: loading %s, %s %s, built %s (%d MB of SQL)", env, name, lang, version, built, mb
+        )
         command = [str(WRANGLER), "account", "d1", "execute", name, "--remote", "--yes"]
         subprocess.run([*command, "--file", str(sql)], stdout=subprocess.DEVNULL, check=True)
     if not loaded(target, key):
@@ -293,7 +299,7 @@ def load_remote(env: str, db: sqlite3.Connection, key: str, sample: int | None) 
     # Once it's loaded, so the load's writes go to the primary alone. state counts it, so a
     # load that stopped before it runs again.
     cloudflare.replicate(target)
-    print(f"{env}: {name} serves {lang} {version}")
+    log.info("%s: %s serves %s %s", env, name, lang, version)
 
 
 def load_local(target: Local, db: sqlite3.Connection, key: str, sample: int | None) -> None:
@@ -302,7 +308,7 @@ def load_local(target: Local, db: sqlite3.Connection, key: str, sample: int | No
     empty = [f"DELETE FROM {table};" for table in (*TABLES, "loaded")]
     with tempfile.TemporaryDirectory() as scratch:
         sql = write_sql(empty + statements(db, lang, version, key, sample), scratch, lang)
-        print(f"local: loading {lang} {version}, built {built}")
+        log.info("local: loading %s %s, built %s", lang, version, built)
         local_wrangler(target, "--yes", "--file", str(sql))
     if local_built_from(target) != key:
         raise SystemExit(f"local: {lang} has no loaded row for {key} after loading it")
@@ -383,10 +389,11 @@ def config(env: str, sample: int | None, *, check: bool) -> None:
             raise SystemExit(f"{path.name} is out of date: infra/load-lexicon.py config {env}")
         return
     path.write_text(made)
-    print(path.relative_to(ROOT))
+    log.info("wrote %s", path.relative_to(ROOT))
 
 
 def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stderr)
     parser = argparse.ArgumentParser(description="Loads each language's lexicon into D1.")
     commands = parser.add_subparsers(dest="command", required=True)
     state = commands.add_parser("state", help="current if the build is loaded, else stale")
@@ -421,7 +428,7 @@ def main() -> None:
         else:
             db = cloudflare.database(database_name(lang, env, key))
             current = db is not None and db.replicated and loaded(db, key)
-        print("current" if current else "stale")
+        print("current" if current else "stale")  # noqa: T201 (CI reads it)
         return
     db = sqlite3.connect(f"file:{cast(Path, args.sqlite)}?mode=ro", uri=True)
     if env == "local":

@@ -14,6 +14,7 @@ workers.dev only. Needs CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN.
 """
 
 import json
+import logging
 import os
 import re
 import sys
@@ -127,7 +128,7 @@ def config(env: str) -> None:
         if "staging" in text:
             raise SystemExit(f"{file}: still names staging")
         (API.parent / file).write_text(f"{text}\n")
-        print(file)
+        logging.getLogger("preview").info("wrote %s", file)
 
 
 def main() -> None:
@@ -139,8 +140,9 @@ def main() -> None:
         raise SystemExit("usage: preview.py <config|url> pr-<N>")
     command, env = sys.argv[1], sys.argv[2]
     if command == "url":
-        print(url(env))
+        print(url(env))  # noqa: T201 (the deploy reads it)
     else:
+        logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stderr)
         config(env)
 
 

@@ -11,7 +11,9 @@ CLOUDFLARE_API_TOKEN.
 """
 
 import argparse
+import logging
 import re
+import sys
 from datetime import UTC, datetime, timedelta
 from typing import cast
 
@@ -23,6 +25,8 @@ MIN_AGE = timedelta(days=2)
 # skolia-lexicon-pl[-env]-{hash}, and before databases were per build, skolia-lexicon-pl[-env]
 DATABASE = re.compile(r"skolia-lexicon-[a-z]+(-staging|-pr-[0-9]+)?(-[0-9a-f]{12})?")
 WORKER = re.compile(r"skolia-lexicon(-staging|-pr-[0-9]+)?")
+
+log = logging.getLogger("gc-lexicon")
 
 
 def versions(script: str) -> set[str]:
@@ -54,6 +58,7 @@ def bound(script: str, version: str) -> set[str]:
 
 
 def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stderr)
     parser = argparse.ArgumentParser(description="Deletes the lexicon databases nothing binds.")
     parser.add_argument("--delete", action="store_true", help="delete them, not just list them")
     delete = cast(bool, parser.parse_args().delete)
@@ -73,9 +78,12 @@ def main() -> None:
         and db.uuid not in kept
         and now - datetime.fromisoformat(db.created_at) > MIN_AGE
     ]
-    print(f"{len(scripts)} lexicon Workers bind {len(kept)} databases; {len(unbound)} unbound")
+    log.info(
+        "%d lexicon Workers bind %d databases; %d unbound", len(scripts), len(kept), len(unbound)
+    )
     for db in sorted(unbound, key=lambda db: db.name):
-        print(f"{'deleting' if delete else 'unbound:'} {db.name} ({db.uuid}, made {db.created_at})")
+        action = "deleting" if delete else "unbound:"
+        log.info("%s %s (%s, made %s)", action, db.name, db.uuid, db.created_at)
         if delete:
             cloudflare.result("DELETE", f"d1/database/{db.uuid}")
 

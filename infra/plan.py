@@ -633,10 +633,10 @@ def print_graph(planner: Planner, *, as_dot: bool) -> None:
             target = targets()[name]
             edges = [f"build:{n}" for n in target.build] + [f"test:{n}" for n in target.test]
             edges += [f"against:{t}" for t in target.against]
-            print(f"{target.scope} {name} {planner.key(name)} {' '.join(edges)}".rstrip())
+            print(f"{target.scope} {name} {planner.key(name)} {' '.join(edges)}".rstrip())  # noqa: T201
         for node in sorted(reached):
             edges = [f"{kind}:{dep}" for kind, dep in direct_deps(node)]
-            print(f"node {node} {planner.checksum(node, TEST)} {' '.join(edges)}".rstrip())
+            print(f"node {node} {planner.checksum(node, TEST)} {' '.join(edges)}".rstrip())  # noqa: T201
         return
     shapes = {
         "build": "box",
@@ -656,7 +656,7 @@ def print_graph(planner: Planner, *, as_dot: bool) -> None:
         for kind, dep in direct_deps(node):
             style = " [style=dashed]" if kind == "test" else ""
             lines.append(f'  "{node}" -> "{dep}"{style};')
-    print("\n".join([*lines, "}"]))
+    print("\n".join([*lines, "}"]))  # noqa: T201
 
 
 def environment(value: str) -> str:
@@ -711,7 +711,7 @@ def main(args: list[str]) -> None:  # noqa: C901
     parsed = parser.parse_args(args)
     match parsed.command:
         case "plan":
-            print(json.dumps(plan(Planner(list(targets())), parsed.envs)))
+            print(json.dumps(plan(Planner(list(targets())), parsed.envs)))  # noqa: T201 (CI reads it)
         case "passed":
             if has_token():
                 record_build(Planner([parsed.name]), parsed.name)
@@ -728,7 +728,7 @@ def main(args: list[str]) -> None:  # noqa: C901
         case "graph":
             print_graph(Planner(parsed.names or list(targets())), as_dot=parsed.dot)
         case "version":
-            print(Planner(["web"]).version())
+            print(Planner(["web"]).version())  # noqa: T201 (CI reads it)
 
 
 if __name__ == "__main__":

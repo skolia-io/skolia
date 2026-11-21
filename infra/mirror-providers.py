@@ -14,6 +14,7 @@ missing.
 
 import hashlib
 import json
+import logging
 import os
 import re
 import subprocess
@@ -31,6 +32,8 @@ INFRA = Path(__file__).resolve().parent
 BUCKET = "skolia-tf-providers"
 PLATFORMS = ("linux_amd64", "darwin_arm64")
 ATTEMPTS = 3
+
+log = logging.getLogger("mirror-providers")
 TIMEOUT_S = 120
 
 
@@ -126,7 +129,7 @@ def request(
         except (urllib.error.URLError, TimeoutError) as e:
             if attempt == ATTEMPTS:
                 raise SystemExit(f"{method} {url}: {e}") from e
-        print(f"{method} {url}: attempt {attempt} failed, retrying", file=sys.stderr)
+        log.warning("%s %s: attempt %d failed, retrying", method, url, attempt)
         time.sleep(2 * attempt)
     raise AssertionError("unreachable")
 
@@ -168,7 +171,7 @@ def download(url: str) -> bytes:
                     raise SystemExit(
                         f"gh release download {tag} -R {repo} -p {filename}: {e}"
                     ) from e
-                print(f"{filename}: attempt {attempt} failed, retrying", file=sys.stderr)
+                log.warning("%s: attempt %d failed, retrying", filename, attempt)
     raise AssertionError("unreachable")
 
 
@@ -188,7 +191,7 @@ class Bucket:
             data=body,
             headers={"Authorization": f"Bearer {self.token}", "Content-Type": content_type},
         )
-        print(f"uploaded {key}")
+        log.info("uploaded %s", key)
 
     def put_json(self, key: str, doc: VersionDoc | IndexDoc) -> None:
         self.put(key, json.dumps(doc, indent=2).encode(), "application/json")
@@ -229,6 +232,7 @@ def bucket_from_env() -> Bucket:
 
 
 def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stderr)
     mirror = mirror_url()
     for provider in locked_providers((INFRA / ".terraform.lock.hcl").read_text()):
         index_body = request(f"{mirror}{provider.path}/index.json")
@@ -237,9 +241,14 @@ def main() -> None:
         archives = cast(VersionDoc, json.loads(version_body))["archives"] if version_body else {}
         missing = [p for p in PLATFORMS if p not in archives]
         if not missing and provider.version in index["versions"]:
-            print(f"{provider.path} {provider.version}: in the mirror")
+            log.info("%s %s: in the mirror", provider.path, provider.version)
             continue
-        print(f"{provider.path} {provider.version}: mirroring {', '.join(missing) or 'its index'}")
+        log.info(
+            "%s %s: mirroring %s",
+            provider.path,
+            provider.version,
+            ", ".join(missing) or "its index",
+        )
         bucket = bucket_from_env()
         added = {p: mirror_package(provider, p, bucket) for p in missing}
         bucket.put_json(
