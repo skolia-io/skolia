@@ -9,27 +9,27 @@
   load-lexicon.py <staging|production|pr-N|local> --lang LANG --built-from OUT
       [--sample N] [--persist-to DIR]
 sqlite is analysis's {lang}.d1.sqlite (skolia-build-d1-export, or the Nix output
-analysis#d1-export-{lang}), which has D1's schema; its meta table gives the language and
-version. Skipped if D1
-already serves that version. The new version's rows go in beside the old ones, then
+analysis#d1-export-{lang}), which has D1's schema; its meta table gives the language. The
+version D1 serves is a hash of the rows loaded, so the load is skipped if D1 already
+serves those rows. The new version's rows go in beside the old ones, then
 loaded points at it and the old rows are deleted in batches (lexicon/migrations), so a
 load that stops part way leaves the old version serving and can be run again. local is wrangler
 dev's database (api/.wrangler/state, just dev-api), or with --persist-to, the one in DIR
 (e2e/e2e.sh).
-For previews, --sample loads entries for wordfreq's N most common words and adds +sampleN
-to their version. --built-from OUT, the Nix output sqlite is in, is
-recorded in loaded once the old rows are deleted; without sqlite, it prints current if D1 last
-loaded OUT, else stale (just load-lexicon, to skip the build). Needs the credentials
-infra/wrangler.sh needs.
+For previews, --sample loads entries for wordfreq's N most common words. --built-from OUT,
+the Nix output sqlite is in, is recorded in loaded once the old rows are deleted; without
+sqlite, it prints current if D1 last loaded OUT, else stale (just load-lexicon, to skip the
+build). Needs the credentials infra/wrangler.sh needs.
 """
 
 import argparse
+import hashlib
 import json
 import re
 import sqlite3
 import subprocess
 import tempfile
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
@@ -132,8 +132,16 @@ def record_built_from(target: Target, version: str, key: str) -> None:
     )
 
 
-TABLES = ("entry", "relation", "featureset", "form_pronunciation")
-"""The tables the export fills, copied column for column, since it has D1's schema."""
+TABLES = {
+    "entry": ("lemma_id",),
+    "relation": ("source_id", "ord"),
+    "featureset": ("id", "feature"),
+    "form_pronunciation": ("form", "upos"),
+}
+"""The tables the export fills, copied column for column, since it has D1's schema, with
+each one's primary key but version."""
+# 64 bits of SHA-256
+VERSION_HEX = 16
 
 type Cell = str | int | None
 
@@ -151,15 +159,23 @@ def sampled(db: sqlite3.Connection, words: frozenset[str]) -> frozenset[str]:
     )
 
 
-def statements(db: sqlite3.Connection, lang: str, version: str, sample: int | None) -> list[str]:
-    which = f"version = {quote(version)}"
-    out = [f"DELETE FROM {table} WHERE {which};" for table in TABLES]
+def exported(
+    db: sqlite3.Connection, lang: str, sample: int | None
+) -> Iterator[tuple[str, list[str], Iterator[tuple[Cell, ...]]]]:
+    """Each table's columns but version, and the rows a load copies, in key order."""
     words = None if sample is None else frozenset(wordfreq.top_n_list(lang, sample))
     keep = None if words is None else sampled(db, words)
-    for table in TABLES:
-        columns = [cast(str, column[1]) for column in db.execute(f"PRAGMA table_info({table})")]
+    for table, key in TABLES.items():
+        columns = [
+            name
+            for name in (
+                cast(str, column[1]) for column in db.execute(f"PRAGMA table_info({table})")
+            )
+            if name != "version"
+        ]
         rows = cast(
-            Iterable[tuple[Cell, ...]], db.execute(f"SELECT {', '.join(columns)} FROM {table}")
+            Iterator[tuple[Cell, ...]],
+            db.execute(f"SELECT {', '.join(columns)} FROM {table} ORDER BY {', '.join(key)}"),
         )
         if keep is not None and table == "entry":
             lemma_id = columns.index("lemma_id")
@@ -170,10 +186,27 @@ def statements(db: sqlite3.Connection, lang: str, version: str, sample: int | No
         if words is not None and table == "form_pronunciation":
             form = columns.index("form")
             rows = (row for row in rows if str(row[form]).lower() in words)
-        at = columns.index("version")
+        yield table, columns, rows
+
+
+def content_version(db: sqlite3.Connection, lang: str, sample: int | None) -> str:
+    """The version D1 serves: a hash of the rows a load copies, so it changes exactly when
+    they do, and a lookup pinned to it can be cached for good."""
+    digest = hashlib.sha256()
+    for table, columns, rows in exported(db, lang, sample):
+        digest.update(json.dumps([table, columns]).encode() + b"\n")
+        for row in rows:
+            digest.update(json.dumps(row, ensure_ascii=False).encode() + b"\n")
+    return digest.hexdigest()[:VERSION_HEX]
+
+
+def statements(db: sqlite3.Connection, lang: str, version: str, sample: int | None) -> list[str]:
+    which = f"version = {quote(version)}"
+    out = [f"DELETE FROM {table} WHERE {which};" for table in TABLES]
+    for table, columns, rows in exported(db, lang, sample):
         out += inserts(
-            f"INSERT INTO {table} ({', '.join(columns)}) VALUES",
-            ((*row[:at], version, *row[at + 1 :]) for row in rows),
+            f"INSERT INTO {table} (version, {', '.join(columns)}) VALUES",
+            ((version, *row) for row in rows),
         )
     out.append(
         f"INSERT INTO loaded (id, version, built_from) VALUES (1, {quote(version)}, NULL) "
@@ -280,10 +313,9 @@ def main() -> None:
         print("current" if loaded is not None and loaded.built_from == key else "stale")
         return
     db = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
-    lang, version = meta(db)
+    lang, built = meta(db)
     target = Target(env, lang, persist_to)
-    if sample is not None:
-        version = f"{version}+sample{sample}"
+    version = content_version(db, lang, sample)
     loaded = serving(target)
     if loaded is not None and loaded.version == version:
         print(f"{env}: {lang} already serves {version}")
@@ -291,7 +323,8 @@ def main() -> None:
         with tempfile.TemporaryDirectory() as scratch:
             sql = Path(scratch) / f"lexicon-{lang}.sql"
             sql.write_text("\n".join(statements(db, lang, version, sample)) + "\n")
-            print(f"{env}: loading {lang} {version} ({sql.stat().st_size / 1e6:.0f} MB of SQL)")
+            size = f"{sql.stat().st_size / 1e6:.0f} MB of SQL"
+            print(f"{env}: loading {lang} {version}, built {built} ({size})")
             wrangler(target, "--yes", "--file", str(sql))
         loaded = serving(target)
         if loaded is None or loaded.version != version:

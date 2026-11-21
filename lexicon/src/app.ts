@@ -23,7 +23,7 @@ export type Deps = {
 type Env = { Variables: { version: string } };
 
 const NO_STORE = "no-store";
-const PINNED_CACHE_CONTROL = "public, max-age=0, must-revalidate";
+const PINNED_CACHE_CONTROL = "public, max-age=31536000, immutable";
 const EDGE_CACHE_CONTROL = "public, max-age=86400";
 
 const conditional = etag({

@@ -61,7 +61,10 @@ export const ResolvedEntry = Entries.extend({ requestedId: schemas.LemmaId }).me
 export const About = z
   .object({
     lang: schemas.Lang,
-    version: z.string().nullable().describe("The version served, which changes when a new build is loaded; null before one is"),
+    version: z
+      .string()
+      .nullable()
+      .describe("The version served, a hash of its entries, which changes whenever they do; null before one is loaded"),
     license: License,
     sources: z.array(Attribution),
   })

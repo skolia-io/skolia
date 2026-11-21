@@ -1599,7 +1599,7 @@
             "$ref": "#/components/schemas/Lang"
           },
           "version": {
-            "description": "The version served, which changes when a new build is loaded; null before one is",
+            "description": "The version served, a hash of its entries, which changes whenever they do; null before one is loaded",
             "type": ["string", "null"]
           },
           "license": {
