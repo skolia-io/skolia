@@ -11,7 +11,7 @@ from . import commons, kaikki, store
 from .pronunciation import merge as merge_pronunciations
 from .pronunciation import merge_recordings
 from .schema import Paradigm, Pronunciation, Recording, Relation, Sense
-from .source import Converted, LexiconSource
+from .source import Converted, LexiconSource, Pronounced
 
 LEXICON_VERSION = "8"
 
@@ -100,57 +100,77 @@ type Pronunciations = dict[tuple[str, Upos], list[Pronunciation]]
 type Recordings = dict[tuple[str, Upos], list[Recording]]
 
 
-def rows(
-    lang: str,
-    source: LexiconSource,
-    path: Path,
-    stats: Stats,
-    pronunciations: Pronunciations | None = None,
-    recordings: Recordings | None = None,
-    derivatives: list[store.VerbDerivative] | None = None,
-) -> Iterator[store.Row]:
-    """Fills pronunciations and recordings, if given, on the way: inflected forms have
-    them too."""
+@dataclass(frozen=True)
+class Extract:
+    """What one pass over a Kaikki extract finds."""
 
-    def converted() -> Iterator[Converted]:
-        for entry in kaikki.read(path):
-            stats.entries += 1
-            if derivatives is not None:
-                derivatives.extend(_verb_derivatives(lang, entry))
-            if (said := source.pronounce(entry)) is not None:
-                for upos in said.upos:
-                    key = (said.word, upos)
-                    if pronunciations is not None and said.pronunciations:
-                        pronunciations[key] = merge_pronunciations(
-                            pronunciations.get(key, []), said.pronunciations
-                        )
-                    if recordings is not None and said.recordings:
-                        recordings[key] = merge_recordings(recordings.get(key, []), said.recordings)
-            result = source.convert(entry)
-            if result is None:
-                stats.skipped += 1
-            else:
-                yield result
+    read: int
+    """Kaikki entries read."""
+    converted: list[Converted]
+    """The entries the analyser looks up, in the extract's order."""
+    pronunciations: Pronunciations
+    """By spelling and part of speech: inflected forms have them too."""
+    recordings: Recordings
+    derivatives: list[store.VerbDerivative]
 
-    merged = merge(converted(), source.grammar_tags)
+
+def read(lang: str, source: LexiconSource, path: Path) -> Extract:
+    converted: list[Converted] = []
+    pronunciations: Pronunciations = {}
+    recordings: Recordings = {}
+    derivatives: list[store.VerbDerivative] = []
+    count = 0
+    for entry in kaikki.read(path):
+        count += 1
+        derivatives.extend(_verb_derivatives(lang, entry))
+        if (said := source.pronounce(entry)) is not None:
+            _add_said(said, pronunciations, recordings)
+        if (result := source.convert(entry)) is not None:
+            converted.append(result)
+    return Extract(count, converted, pronunciations, recordings, derivatives)
+
+
+def _add_said(said: Pronounced, pronunciations: Pronunciations, recordings: Recordings) -> None:
+    for upos in said.upos:
+        key = (said.word, upos)
+        if said.pronunciations:
+            pronunciations[key] = merge_pronunciations(
+                pronunciations.get(key, []), said.pronunciations
+            )
+        if said.recordings:
+            recordings[key] = merge_recordings(recordings.get(key, []), said.recordings)
+
+
+def rows(lang: str, source: LexiconSource, converted: Iterable[Converted]) -> list[store.Row]:
+    """The merged entries and the source's hand entries, by lemma and part of speech; an
+    entry the analyser has no lemma_id for is left out."""
+    merged = merge(converted, source.grammar_tags)
     for hand in source.hand_entries():
         for upos in hand.upos:
             merged.setdefault(
                 (hand.lemma, upos),
                 Merged(hand.lemma, upos, hand.senses, hand.relations, hand.paradigms),
             )
-    for (lemma, upos), entry in sorted(merged.items()):
-        entry_id = lemma_id(lang, lemma, upos)
-        if entry_id is not None:
-            yield store.Row(
-                entry_id,
-                lemma,
-                upos,
-                entry.senses,
-                entry.relations,
-                entry.paradigms,
-                entry.grammar,
-            )
+    return [
+        store.Row(
+            entry_id, lemma, upos, entry.senses, entry.relations, entry.paradigms, entry.grammar
+        )
+        for (lemma, upos), entry in sorted(merged.items())
+        if (entry_id := lemma_id(lang, lemma, upos)) is not None
+    ]
+
+
+def said(extract: Extract) -> list[store.PronunciationRow]:
+    """Each spelling and part of speech's pronunciations and recordings, in order."""
+    return [
+        store.PronunciationRow(
+            word,
+            upos,
+            extract.pronunciations.get((word, upos), []),
+            extract.recordings.get((word, upos), []),
+        )
+        for word, upos in sorted(extract.pronunciations.keys() | extract.recordings.keys())
+    ]
 
 
 def _verb_derivatives(lang: str, entry: kaikki.KaikkiEntry) -> Iterator[store.VerbDerivative]:
@@ -179,7 +199,6 @@ def build(
     commons_path: Path | None = None,
 ) -> tuple[int, Stats]:
     """commons_path is a snapshot of Commons' recordings' file names (commons.fetch)."""
-    stats = Stats()
     # Named by content: kaikki.org overwrites its extract in place, and a download's
     # mtime is the day it was fetched, so a date would differ between machines
     extract = _sha256(kaikki_path)[:12]
@@ -190,25 +209,24 @@ def build(
         lexicon_version += f"+commons-{_sha256(commons_path)[:12]}"
     by_word = commons.recordings(lang, commons.read(commons_path)) if commons_path else {}
     meta = {"lang": lang, "version": lexicon_version, "attribution": source.attribution}
-    pronunciations: Pronunciations = {}
-    recordings: Recordings = {}
-    derivatives: list[store.VerbDerivative] = []
+    extract = read(lang, source, kaikki_path)
     count = store.write(
         out,
-        rows(lang, source, kaikki_path, stats, pronunciations, recordings, derivatives),
-        meta,
-        lambda: (
-            store.PronunciationRow(
-                word, upos, pronunciations.get((word, upos), []), recordings.get((word, upos), [])
-            )
-            for word, upos in sorted(pronunciations.keys() | recordings.keys())
+        store.Contents(
+            meta,
+            rows(lang, source, extract.converted),
+            said(extract),
+            by_word,
+            extract.derivatives,
         ),
-        by_word,
-        derivatives,
     )
-    stats.commons = len(by_word)
-    stats.pronounced = len(pronunciations)
-    stats.recorded = len(recordings)
+    stats = Stats(
+        entries=extract.read,
+        skipped=extract.read - len(extract.converted),
+        pronounced=len(extract.pronunciations),
+        recorded=len(extract.recordings),
+        commons=len(by_word),
+    )
     return count, stats
 
 

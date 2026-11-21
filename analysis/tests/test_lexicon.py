@@ -47,7 +47,10 @@ def test_merge_takes_grammar_tags_off_senses() -> None:
 def test_entry_shares_feature_sets_and_groups_forms(tmp_path: Path) -> None:
     path = tmp_path / "pl.sqlite"
     store.write(
-        path, [store.Row("pl:pies:NOUN", "pies", "NOUN", [DOG], [], [], {})], {"version": "test/1"}
+        path,
+        store.Contents(
+            {"version": "test/1"}, [store.Row("pl:pies:NOUN", "pies", "NOUN", [DOG], [], [], {})]
+        ),
     )
     gen: Feats = {"Case": "Gen", "Number": "Sing"}
     acc: Feats = {"Case": "Acc", "Number": "Sing"}
@@ -96,7 +99,7 @@ def test_pronunciation_fallbacks(tmp_path: Path) -> None:
         store.PronunciationRow("be", "VERB", [{"ipa": "/biː/"}], []),
         store.PronunciationRow("read", "VERB", [], [read]),
     ]
-    store.write(path, [], {"version": "test/1"}, lambda: said)
+    store.write(path, store.Contents({"version": "test/1"}, pronunciations=said))
     lexicon = store.Lexicon(path)
     assert entry.pronounce(lexicon, "Lead", "NOUN") == [{"ipa": "/lɛd/"}]
     assert entry.pronounce(lexicon, "lead", "VERB") == [{"ipa": "/liːd/"}]
@@ -140,7 +143,14 @@ def test_record_falls_back_to_commons_recordings(tmp_path: Path) -> None:
         store.PronunciationRow("kot", "NOUN", [{"ipa": "/kɔt/"}], [wiktionary]),
         store.PronunciationRow("pies", "NOUN", [{"ipa": "/ˈpjɛs/"}], []),
     ]
-    store.write(path, [], {"version": "test/1"}, lambda: said, {"psa": [psa], "kot": [kot]})
+    store.write(
+        path,
+        store.Contents(
+            {"version": "test/1"},
+            pronunciations=said,
+            word_recordings={"psa": [psa], "kot": [kot]},
+        ),
+    )
     lexicon = store.Lexicon(path)
     assert entry.record(lexicon, "kot", "NOUN") == [wiktionary]
     assert entry.record(lexicon, "Psa", "NOUN") == [psa]
@@ -174,19 +184,21 @@ def test_d1_export_stores_whole_entries_relations_and_feature_rows(tmp_path: Pat
     said = [store.PronunciationRow("pies", "NOUN", [{"ipa": "/pjɛs/"}], [])]
     store.write(
         path,
-        [
-            store.Row(
-                "pl:pies:NOUN",
-                "pies",
-                "NOUN",
-                [DOG],
-                [{"kind": "variant-of", "lemma": "piesek", "tags": ["rare"]}],
-                [],
-                {},
-            )
-        ],
-        {"lang": "pl", "version": "test/1"},
-        lambda: said,
+        store.Contents(
+            {"lang": "pl", "version": "test/1"},
+            [
+                store.Row(
+                    "pl:pies:NOUN",
+                    "pies",
+                    "NOUN",
+                    [DOG],
+                    [{"kind": "variant-of", "lemma": "piesek", "tags": ["rare"]}],
+                    [],
+                    {},
+                )
+            ],
+            said,
+        ),
     )
     gen: Feats = {"Case": "Gen", "Number": "Sing", "Gender": "Masc"}
     acc: Feats = {"Case": "Acc", "Number": "Sing", "Gender": "Masc"}
@@ -275,10 +287,12 @@ def test_normalized_lexicon_preserves_nested_values_and_incoming_links(tmp_path:
     ]
     store.write(
         path,
-        [row],
-        {},
-        lambda: [store.PronunciationRow("finir", "VERB", said, heard)],
-        {"finir": heard},
+        store.Contents(
+            {},
+            [row],
+            [store.PronunciationRow("finir", "VERB", said, heard)],
+            {"finir": heard},
+        ),
     )
     lexicon = store.Lexicon(path)
     assert lexicon.get(row.lemma_id) == row
@@ -325,12 +339,14 @@ def test_a_derivative_without_senses_takes_its_bases_and_its_own_aspect(tmp_path
     path = tmp_path / "pl.sqlite"
     store.write(
         path,
-        [GOLIĆ],
-        {"version": "test/1"},
-        derivatives=[
-            store.VerbDerivative("pl", "golić", "zgolić"),
-            store.VerbDerivative("pl", "golić", "zgolić"),
-        ],
+        store.Contents(
+            {"version": "test/1"},
+            [GOLIĆ],
+            derivatives=[
+                store.VerbDerivative("pl", "golić", "zgolić"),
+                store.VerbDerivative("pl", "golić", "zgolić"),
+            ],
+        ),
     )
     lexicon = store.Lexicon(path)
     derived = lexicon.get("pl:zgolić:VERB")
@@ -354,7 +370,7 @@ def test_a_derivative_without_senses_takes_its_bases_and_its_own_aspect(tmp_path
 def test_an_entry_borrows_senses_from_its_base(tmp_path: Path) -> None:
     path = tmp_path / "pl.sqlite"
     derivatives = [store.VerbDerivative("pl", "golić", "zgolić")]
-    store.write(path, [GOLIĆ], {"version": "test/1"}, derivatives=derivatives)
+    store.write(path, store.Contents({"version": "test/1"}, [GOLIĆ], derivatives=derivatives))
     lexicon = store.Lexicon(path)
     row = lexicon.get("pl:zgolić:VERB")
     assert row is not None
@@ -376,7 +392,7 @@ def test_aspect_partners_name_their_targets(tmp_path: Path) -> None:
         [],
         {},
     )
-    store.write(path, [GOLIĆ, ogolić], {})
+    store.write(path, store.Contents({}, [GOLIĆ, ogolić]))
     found = store.Lexicon(path).get("pl:ogolić:VERB")
     assert found is not None
     assert found.relations == [{**ogolić.relations[0], "lemma_id": "pl:golić:VERB"}]
