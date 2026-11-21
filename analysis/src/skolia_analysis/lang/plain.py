@@ -4,7 +4,7 @@ readings to check it against, so no candidates and no snapping (en, fr)."""
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 
-from ..blob import build
+from ..blob import Language, build
 from ..parsed import ParsedSentence, Parser
 from ..schema import Blob, ExpressionDef
 
@@ -33,7 +33,7 @@ class PlainAnalyzer:
     def assemble(self, text: str, parsed: Iterable[ParsedSentence]) -> Blob:
         return build(
             self.preprocess(parsed),
-            lang=self.lang,
+            Language(lang=self.lang),
             analyzer=self.name,
             text=text,
             expressions=self.expressions,

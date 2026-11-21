@@ -9,7 +9,7 @@ from importlib.metadata import version
 from pathlib import Path
 
 from ... import reconcile
-from ...blob import CandidateLookup, build
+from ...blob import CandidateLookup, Language, build
 from ...lexicon.entry import Frames, no_frames
 from ...parsed import ParsedSentence, Parser
 from ...parsers.combo_parser import ComboParser
@@ -102,17 +102,14 @@ class PolishAnalyzer:
         return self.assemble(text, self.parser(text))
 
     def assemble(self, text: str, parsed: Iterable[ParsedSentence]) -> Blob:
-        blob = build(
-            parsed,
+        language = Language(
             lang=LANG,
-            analyzer=self.name,
-            text=text,
             candidates=self.candidates,
-            expressions=self.expressions,
+            snap=reconcile.POLICIES[self.snap] if self.snap else None,
             expression_gap=expression_gap,
             entry_upos=entry_upos,
-            snap=reconcile.POLICIES[self.snap] if self.snap else None,
         )
+        blob = build(parsed, language, analyzer=self.name, text=text, expressions=self.expressions)
         tokens = [s["tokens"] for s in blob["sentences"]]
         cases.apply(tokens, self.valency, correct=self.correct_cases)
         return blob

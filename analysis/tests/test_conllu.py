@@ -1,4 +1,4 @@
-from skolia_analysis.blob import build
+from skolia_analysis.blob import Language, build
 from skolia_analysis.conllu import write
 from skolia_analysis.parsed import ParsedSentence, ParsedToken, ParsedWord
 
@@ -17,7 +17,7 @@ def test_fused_word_and_space_after() -> None:
             ParsedToken(".", 10, 11, (word(".", ".", 0),)),
         )
     )
-    blob = build([sentence], lang="pl", analyzer="test", text=TEXT)
+    blob = build([sentence], Language(lang="pl"), analyzer="test", text=TEXT)
     lines = write(blob, TEXT).splitlines()
     assert lines[0] == "# text = Dałem radę."
     assert lines[1].split("\t") == ["1-2", "Dałem", *["_"] * 8]

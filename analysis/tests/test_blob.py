@@ -1,4 +1,11 @@
-from skolia_analysis.blob import build, lemma_id, match_expressions, utf16_offsets, utf16_slice
+from skolia_analysis.blob import (
+    Language,
+    build,
+    lemma_id,
+    match_expressions,
+    utf16_offsets,
+    utf16_slice,
+)
 from skolia_analysis.parsed import ParsedSentence, ParsedToken, ParsedWord
 from skolia_analysis.schema import ExpressionDef
 
@@ -44,7 +51,7 @@ def test_offsets_are_utf16_past_the_bmp() -> None:
             for surface, start, end in tokens
         )
     )
-    blob = build([sentence], lang="pl", analyzer="test", text=text)
+    blob = build([sentence], Language(lang="pl"), analyzer="test", text=text)
     spans = [(t["start"], t["end"]) for t in blob["sentences"][0]["tokens"]]
     assert spans == [(0, 2), (3, 6), (7, 8)]
     assert (blob["sentences"][0]["start"], blob["sentences"][0]["end"]) == (0, 8)
