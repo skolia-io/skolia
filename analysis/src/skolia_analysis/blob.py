@@ -1,8 +1,9 @@
 """Build the analysis blob from parser output. Language-neutral: anything language-specific
-comes in through the CandidateLookup and the expression gap predicate."""
+comes in through Language."""
 
 import hashlib
-from collections.abc import Callable, Iterable, Iterator, Sequence
+from collections.abc import Callable, Iterable, Sequence
+from dataclasses import dataclass
 from itertools import accumulate
 from typing import Protocol
 
@@ -58,6 +59,21 @@ def own_upos(reading: Reading) -> Upos:
     return reading["upos"]
 
 
+@dataclass(frozen=True, kw_only=True)
+class Language:
+    """What building a blob needs to know about its language; the defaults add nothing to
+    the parser's readings."""
+
+    lang: str
+    candidates: CandidateLookup | None = None
+    """The dictionary's readings of each token: snap picks among them, and the reader
+    offers them as alternatives."""
+    snap: reconcile.Policy | None = None
+    """Replaces the parser's reading with a candidate; None keeps the parser's."""
+    expression_gap: ExpressionGap = no_gaps
+    entry_upos: EntryUpos = own_upos
+
+
 def lemma_id(lang: str, lemma: str | None, upos: Upos) -> str | None:
     if not lemma or upos in NO_LEMMA_ID:
         return None
@@ -94,21 +110,25 @@ def parser_reading(word: ParsedWord) -> Reading:
     }
 
 
-def build_token(  # noqa: PLR0913
-    lang: str,
+def choose_reading(
+    word: ParsedWord, readings: list[Reading] | None, snap: reconcile.Policy | None
+) -> Reading | None:
+    """The candidate snap puts in place of the parser's reading, or None to keep it."""
+    if snap is None or not readings or word.upos in NO_LEMMA_ID:
+        return None
+    return snap(parser_reading(word), readings)
+
+
+def build_token(
+    language: Language,
     units: Sequence[int],
     tok: ParsedToken,
     word: ParsedWord,
     readings: list[Reading] | None,
-    snap: reconcile.Policy | None,
-    entry_upos: EntryUpos = own_upos,
 ) -> Token:
-    chosen = parser_reading(word)
-    replaced = False
-    if snap and readings and word.upos not in NO_LEMMA_ID:
-        better = snap(chosen, readings)
-        if better is not None:
-            chosen, replaced = better, True
+    better = choose_reading(word, readings, language.snap)
+    replaced = better is not None
+    chosen = better or parser_reading(word)
     # parser_reading stands the text in for a missing lemma; that's no lemma to link by
     lemma = chosen["lemma"] if word.lemma or replaced else None
     entry: Token = {
@@ -116,7 +136,7 @@ def build_token(  # noqa: PLR0913
         "end": units[tok.end],
         "text": word.text,
         "lemma": lemma,
-        "lemma_id": lemma_id(lang, lemma, entry_upos(chosen)),
+        "lemma_id": lemma_id(language.lang, lemma, language.entry_upos(chosen)),
         "upos": chosen["upos"],
         "xpos": chosen["xpos"] or None,
         "feats": chosen["feats"],
@@ -133,31 +153,21 @@ def build_token(  # noqa: PLR0913
     return entry
 
 
-def build_tokens(  # noqa: PLR0913
-    lang: str,
-    units: Sequence[int],
-    tok: ParsedToken,
-    candidates: CandidateLookup | None,
-    snap: reconcile.Policy | None,
-    entry_upos: EntryUpos = own_upos,
-) -> Iterator[Token]:
-    readings = candidates(tok.text, [w.text for w in tok.words]) if candidates else None
-    for index, word in enumerate(tok.words):
-        reading = readings[index] if readings else None
-        yield build_token(lang, units, tok, word, reading, snap, entry_upos)
+def _readings(language: Language, tok: ParsedToken) -> list[list[Reading] | None]:
+    """Each word's candidates, or None for each without any."""
+    found = (
+        language.candidates(tok.text, [w.text for w in tok.words]) if language.candidates else []
+    )
+    return list(found) or [None] * len(tok.words)
 
 
-def build(  # noqa: PLR0913
+def build(
     sentences: Iterable[ParsedSentence],
+    language: Language,
     *,
-    lang: str,
     analyzer: str,
     text: str,
-    candidates: CandidateLookup | None = None,
     expressions: Iterable[ExpressionDef] = (),
-    expression_gap: ExpressionGap = no_gaps,
-    snap: reconcile.Policy | None = None,
-    entry_upos: EntryUpos = own_upos,
 ) -> Blob:
     expression_list = list(expressions)
     units = utf16_offsets(text)
@@ -167,12 +177,12 @@ def build(  # noqa: PLR0913
             # Nothing to show, and no offsets to give it
             continue
         tokens = [
-            token
+            build_token(language, units, tok, word, readings)
             for tok in sent.tokens
-            for token in build_tokens(lang, units, tok, candidates, snap, entry_upos)
+            for word, readings in zip(tok.words, _readings(language, tok), strict=True)
         ]
         lemmas = [t["lemma"] for t in tokens]
-        gaps = [expression_gap(t) for t in tokens]
+        gaps = [language.expression_gap(t) for t in tokens]
         built.append(
             {
                 "start": units[sent.tokens[0].start],
@@ -184,7 +194,7 @@ def build(  # noqa: PLR0913
     return {
         "schema": SCHEMA,
         "analyzer": analyzer,
-        "lang": lang,
+        "lang": language.lang,
         "hash": "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest(),
         "sentences": built,
     }
