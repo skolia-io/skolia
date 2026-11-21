@@ -8,6 +8,7 @@ it: scripts/eval_ud.py --lang pl --data DIR.
 
 import argparse
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 from skolia_analysis import conllu
@@ -84,8 +85,9 @@ def main() -> None:
     parsed = model(text)
     lookup = pl.candidate_lookup()
     walenty = Valency.load(args.valency)
-    plain = pl.assemble(text, parsed, model.name, lookup, valency=walenty, correct_cases=False)
-    corrected = pl.assemble(text, parsed, model.name, lookup, valency=walenty)
+    analyzer = pl.PolishAnalyzer(parser=model, candidates=lookup, valency=walenty)
+    plain = replace(analyzer, correct_cases=False).assemble(text, parsed)
+    corrected = analyzer.assemble(text, parsed)
     report_case_changes(args.gold, text, plain, corrected)
 
 
