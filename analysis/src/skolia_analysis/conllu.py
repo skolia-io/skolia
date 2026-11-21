@@ -11,6 +11,7 @@ script) score them.
 
 from collections.abc import Iterator
 from dataclasses import dataclass, field
+from itertools import groupby
 from pathlib import Path
 
 from .blob import utf16_slice
@@ -24,47 +25,46 @@ def _feats(token: Token) -> str:
     return "|".join(pairs) or EMPTY
 
 
+def _word_line(id_: int, word: Token, misc: str) -> str:
+    head = 0 if word["head"] is None else word["head"] + 1
+    columns = [
+        str(id_),
+        word["text"],
+        word["lemma"] or EMPTY,
+        word["upos"],
+        word["xpos"] or EMPTY,
+        _feats(word),
+        str(head),
+        word["deprel"] or EMPTY,
+        EMPTY,
+        misc,
+    ]
+    return "\t".join(columns)
+
+
+def _surface(token: Token) -> tuple[int, int, str | None]:
+    """The words of one fused token (zrobił + em) share their span and mwt."""
+    return token["start"], token["end"], token.get("mwt")
+
+
 def write(blob: Blob, text: str) -> str:
     """The blob as CoNLL-U. text is the source text the blob was built from."""
     lines: list[str] = []
     for sentence in blob["sentences"]:
-        tokens = sentence["tokens"]
         lines.append(f"# text = {utf16_slice(text, sentence['start'], sentence['end'])}")
-        index = 0
-        while index < len(tokens):
-            token = tokens[index]
-            surface = token.get("mwt")
-            span = 1
-            if surface is not None:
-                while (
-                    index + span < len(tokens)
-                    and tokens[index + span].get("mwt") == surface
-                    and tokens[index + span]["start"] == token["start"]
-                ):
-                    span += 1
-            following = tokens[index + span] if index + span < len(tokens) else None
-            space_after = following is not None and following["start"] > token["end"]
+        surfaces = [list(words) for _, words in groupby(sentence["tokens"], key=_surface)]
+        first = 1
+        for words, following in zip(surfaces, [*surfaces[1:], None], strict=True):
+            space_after = following is not None and following[0]["start"] > words[0]["end"]
             misc = EMPTY if space_after or following is None else "SpaceAfter=No"
-            if span > 1:
-                mwt_columns = [f"{index + 1}-{index + span}", surface or "", *[EMPTY] * 7, misc]
-                lines.append("\t".join(mwt_columns))
-            for offset in range(span):
-                word = tokens[index + offset]
-                head = 0 if word["head"] is None else word["head"] + 1
-                columns = [
-                    str(index + offset + 1),
-                    word["text"],
-                    word["lemma"] or EMPTY,
-                    word["upos"],
-                    word["xpos"] or EMPTY,
-                    _feats(word),
-                    str(head),
-                    word["deprel"] or EMPTY,
-                    EMPTY,
-                    misc if span == 1 else EMPTY,
-                ]
-                lines.append("\t".join(columns))
-            index += span
+            if len(words) == 1:
+                lines.append(_word_line(first, words[0], misc))
+            else:
+                last = first + len(words) - 1
+                mwt = words[0].get("mwt") or ""
+                lines.append("\t".join([f"{first}-{last}", mwt, *[EMPTY] * 7, misc]))
+                lines += [_word_line(first + i, word, EMPTY) for i, word in enumerate(words)]
+            first += len(words)
         lines.append("")
     return "\n".join(lines) + "\n"
 
