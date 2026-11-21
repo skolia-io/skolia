@@ -1,12 +1,15 @@
 """The lexicon on the server: one SQLite file per language, one row per lemma_id.
 
-Ordered child tables store senses, paradigms and audio. A relation names its target's
-spelling, and its entry when the lexicon has one, and is indexed at both ends.
+An entry keeps its senses (with their examples and selectors) and its paradigms (with
+their forms) as JSON, in schema.py's Sense and Paradigm shapes. A relation names its
+target's spelling, and its entry when the lexicon has one, and is indexed at both ends.
+Pronunciations and recordings are by spelling, in tables of their own.
 """
 
 import json
 import sqlite3
-from collections.abc import Callable, Iterable, Iterator, Mapping
+from collections.abc import Iterable, Iterator, Mapping, Sequence
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import NamedTuple, assert_never, cast
 
@@ -32,31 +35,13 @@ CREATE TABLE entry (
     lemma_lower TEXT NOT NULL,
     upos TEXT NOT NULL,
     -- What every sense's selector says (pani: Fem), as UD features
-    grammar TEXT NOT NULL CHECK (json_valid(grammar) AND json_type(grammar) = 'object')
+    grammar TEXT NOT NULL CHECK (json_valid(grammar) AND json_type(grammar) = 'object'),
+    -- schema.py's Sense and Paradigm, in order
+    senses TEXT NOT NULL CHECK (json_valid(senses) AND json_type(senses) = 'array'),
+    paradigms TEXT NOT NULL CHECK (json_valid(paradigms) AND json_type(paradigms) = 'array')
 );
 CREATE INDEX entry_lemma ON entry (lemma);
 CREATE INDEX entry_lemma_lower ON entry (lemma_lower);
-CREATE TABLE sense (
-    id INTEGER PRIMARY KEY,
-    lemma_id TEXT NOT NULL REFERENCES entry,
-    ord INTEGER NOT NULL,
-    gloss TEXT NOT NULL,
-    tags TEXT NOT NULL CHECK (json_valid(tags) AND json_type(tags) = 'array'),
-    UNIQUE (lemma_id, ord)
-);
-CREATE TABLE sense_when (
-    sense_id INTEGER NOT NULL REFERENCES sense,
-    ord INTEGER NOT NULL,
-    features TEXT NOT NULL CHECK (json_valid(features) AND json_type(features) = 'object'),
-    PRIMARY KEY (sense_id, ord)
-) WITHOUT ROWID;
-CREATE TABLE example (
-    sense_id INTEGER NOT NULL REFERENCES sense,
-    ord INTEGER NOT NULL,
-    text TEXT NOT NULL,
-    translation TEXT,
-    PRIMARY KEY (sense_id, ord)
-) WITHOUT ROWID;
 -- data: what the kind adds, {"aspect": "Perf"} or {"how": "diminutive"} (schema.py Relation).
 -- target_id is NULL when no one entry has the target's spelling.
 CREATE TABLE relation (
@@ -70,21 +55,6 @@ CREATE TABLE relation (
 ) WITHOUT ROWID;
 CREATE INDEX relation_target_lemma ON relation (target_lemma, source_id, ord);
 CREATE INDEX relation_target ON relation (target_id, source_id, ord);
-CREATE TABLE paradigm (
-    id INTEGER PRIMARY KEY,
-    lemma_id TEXT NOT NULL REFERENCES entry,
-    ord INTEGER NOT NULL,
-    homonym TEXT NOT NULL,
-    UNIQUE (lemma_id, ord)
-);
-CREATE TABLE paradigm_form (
-    paradigm_id INTEGER NOT NULL REFERENCES paradigm,
-    ord INTEGER NOT NULL,
-    form TEXT NOT NULL,
-    xpos TEXT NOT NULL,
-    features TEXT NOT NULL CHECK (json_valid(features) AND json_type(features) = 'object'),
-    PRIMARY KEY (paradigm_id, ord)
-) WITHOUT ROWID;
 CREATE TABLE pronunciation (
     word TEXT NOT NULL,
     upos TEXT NOT NULL,
@@ -143,103 +113,144 @@ class VerbDerivative(NamedTuple):
     derivative: str
 
 
-def write(  # noqa: PLR0913
-    path: Path,
-    rows: Iterable[Row],
-    meta: dict[str, str],
-    pronunciations: Callable[[], Iterable[PronunciationRow]] = lambda: (),
-    recordings: Mapping[str, list[Recording]] | None = None,
-    derivatives: Iterable[VerbDerivative] = (),
-) -> int:
-    """pronunciations is called after rows is used up: the build collects both in one pass
-    over the Kaikki extract. recordings are Commons' by word (commons.py), for any part of
-    speech."""
+@dataclass(frozen=True)
+class Contents:
+    """Everything a lexicon file holds."""
+
+    meta: Mapping[str, str]
+    rows: Sequence[Row] = ()
+    pronunciations: Sequence[PronunciationRow] = ()
+    word_recordings: Mapping[str, Sequence[Recording]] = field(
+        default_factory=lambda: dict[str, Sequence[Recording]]()
+    )
+    """Commons' recordings by spelling (commons.py), for any part of speech."""
+    derivatives: Sequence[VerbDerivative] = ()
+
+
+def write(path: Path, contents: Contents) -> int:
+    """Replaces the file at path; returns how many rows it wrote."""
     path.unlink(missing_ok=True)
     with sqlite3.connect(path) as db:
         db.executescript(SCHEMA)
-        db.executemany("INSERT INTO meta VALUES (?, ?)", meta.items())
-        count = 0
-        relations: list[tuple[str, int, Relation]] = []
-        for row in rows:
-            db.execute(
-                "INSERT INTO entry VALUES (?, ?, ?, ?, ?)",
-                (row.lemma_id, row.lemma, row.lemma.lower(), row.upos, json.dumps(row.grammar)),
-            )
-            for index, sense in enumerate(row.senses):
-                sense_id = db.execute(
-                    """
-                    INSERT INTO sense (lemma_id, ord, gloss, tags) VALUES (?, ?, ?, ?)
-                    """,
-                    (row.lemma_id, index, sense["gloss"], json.dumps(sense["tags"])),
-                ).lastrowid
-                db.executemany(
-                    "INSERT INTO sense_when VALUES (?, ?, ?)",
-                    (
-                        (sense_id, index, json.dumps(feats))
-                        for index, feats in enumerate(sense.get("when", []))
-                    ),
-                )
-                db.executemany(
-                    "INSERT INTO example VALUES (?, ?, ?, ?)",
-                    (
-                        (sense_id, index, example["text"], example.get("translation"))
-                        for index, example in enumerate(sense.get("examples", []))
-                    ),
-                )
-            relations.extend(
-                (row.lemma_id, index, relation) for index, relation in enumerate(row.relations)
-            )
-            for index, paradigm in enumerate(row.paradigms):
-                paradigm_id = db.execute(
-                    "INSERT INTO paradigm (lemma_id, ord, homonym) VALUES (?, ?, ?)",
-                    (row.lemma_id, index, paradigm["homonym"]),
-                ).lastrowid
-                db.executemany(
-                    "INSERT INTO paradigm_form VALUES (?, ?, ?, ?, ?)",
-                    (
-                        (paradigm_id, index, form["form"], form["xpos"], json.dumps(form["feats"]))
-                        for index, form in enumerate(paradigm["forms"])
-                    ),
-                )
-            count += 1
-        db.executemany(
-            """
-            INSERT INTO relation (source_id, ord, target_lemma, target_id, kind, data)
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
+        db.executemany("INSERT INTO meta VALUES (?, ?)", contents.meta.items())
+        _write_entries(db, contents.rows)
+        _write_relations(db, contents.rows)
+        _write_derivatives(db, contents.derivatives)
+        _write_pronunciations(db, contents.pronunciations)
+        for word, recordings in sorted(contents.word_recordings.items()):
+            _write_recordings(db, word, None, recordings)
+    return len(contents.rows)
+
+
+def _write_entries(db: sqlite3.Connection, rows: Iterable[Row]) -> None:
+    db.executemany(
+        "INSERT INTO entry VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (
             (
-                (
-                    source_id,
-                    ord_,
-                    relation["lemma"],
-                    _target(db, source_id, relation),
-                    relation["kind"],
-                    json.dumps(relation_data(relation), ensure_ascii=False),
-                )
-                for source_id, ord_, relation in relations
-            ),
+                row.lemma_id,
+                row.lemma,
+                row.lemma.lower(),
+                row.upos,
+                json.dumps(row.grammar),
+                json.dumps([_sense(sense) for sense in row.senses]),
+                json.dumps([_paradigm(paradigm) for paradigm in row.paradigms]),
+            )
+            for row in rows
+        ),
+    )
+
+
+def _sense(sense: Sense) -> Sense:
+    """Only Sense's keys, in its order, without an empty selector or example list."""
+    stored: Sense = {"gloss": sense["gloss"], "tags": sense["tags"]}
+    if when := sense.get("when"):
+        stored["when"] = when
+    if examples := sense.get("examples"):
+        stored["examples"] = [_example(example) for example in examples]
+    return stored
+
+
+def _example(example: Example) -> Example:
+    stored: Example = {"text": example["text"]}
+    if (translation := example.get("translation")) is not None:
+        stored["translation"] = translation
+    return stored
+
+
+def _paradigm(paradigm: Paradigm) -> Paradigm:
+    forms: list[Form] = [
+        {"form": form["form"], "xpos": form["xpos"], "feats": form["feats"]}
+        for form in paradigm["forms"]
+    ]
+    return {"homonym": paradigm["homonym"], "forms": forms}
+
+
+def _write_relations(db: sqlite3.Connection, rows: Sequence[Row]) -> None:
+    """An aspect partner is a verb, given an entry of its own if Wiktionary has none."""
+    edges = _edges(rows)
+    for edge in edges:
+        if edge.kind == "aspect-partner":
+            _ensure_verb(db, edge.source_id.split(":", 1)[0], edge.target_lemma)
+    db.executemany(
+        """
+        INSERT INTO relation (source_id, ord, target_lemma, target_id, kind, data)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        edges,
+    )
+
+
+def _edges(rows: Sequence[Row]) -> list[Edge]:
+    """The rows' relations with their targets resolved: an aspect partner's is its verb;
+    another's is the one entry with senses spelled like it, if there's one."""
+    with_senses: dict[str, list[str]] = {}
+    for row in rows:
+        if row.senses:
+            with_senses.setdefault(row.lemma, []).append(row.lemma_id)
+    return [
+        Edge(
+            row.lemma_id,
+            index,
+            relation["lemma"],
+            _target(row.lemma_id, relation, with_senses),
+            relation["kind"],
+            json.dumps(relation_data(relation), ensure_ascii=False),
         )
-        _write_derivatives(db, derivatives)
-        for found in pronunciations():
-            for index, pronunciation in enumerate(found.pronunciations):
-                accents = pronunciation.get("accents")
-                db.execute(
-                    """
-                    INSERT INTO pronunciation (word, upos, ord, ipa, accents)
-                    VALUES (?, ?, ?, ?, ?)
-                    """,
-                    (
-                        found.word,
-                        found.upos,
-                        index,
-                        pronunciation["ipa"],
-                        json.dumps(accents) if accents is not None else None,
-                    ),
-                )
-            _write_recordings(db, found.word, found.upos, found.recordings)
-        for word, found_recordings in sorted((recordings or {}).items()):
-            _write_recordings(db, word, None, found_recordings)
-    return count
+        for row in rows
+        for index, relation in enumerate(row.relations)
+    ]
+
+
+def _target(source_id: str, relation: Relation, with_senses: Mapping[str, list[str]]) -> str | None:
+    match relation["kind"]:
+        case "aspect-partner":
+            return _verb_id(source_id.split(":", 1)[0], relation["lemma"])
+        case "derived-from" | "variant-of":
+            matches = with_senses.get(relation["lemma"], [])
+            return matches[0] if len(matches) == 1 else None
+        case _:
+            assert_never(relation["kind"])
+
+
+def _write_pronunciations(db: sqlite3.Connection, said: Sequence[PronunciationRow]) -> None:
+    db.executemany(
+        "INSERT INTO pronunciation (word, upos, ord, ipa, accents) VALUES (?, ?, ?, ?, ?)",
+        (
+            (
+                found.word,
+                found.upos,
+                index,
+                pronunciation["ipa"],
+                json.dumps(accents)
+                if (accents := pronunciation.get("accents")) is not None
+                else None,
+            )
+            for found in said
+            for index, pronunciation in enumerate(found.pronunciations)
+        ),
+    )
+    for found in said:
+        _write_recordings(db, found.word, found.upos, found.recordings)
 
 
 RELATION_KEYS = frozenset({"kind", "lemma", "lemma_id"})
@@ -257,32 +268,18 @@ def make_relation(kind: str, lemma: str, target_id: str | None, data: str) -> Re
     return relation
 
 
-def _target(db: sqlite3.Connection, source_id: str, relation: Relation) -> str | None:
-    """An aspect partner is a verb, with an entry of its own if Wiktionary has none; another
-    target is the one entry with senses spelled like it, if there's one."""
-    match relation["kind"]:
-        case "aspect-partner":
-            return _ensure_verb(db, source_id.split(":", 1)[0], relation["lemma"])
-        case "derived-from" | "variant-of":
-            matches = db.execute(
-                """
-                SELECT entry.lemma_id FROM entry
-                WHERE lemma = ?
-                    AND EXISTS (SELECT 1 FROM sense WHERE sense.lemma_id = entry.lemma_id)
-                LIMIT 2
-                """,
-                (relation["lemma"],),
-            ).fetchall()
-            return cast(str, matches[0][0]) if len(matches) == 1 else None
-        case _:
-            assert_never(relation["kind"])
+def _verb_id(lang: str, lemma: str) -> str:
+    return f"{lang}:{lemma}:VERB"
 
 
 def _ensure_verb(db: sqlite3.Connection, lang: str, lemma: str) -> str:
     """A verb Wiktionary names only in another's entry (zgolić), without senses."""
-    lemma_id = f"{lang}:{lemma}:VERB"
+    lemma_id = _verb_id(lang, lemma)
     db.execute(
-        "INSERT INTO entry VALUES (?, ?, ?, 'VERB', '{}') ON CONFLICT (lemma_id) DO NOTHING",
+        """
+        INSERT INTO entry VALUES (?, ?, ?, 'VERB', '{}', '[]', '[]')
+        ON CONFLICT (lemma_id) DO NOTHING
+        """,
         (lemma_id, lemma, lemma.lower()),
     )
     return lemma_id
@@ -423,16 +420,17 @@ class Lexicon:
         return self._select("ORDER BY lemma_id")
 
     def _select(self, where: str, *values: str) -> Iterator[Row]:
-        for lemma_id, lemma, upos, grammar in self._db.execute(
-            f"SELECT lemma_id, lemma, upos, grammar FROM entry {where}", values
+        for lemma_id, lemma, upos, grammar, senses, paradigms in self._db.execute(
+            f"SELECT lemma_id, lemma, upos, grammar, senses, paradigms FROM entry {where}",
+            values,
         ):
             yield Row(
                 lemma_id,
                 lemma,
                 upos,
-                list(self._senses(lemma_id)),
+                cast(list[Sense], json.loads(senses)),
                 list(self._relations(lemma_id)),
-                list(self._paradigms(lemma_id)),
+                cast(list[Paradigm], json.loads(paradigms)),
                 cast(Feats, json.loads(grammar)),
             )
 
@@ -455,44 +453,3 @@ class Lexicon:
             (lemma_id,),
         ):
             yield make_relation(kind, target_lemma, target_id, data)
-
-    def _senses(self, lemma_id: str) -> Iterator[Sense]:
-        for id_, gloss, tags in self._db.execute(
-            "SELECT id, gloss, tags FROM sense WHERE lemma_id = ? ORDER BY ord", (lemma_id,)
-        ):
-            sense: Sense = {"gloss": gloss, "tags": json.loads(tags)}
-            selectors = [
-                cast(Feats, json.loads(features))
-                for (features,) in self._db.execute(
-                    "SELECT features FROM sense_when WHERE sense_id = ? ORDER BY ord", (id_,)
-                )
-            ]
-            if selectors:
-                sense["when"] = selectors
-            examples: list[Example] = []
-            for text, translation in self._db.execute(
-                "SELECT text, translation FROM example WHERE sense_id = ? ORDER BY ord", (id_,)
-            ):
-                example: Example = {"text": text}
-                if translation is not None:
-                    example["translation"] = translation
-                examples.append(example)
-            if examples:
-                sense["examples"] = examples
-            yield sense
-
-    def _paradigms(self, lemma_id: str) -> Iterator[Paradigm]:
-        for id_, homonym in self._db.execute(
-            "SELECT id, homonym FROM paradigm WHERE lemma_id = ? ORDER BY ord", (lemma_id,)
-        ):
-            forms: list[Form] = [
-                {"form": form, "xpos": xpos, "feats": json.loads(features)}
-                for form, xpos, features in self._db.execute(
-                    """
-                    SELECT form, xpos, features FROM paradigm_form
-                    WHERE paradigm_id = ? ORDER BY ord
-                    """,
-                    (id_,),
-                )
-            ]
-            yield {"homonym": homonym, "forms": forms}
