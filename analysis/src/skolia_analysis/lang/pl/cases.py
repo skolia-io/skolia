@@ -14,6 +14,7 @@ what a broader version did on PDB and why the treebank undercounts it.
 """
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 
 from ...schema import Case, CaseReason, Deprel, Feats, Reading, Token, Upos, VerbForm
 from .valency import Requirement, Valency
@@ -211,7 +212,7 @@ def _with_governor(reason: CaseReason, governor: Token) -> CaseReason:
     return reason
 
 
-def correct_cases(tokens: list[Token], valency: Valency) -> int:  # noqa: C901, PLR0912
+def correct_cases(tokens: list[Token], valency: Valency) -> int:
     """Where a verb only takes lexical cases (szukać: genitive) and its complement has
     another, but the form also has the required case (psa: genitive = accusative), switch
     to that reading, and the words agreeing with it. Returns how many tokens changed.
@@ -219,43 +220,66 @@ def correct_cases(tokens: list[Token], valency: Valency) -> int:  # noqa: C901, 
     sentence = Sentence(tokens)
     changed = 0
     for index, token in enumerate(tokens):
-        case = token["feats"].get("Case")
-        verb = sentence.governing_verb(index)
-        if case is None or verb is None or "candidates" not in token:
-            continue
-        verb_token = tokens[verb]
-        lemma = verb_token["lemma"]
-        if verb_token["upos"] != "VERB" or lemma is None:
-            continue
-        # dwóch funkcjonariuszy: the numeral, not the verb, makes the noun genitive
-        if sentence.child(index, GOVERNING_NUMERAL) is not None:
-            continue
-        if token["upos"] not in CORRECTABLE or token["feats"].get("PronType") in CLAUSE_PRONOUNS:
-            continue
-        requirement = sentence.requirement(valency, verb)
-        if requirement is None or requirement.structural or requirement.partitive:
-            continue
-        if sentence.reflexive(verb) and _may_be_impersonal(valency, lemma):
-            continue
-        allowed = requirement.lexical
-        if not allowed or case in allowed:
-            continue
-        alternative = _only_reading_with_case(token, allowed)
-        if alternative is None:
-            continue
-        new_case = alternative["feats"].get("Case")
-        if new_case is None:
-            continue
-        _apply(token, alternative, case, lemma)
-        changed += 1
-        for child in sentence.children[index]:
-            dependent = tokens[child]
-            if dependent["deprel"] in AGREEING and dependent["feats"].get("Case") == case:
-                agreeing = _only_reading_with_case(dependent, frozenset({new_case}))
-                if agreeing is not None:
-                    _apply(dependent, agreeing, case, lemma)
-                    changed += 1
+        target = _target(sentence, valency, index)
+        reading = _only_reading_with_case(token, target.allowed) if target else None
+        if target is not None and reading is not None:
+            changed += _correct(sentence, index, reading, target)
     return changed
+
+
+@dataclass(frozen=True, slots=True)
+class _Target:
+    """A complement whose case its verb rules out."""
+
+    case: Case
+    allowed: frozenset[Case]
+    """The verb's lexical cases."""
+    governor: str
+    """The verb's lemma."""
+
+
+def _target(sentence: Sentence, valency: Valency, index: int) -> _Target | None:
+    """The token, if its verb takes only lexical cases and its own isn't one of them, and
+    nothing else could explain its case."""
+    token = sentence.tokens[index]
+    case = token["feats"].get("Case")
+    verb = sentence.governing_verb(index)
+    if case is None or verb is None or "candidates" not in token:
+        return None
+    lemma = sentence.tokens[verb]["lemma"]
+    if sentence.tokens[verb]["upos"] != "VERB" or lemma is None:
+        return None
+    # dwóch funkcjonariuszy: the numeral, not the verb, makes the noun genitive
+    if sentence.child(index, GOVERNING_NUMERAL) is not None:
+        return None
+    if token["upos"] not in CORRECTABLE or token["feats"].get("PronType") in CLAUSE_PRONOUNS:
+        return None
+    requirement = sentence.requirement(valency, verb)
+    if requirement is None or requirement.structural or requirement.partitive:
+        return None
+    if sentence.reflexive(verb) and _may_be_impersonal(valency, lemma):
+        return None
+    if not requirement.lexical or case in requirement.lexical:
+        return None
+    return _Target(case, requirement.lexical, lemma)
+
+
+def _correct(sentence: Sentence, index: int, reading: Reading, target: _Target) -> int:
+    """Switch the token to reading, and the words agreeing with it in case to the same
+    case. Returns how many tokens changed."""
+    new_case = reading["feats"].get("Case")
+    if new_case is None:
+        return 0
+    agreeing = [
+        (dependent, alternative)
+        for child in sentence.children[index]
+        if (dependent := sentence.tokens[child])["deprel"] in AGREEING
+        and dependent["feats"].get("Case") == target.case
+        and (alternative := _only_reading_with_case(dependent, frozenset({new_case}))) is not None
+    ]
+    for token, alternative in [(sentence.tokens[index], reading), *agreeing]:
+        _apply(token, alternative, target.case, target.governor)
+    return 1 + len(agreeing)
 
 
 def _may_be_impersonal(valency: Valency, lemma: str) -> bool:
