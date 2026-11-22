@@ -358,6 +358,7 @@ type CaseRule = Literal[
     "partitive",  # genitive for "some of", accusative for "all of": nalać wody / wodę
     "subject",  # the subject is nominative
     "predicate",  # after być, a noun is instrumental: jest lekarzem
+    "description",  # after być, a genitive says what something is like: jakiego koloru są
     "possessive",  # "of": dom brata
     "noun-complement",  # a noun's complement is genitive: osiągnięcie kompromisu
     "verbal-noun",  # a verbal noun's object is genitive: czytać książkę -> czytanie książki

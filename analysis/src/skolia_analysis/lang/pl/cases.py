@@ -166,6 +166,8 @@ def _reason(  # noqa: C901, PLR0912
     copula = sentence.child(index, COPULA)
     if copula is not None and case == "Ins":
         return _with_governor({"rule": "predicate", "trigger": copula}, tokens[copula])
+    if copula is not None and case == "Gen":
+        return _with_governor({"rule": "description", "trigger": copula}, tokens[copula])
     nominal_head = head is not None and tokens[head]["upos"] in NOMINAL_HEADS
     if head is not None and nominal_head and deprel in POSSESSOR and case == "Gen":
         return {"rule": "possessive", "trigger": head}
