@@ -22,7 +22,7 @@ import {
   type ScheduledCard,
   type Settings,
   type Timestamp,
-  type User,
+  type Identity,
 } from "@skolia/shared/api";
 import type { Entry } from "@skolia/shared/schema";
 import type { Clock } from "../ports/index.ts";
@@ -38,14 +38,14 @@ const MAX_DUE = 200;
 export const MAX_CLOCK_SKEW_MS = 5 * 60 * 1000;
 
 /** dayStart: when the user's day started, any ISO time; today's new cards count from it. */
-export async function counts(deps: { users: UserCards } & Clock, user: User, dayStart: string): Promise<Ok<CardCounts[]>> {
+export async function counts(deps: { users: UserCards } & Clock, user: Identity, dayStart: string): Promise<Ok<CardCounts[]>> {
   return ok(await deps.users.counts(user.id, timestamp(deps.now()), stored(dayStart)));
 }
 
 /** group: only its cards; undefined, both groups'. */
 export async function due(
   deps: { users: UserCards; lexicon: Lexicon } & Clock,
-  user: User,
+  user: Identity,
   lang: Lang,
   dayStart: string,
   group: CardGroup | undefined,
@@ -56,7 +56,7 @@ export async function due(
 
 export async function review(
   deps: { users: UserCards } & Clock,
-  user: User,
+  user: Identity,
   request: ReviewRequest,
 ): Promise<Ok<Reviewed> | Failed<400 | 404 | 409>> {
   if (Date.parse(request.at) > deps.now().getTime() + MAX_CLOCK_SKEW_MS) return fail(400, "review is in the future");
@@ -75,7 +75,7 @@ export async function review(
 
 /** Whether the card's data refers only to what the user sees: a cloze card's text is one
  * they see. */
-async function seesData(deps: { documents: DocumentLookup }, user: User, card: NewCard): Promise<boolean> {
+async function seesData(deps: { documents: DocumentLookup }, user: Identity, card: NewCard): Promise<boolean> {
   switch (card.kind) {
     case "recognition":
     case "production":
@@ -89,7 +89,7 @@ async function seesData(deps: { documents: DocumentLookup }, user: User, card: N
  * blank. */
 export async function makeCard(
   deps: { users: UserCards; documents: DocumentLookup } & Clock,
-  user: User,
+  user: Identity,
   card: NewCard,
 ): Promise<Json<CardMade, 201> | Ok<CardMade> | Failed<404 | 409>> {
   if (!(await seesData(deps, user, card))) return noSuchDocument();
@@ -104,13 +104,13 @@ export async function makeCard(
   }
 }
 
-export async function cards(deps: { users: UserCards }, user: User, listing: CardListing): Promise<Ok<Paginated<Card, CardKey>>> {
+export async function cards(deps: { users: UserCards }, user: Identity, listing: CardListing): Promise<Ok<Paginated<Card, CardKey>>> {
   return ok(await deps.users.cards(user.id, listing));
 }
 
 export async function setCardState(
   deps: { users: UserCards },
-  user: User,
+  user: Identity,
   cardId: CardId,
   state: CardState,
 ): Promise<NoContent | Failed<404>> {
@@ -118,15 +118,15 @@ export async function setCardState(
 }
 
 /** Any kind of card, with its reviews. */
-export async function deleteCard(deps: { users: UserCards }, user: User, cardId: CardId): Promise<NoContent | Failed<404>> {
+export async function deleteCard(deps: { users: UserCards }, user: Identity, cardId: CardId): Promise<NoContent | Failed<404>> {
   return (await deps.users.deleteCard(user.id, cardId)) ? NO_CONTENT : fail(404, "no such card");
 }
 
-export async function settings(deps: { users: UserSettings }, user: User): Promise<Ok<Settings>> {
+export async function settings(deps: { users: UserSettings }, user: Identity): Promise<Ok<Settings>> {
   return ok(await deps.users.settings(user.id));
 }
 
-export async function setSettings(deps: { users: UserSettings }, user: User, settings: Settings): Promise<NoContent> {
+export async function setSettings(deps: { users: UserSettings }, user: Identity, settings: Settings): Promise<NoContent> {
   await deps.users.setSettings(user.id, settings);
   return NO_CONTENT;
 }

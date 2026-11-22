@@ -9,6 +9,8 @@ test("API key authentication", async () => {
   assert.ok(seed && systemKey && runId, "e2e fixtures are required");
   await expectStatus("/api/me without a key", client().me.$get(), 401);
   await expectStatus("/api/me with an unknown key", client("00".repeat(32)).me.$get(), 401);
-  assert.equal((await body("the system user", client(systemKey).me.$get())).id, "system");
-  assert.equal((await body("the e2e user", client(e2eUserKey(seed, "en")).me.$get())).id, e2eUserId(runId, "en"));
+  const system = await body("the system user", client(systemKey).me.$get());
+  assert.deepEqual([system.id, system.roles], ["system", ["system"]]);
+  const user = await body("the e2e user", client(e2eUserKey(seed, "en")).me.$get());
+  assert.deepEqual([user.id, user.roles], [e2eUserId(runId, "en"), []]);
 });

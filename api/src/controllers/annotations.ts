@@ -11,7 +11,7 @@ import {
   type AnnotationKey,
   type DocumentId,
   type Paginated,
-  type User,
+  type Identity,
 } from "@skolia/shared/api";
 import { annotationId } from "@skolia/shared/annotations";
 import { textKey } from "@skolia/shared/keys";
@@ -30,7 +30,7 @@ type AnnotationDeps = { documents: DocumentAnnotations & DocumentLookup };
 export async function list(
   deps: AnnotationDeps,
   id: string,
-  viewer: User | null,
+  viewer: Identity | null,
   filter: AnnotationFilter,
   page: PageRequest<AnnotationKey>,
 ): Promise<Ok<Paginated<Annotation, AnnotationKey>> | Failed<404>> {
@@ -42,7 +42,7 @@ export async function list(
 /** The annotations on the user's own entry, those it hasn't already added, in one go. */
 export async function add(
   deps: AnnotationDeps & Clock & { blobs: BlobStore },
-  user: User,
+  user: Identity,
   id: string,
   body: z.output<typeof schemas.NewAnnotations>,
 ): Promise<Ok<Annotated> | Failed<400 | 404 | 409>> {
@@ -65,7 +65,7 @@ export async function add(
   }
 }
 
-export async function remove(deps: AnnotationDeps, user: User, id: string, annotation: AnnotationId): Promise<NoContent | Failed<404>> {
+export async function remove(deps: AnnotationDeps, user: Identity, id: string, annotation: AnnotationId): Promise<NoContent | Failed<404>> {
   const record = await ownEntry(deps, id, user);
   if (!record) return noEntry();
   return (await deps.documents.unannotate(record.id, user.id, annotation)) ? NO_CONTENT : fail(404, "no such annotation");
@@ -79,7 +79,7 @@ async function textLength(deps: { blobs: BlobStore }, id: DocumentId): Promise<n
 }
 
 /** The user's own entry for the text: the entry they see, if it's theirs. */
-async function ownEntry(deps: { documents: DocumentLookup }, id: string, user: User): Promise<StoredDocument | null> {
+async function ownEntry(deps: { documents: DocumentLookup }, id: string, user: Identity): Promise<StoredDocument | null> {
   const record = await findDocument(deps, id, user);
   return record?.user === user.id ? record : null;
 }

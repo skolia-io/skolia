@@ -7,7 +7,7 @@ import type { Context, TypedResponse } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import type { JSONParsed } from "hono/utils/types";
 import * as z from "zod";
-import { ANNOTATION_BATCH, MAX_TEXT_LENGTH, type ApiError, type Config, type User, type Version } from "@skolia/shared/api";
+import { ANNOTATION_BATCH, MAX_TEXT_LENGTH, type ApiError, type Config, type Identity, type User, type Version } from "@skolia/shared/api";
 import * as schemas from "@skolia/shared/schemas";
 import * as annotations from "./controllers/annotations.ts";
 import * as cards from "./controllers/cards.ts";
@@ -20,6 +20,7 @@ import { log } from "@skolia/util/log";
 import {
   NOT_SIGNED_IN,
   NO_BODY,
+  RETRY_AFTER,
   REDOC_PAGE,
   SCALAR_PAGE,
   SIGNED_IN,
@@ -83,7 +84,7 @@ export function createApp(deps: Deps) {
   /** The controller's result for the signed-in user, or 401. */
   async function signedIn<R extends Result>(
     c: Context,
-    run: (user: User) => Promise<R>,
+    run: (user: Identity) => Promise<R>,
     message = "not signed in",
   ): Promise<Sent<R | Failed<401>>> {
     const user = await deps.auth.user(c.req.raw.headers);
@@ -117,8 +118,11 @@ export function createApp(deps: Deps) {
     .get("/api/docs", describe({ hide: true }), (c) => c.redirect("/api/scalar", 302))
     .get("/api/scalar", describe({ hide: true }), (c) => c.html(SCALAR_PAGE))
     .get("/api/redoc", describe({ hide: true }), (c) => c.html(REDOC_PAGE))
-    .get("/api/me", mine(TAGS.account, "The signed-in user"), responds({ 200: json(schemas.User, "The user"), 401: NOT_SIGNED_IN }), (c) =>
-      signedIn(c, async (user) => ok(user)),
+    .get(
+      "/api/me",
+      mine(TAGS.account, "The signed-in user", "With the roles they're bound to; someone who signed up has none."),
+      responds({ 200: json(schemas.User, "The user"), 401: NOT_SIGNED_IN }),
+      (c) => signedIn(c, async (user) => ok({ ...user, roles: await deps.roles.of(user.id) } satisfies User)),
     )
     .get(
       "/api/me/cards/counts",
@@ -345,7 +349,7 @@ export function createApp(deps: Deps) {
       mine(
         TAGS.documents,
         "Import a text",
-        "A text someone else imported gets the user's own entry, with their title, visibility and licence. A failed import is retried by importing the same text again.",
+        "A text someone else imported gets the user's own entry, with their title, visibility and licence. A failed import is retried by importing the same text again. Each import counts against the user's limit of imports in a window of time, which skolia.io's own accounts aren't held to.",
       ),
       limit,
       validator("json", schemas.ImportRequest, badRequest()),
@@ -355,6 +359,7 @@ export function createApp(deps: Deps) {
         400: error("A tag skolia doesn't have"),
         401: error("Not signed in"),
         413: error("The text is too long"),
+        429: { ...error("The user has imported as many texts as the window allows"), headers: RETRY_AFTER },
       }),
       (c) => signedIn(c, (user) => documents.importText(deps, user, c.req.valid("json")), "sign in to import"),
     )
@@ -480,7 +485,7 @@ type Sent<R> = R extends BlobResult | NotModified
 function send<R extends Result>(c: Context, result: R): Sent<R> {
   if ("etag" in result) return sendBlob(c, result) as Sent<R>;
   if (!("body" in result)) return c.body(null, 204) as Sent<R>;
-  return c.json(result.body as object, result.status) as unknown as Sent<R>;
+  return c.json(result.body as object, result.status, result.headers) as unknown as Sent<R>;
 }
 
 /** Workers can't decompress Brotli, so a client that doesn't accept a blob's encoding

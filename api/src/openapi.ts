@@ -13,6 +13,11 @@ export function error(description: string) {
 
 export const NOT_SIGNED_IN = error("Not signed in");
 
+/** A 429's header: when the client may try again. */
+export const RETRY_AFTER = {
+  "Retry-After": { description: "Seconds until the limit's window ends", schema: { type: "integer", minimum: 1 } },
+} as const satisfies Record<string, OpenAPIV3_1.HeaderObject>;
+
 /** Tags group the operations in the docs. */
 export const TAGS = {
   account: "Account",

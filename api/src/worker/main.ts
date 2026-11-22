@@ -15,6 +15,8 @@ import type { LexiconRpc } from "@skolia/lexicon/rpc";
 import { RpcLexicon } from "./adapters/lexicon.ts";
 import { DurableObjectUsers } from "./adapters/users.ts";
 import { readerConfig } from "../reader-config.ts";
+import { importRate } from "../rate-limits.ts";
+import { D1Roles } from "./adapters/roles.ts";
 import { R2Blobs } from "./adapters/blobs.ts";
 import type { User } from "./user.ts";
 
@@ -48,6 +50,9 @@ interface Env {
   VERSION?: string;
   /** How many lexicon entries the reader fetches at once (reader-config.ts) */
   READER_LEXICON_CONCURRENCY?: string;
+  /** How many imports a user may make in a window, and the window's length (rate-limits.ts) */
+  IMPORT_RATE_LIMIT?: string;
+  IMPORT_RATE_WINDOW_SECONDS?: string;
 }
 
 /** A Better Auth instance per request: it sets itself up on first use and keeps that
@@ -89,6 +94,8 @@ export default {
       lexicon: new RpcLexicon(env.LEXICON),
       version: env.VERSION ?? "dev",
       reader: readerConfig(env),
+      importRate: importRate(env),
+      roles: new D1Roles(env.DB),
       documents: new D1Documents(env.DB.withSession("first-primary")),
       blobs: new R2Blobs(env.BLOBS),
       queue: new IngestRuns(env.INGEST_WORKFLOW, (lang) => env.INGESTER.getByName(lang).jobs(lang)),

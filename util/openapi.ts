@@ -42,8 +42,12 @@ export function describe(spec: Extract<Mark, { kind: "route" }>["spec"]): Middle
   return marked<MiddlewareHandler>(async (_c, next) => await next(), { kind: "route", spec });
 }
 
-/** A response a route sends: JSON its schema describes, or no body. */
-export type Spec = { readonly description: string; readonly schema?: StandardSchemaV1 };
+/** A response a route sends: JSON its schema describes, or no body, and the headers it always has. */
+export type Spec = {
+  readonly description: string;
+  readonly schema?: StandardSchemaV1;
+  readonly headers?: Readonly<Record<string, OpenAPIV3_1.HeaderObject>>;
+};
 
 export type Specs = Readonly<Partial<Record<StatusCode, Spec>>>;
 
@@ -63,6 +67,8 @@ export function responses(specs: Specs, check: boolean): MiddlewareHandler {
 async function mismatch(specs: Specs, response: Response): Promise<string | null> {
   const spec = specs[response.status as StatusCode];
   if (spec === undefined) return `status ${response.status}`;
+  const missing = Object.keys(spec.headers ?? {}).filter((name) => !response.headers.has(name));
+  if (missing.length > 0) return `${response.status} has no ${missing.join(", ")}`;
   if (spec.schema === undefined) return response.body === null ? null : `${response.status} has a body`;
   const result = await spec.schema["~standard"].validate(await response.clone().json());
   if (result.issues === undefined) return null;

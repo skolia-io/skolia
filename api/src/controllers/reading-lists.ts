@@ -1,6 +1,6 @@
 import {
   timestamp,
-  type User,
+  type Identity,
   type ReadingListId,
   type DocumentId,
   type Lang,
@@ -14,30 +14,30 @@ import type { ReadingLists } from "../ports/users.ts";
 import { listed } from "./documents.ts";
 import { ok, fail, NO_CONTENT } from "./result.ts";
 
-export async function all(deps: { users: ReadingLists }, user: User) {
+export async function all(deps: { users: ReadingLists }, user: Identity) {
   return ok({ lists: await deps.users.readingLists(user.id) });
 }
 
-export async function create(deps: { users: ReadingLists } & Clock, user: User, name: string) {
+export async function create(deps: { users: ReadingLists } & Clock, user: Identity, name: string) {
   const id = await deps.users.createReadingList(user.id, name, timestamp(deps.now()));
   return id === null ? fail(409, "You can have up to 200 reading lists.") : ok({ id });
 }
 
-export async function rename(deps: { users: ReadingLists }, user: User, id: ReadingListId, name: string) {
+export async function rename(deps: { users: ReadingLists }, user: Identity, id: ReadingListId, name: string) {
   return (await deps.users.renameReadingList(user.id, id, name)) ? NO_CONTENT : fail(404, "No such reading list");
 }
 
-export async function remove(deps: { users: ReadingLists }, user: User, id: ReadingListId) {
+export async function remove(deps: { users: ReadingLists }, user: Identity, id: ReadingListId) {
   return (await deps.users.deleteReadingList(user.id, id)) ? NO_CONTENT : fail(404, "No such reading list");
 }
 
-export async function memberships(deps: { users: ReadingLists }, user: User, documentId: DocumentId) {
+export async function memberships(deps: { users: ReadingLists }, user: Identity, documentId: DocumentId) {
   return ok({ lists: await deps.users.readingListMemberships(user.id, documentId) });
 }
 
 export async function addDocument(
   deps: { users: ReadingLists; documents: DocumentLookup } & Clock,
-  user: User,
+  user: Identity,
   listId: ReadingListId,
   documentId: DocumentId,
 ) {
@@ -48,14 +48,14 @@ export async function addDocument(
     : fail(404, "No such reading list");
 }
 
-export async function removeDocument(deps: { users: ReadingLists }, user: User, listId: ReadingListId, documentId: DocumentId) {
+export async function removeDocument(deps: { users: ReadingLists }, user: Identity, listId: ReadingListId, documentId: DocumentId) {
   // Removal remains possible after a document becomes unavailable.
   return (await deps.users.removeDocumentFromReadingList(user.id, listId, documentId)) ? NO_CONTENT : fail(404, "No such reading list");
 }
 
 export async function documents(
   deps: { users: ReadingLists; documents: DocumentLookup },
-  user: User,
+  user: Identity,
   id: ReadingListId,
   lang: Lang | undefined,
   page: PageRequest<ReadingKey>,

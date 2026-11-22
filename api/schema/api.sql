@@ -85,9 +85,30 @@ CREATE TABLE document_status (
   data TEXT NOT NULL CHECK (json_valid(data) AND json_type(data) = 'object')
 ) STRICT, WITHOUT ROWID;
 
+CREATE TABLE permission (
+  name TEXT NOT NULL PRIMARY KEY,
+  description TEXT NOT NULL
+) STRICT, WITHOUT ROWID;
+
 CREATE TABLE role (
   name TEXT NOT NULL PRIMARY KEY
 ) STRICT, WITHOUT ROWID;
+
+CREATE TABLE role_binding (
+  user_id TEXT NOT NULL REFERENCES "user" ("id") ON DELETE CASCADE,
+  role TEXT NOT NULL REFERENCES role (name),
+  PRIMARY KEY (user_id, role)
+) STRICT, WITHOUT ROWID;
+
+CREATE INDEX role_binding_role_idx ON role_binding (role);
+
+CREATE TABLE role_permission (
+  role TEXT NOT NULL REFERENCES role (name),
+  permission TEXT NOT NULL REFERENCES permission (name),
+  PRIMARY KEY (role, permission)
+) STRICT, WITHOUT ROWID;
+
+CREATE INDEX role_permission_permission_idx ON role_permission (permission);
 
 CREATE TABLE "session" (
   -- Better Auth: signed-in sessions.
@@ -120,11 +141,7 @@ CREATE TABLE "user" (
   "emailVerified" INTEGER NOT NULL,
   "image" TEXT,
   "createdAt" TEXT NOT NULL CHECK ("createdAt" IS strftime('%Y-%m-%dT%H:%M:%fZ', "createdAt")),
-  "updatedAt" TEXT NOT NULL CHECK ("updatedAt" IS strftime('%Y-%m-%dT%H:%M:%fZ', "updatedAt")),
-  role TEXT NOT NULL DEFAULT 'standard' REFERENCES role (name)
-) STRICT;
-
-CREATE INDEX user_role_idx ON "user" (role);
+  "updatedAt" TEXT NOT NULL CHECK ("updatedAt" IS strftime('%Y-%m-%dT%H:%M:%fZ', "updatedAt"))) STRICT;
 
 CREATE TABLE user_document (
   user_id TEXT NOT NULL REFERENCES "user" ("id") ON DELETE CASCADE,

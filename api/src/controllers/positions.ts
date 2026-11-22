@@ -1,12 +1,16 @@
 // Where each user was in each text they've read, in their own Durable Object.
-import { timestamp, type DocumentId, type ReadingPosition, type User } from "@skolia/shared/api";
+import { timestamp, type DocumentId, type ReadingPosition, type Identity } from "@skolia/shared/api";
 import type { Clock } from "../ports/index.ts";
 import type { DocumentLookup } from "../ports/documents.ts";
 import type { ReadingPositions, StoredPosition } from "../ports/users.ts";
 import { MAX_CLOCK_SKEW_MS } from "./cards.ts";
 import { NO_CONTENT, fail, ok, type Failed, type NoContent, type Ok } from "./result.ts";
 
-export async function get(deps: { users: ReadingPositions }, user: User, id: DocumentId): Promise<Ok<{ position: StoredPosition | null }>> {
+export async function get(
+  deps: { users: ReadingPositions },
+  user: Identity,
+  id: DocumentId,
+): Promise<Ok<{ position: StoredPosition | null }>> {
   return ok({ position: await deps.users.position(user.id, id) });
 }
 
@@ -14,7 +18,7 @@ export async function get(deps: { users: ReadingPositions }, user: User, id: Doc
  * can't move the reader back. */
 export async function set(
   deps: { users: ReadingPositions; documents: DocumentLookup } & Clock,
-  user: User,
+  user: Identity,
   id: DocumentId,
   { sentence, token, at }: ReadingPosition,
 ): Promise<NoContent | Failed<400 | 404>> {

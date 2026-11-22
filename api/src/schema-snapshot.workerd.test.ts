@@ -25,10 +25,10 @@ test("fresh API and User databases match the checked-in schema snapshots", async
   const { results } = await local.env.DB.prepare(SCHEMA).all<Definition>();
   await snapshot("api", ddl(results.filter((row) => row.name !== "d1_migrations")));
   assert.deepEqual((await local.env.DB.prepare("PRAGMA foreign_key_check").all()).results, []);
-  assert.deepEqual((await local.env.DB.prepare(`SELECT id FROM "user" WHERE role = 'system' ORDER BY id`).all()).results, [
-    { id: "curated" },
-    { id: "system" },
-  ]);
+  assert.deepEqual(
+    (await local.env.DB.prepare(`SELECT user_id AS id FROM role_binding WHERE role = 'system' ORDER BY user_id`).all()).results,
+    [{ id: "curated" }, { id: "system" }],
+  );
   const name = "schema-snapshot";
   await local.env.USER.getByName(name).migrationStatus();
   const storage = await local.server.getWorker().getDurableObjectStorage("User", { name });

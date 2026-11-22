@@ -136,11 +136,12 @@ test("the tables are STRICT, the user's are WITHOUT ROWID, and timestamps must b
   const storage = await storageOf("heidi");
   assert.deepEqual(
     await storage.exec(
-      "select name, strict, wr from pragma_table_list where name in ('card', 'review', 'settings', 'migration_log', 'reading_list', 'reading_list_document', 'row_count') order by name",
+      "select name, strict, wr from pragma_table_list where name in ('card', 'review', 'settings', 'migration_log', 'rate_window', 'reading_list', 'reading_list_document', 'row_count') order by name",
     ),
     [
       { name: "card", strict: 1, wr: 1 },
       { name: "migration_log", strict: 1, wr: 0 },
+      { name: "rate_window", strict: 1, wr: 1 },
       { name: "reading_list", strict: 1, wr: 0 },
       { name: "reading_list_document", strict: 1, wr: 1 },
       { name: "review", strict: 1, wr: 1 },
