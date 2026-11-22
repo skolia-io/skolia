@@ -323,13 +323,16 @@
       # would fill it. Nothing here references them (a push takes a path's whole closure).
       cacheable =
         lang:
-        pkgs.linkFarmFromDrvs "cacheable-${lang}" [
-          depsEnv
-          venv
-          lexicon.${lang}
-          n2c.nix2container-bin
-          n2c.skopeo-nix2container
-        ];
+        pkgs.linkFarmFromDrvs "cacheable-${lang}" (
+          [
+            depsEnv
+            venv
+            lexicon.${lang}
+            n2c.nix2container-bin
+            n2c.skopeo-nix2container
+          ]
+          ++ lib.optional (lang == "pl") walenty
+        );
 
       # Each machine copies the (x86_64-linux) images with its own skopeo
       perLang =
@@ -369,6 +372,7 @@
         # each deploy would build.
         // {
           skopeo = nixpkgs.legacyPackages.${host}.skopeo;
+          inherit walenty;
         };
     in
     {
