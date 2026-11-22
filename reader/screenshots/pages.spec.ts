@@ -246,10 +246,24 @@ test("reader", async ({ page }) => {
   await expect(page).toHaveScreenshot("reader.png", { fullPage: true });
 });
 
-test("reader, recordings shorter than a paragraph have no button yet", async ({ page }) => {
+// No gutter for a word or a phrase: its words are underlined, and their word sheets play it
+test("word sheet, recordings of a word and a phrase it's in", async ({ page }) => {
   await open(page, `#/doc/${LALKA}`, { annotations: shortAudio });
-  await expect(page.locator("article")).toContainText("W początkach roku 1878");
+  const text = page.locator("article");
+  await expect(text.locator(".w.recorded")).toHaveText(["roku", "1878", "Stefano", "warszawscy", "kupcy", "jadłodajni"]);
   await expect(page.getByRole("button", { name: /^(Play|Pause) “/u })).toHaveCount(0);
+  await text.locator(".w", { hasText: /^kupcy$/u }).click();
+  const sheet = page.getByRole("complementary", { name: "Word details" });
+  const phrase = sheet.getByRole("button", { name: "Play “warszawscy kupcy”" });
+  await expect(phrase).toBeVisible();
+  await expect(sheet.getByRole("button", { name: "Play “kupcy”" })).toBeVisible();
+  await expect(page).toHaveScreenshot("word-sheet-recordings.png");
+  await phrase.click();
+  const pause = sheet.getByRole("button", { name: "Pause “warszawscy kupcy”" });
+  await expect(pause).toBeVisible();
+  await expect(text.locator(".w.playing")).toHaveText(["warszawscy", "kupcy"]);
+  await pause.click();
+  await expect(phrase).toBeVisible();
 });
 
 test("reader, a paragraph playing", async ({ page }) => {
