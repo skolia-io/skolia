@@ -13,9 +13,9 @@ required one (psa: gen = acc), and not where się could be impersonal. EVALUATIO
 what a broader version did on PDB and why the treebank undercounts it.
 """
 
-from collections.abc import Sequence
 from dataclasses import dataclass
 
+from ...blob import token_reading
 from ...schema import Case, CaseReason, Deprel, Feats, Reading, Token, Upos, VerbForm
 from .valency import Requirement, Valency
 
@@ -316,26 +316,16 @@ def _without_case(feats: Feats) -> dict[str, object]:
 
 def _apply(token: Token, reading: Reading, original: Case, governor: str) -> None:
     if "parser" not in token:
-        token["parser"] = {
-            "lemma": token["lemma"] or token["text"],
-            "upos": token["upos"],
-            "xpos": token["xpos"] or "",
-            "feats": token["feats"],
-        }
+        token["parser"] = token_reading(token)
     feats: Feats = {**token["feats"], **reading["feats"]}
     token["feats"] = feats
     token["xpos"] = reading["xpos"] or None
     token["case_correction"] = {"original": original, "governor": governor}
 
 
-def apply(
-    sentences: Sequence[list[Token]], valency: Valency | None, *, correct: bool = True
-) -> int:
-    """Correct cases where the verb rules them out (needs valency), then explain every
-    case, sentence by sentence. Returns how many tokens the correction changed."""
-    changed = 0
-    for tokens in sentences:
-        if valency is not None and correct:
-            changed += correct_cases(tokens, valency)
-        explain_cases(tokens, valency)
-    return changed
+def revise(tokens: list[Token], valency: Valency | None, *, correct: bool = True) -> None:
+    """Correct the cases verbs rule out in one sentence (needs valency), then explain
+    every case."""
+    if valency is not None and correct:
+        correct_cases(tokens, valency)
+    explain_cases(tokens, valency)
