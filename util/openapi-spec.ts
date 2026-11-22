@@ -19,9 +19,13 @@ function described(mark: Mark): object {
 
 function responseObjects(specs: Specs) {
   return Object.fromEntries(
-    Object.entries(specs).map(([status, { description, schema }]) => [
+    Object.entries(specs).map(([status, { description, schema, headers }]) => [
       status,
-      schema === undefined ? { description } : { description, content: { "application/json": { schema: resolver(schema) } } },
+      {
+        description,
+        ...(headers === undefined ? {} : { headers }),
+        ...(schema === undefined ? {} : { content: { "application/json": { schema: resolver(schema) } } }),
+      },
     ]),
   );
 }

@@ -24,6 +24,7 @@ import type {
 import type { PageRequest } from "@skolia/shared/page";
 import type * as schemas from "@skolia/shared/schemas";
 import type * as z from "zod";
+import type { RateLimit } from "../rate-limits.ts";
 
 export interface DueCards {
   readonly cards: ScheduledCard[];
@@ -89,7 +90,19 @@ export interface ReadingLists {
   ): Promise<Paginated<{ readonly documentId: DocumentId; readonly createdAt: Timestamp }, ReadingKey> | null>;
 }
 
+/** What's rate-limited per user (rate-limits.ts). */
+export type RateAction = "import";
+
+/** taken: counted in the window. limited: the window has its limit; the next starts in
+ * retryAfterSeconds. */
+export type RateOutcome = { readonly kind: "taken" } | { readonly kind: "limited"; readonly retryAfterSeconds: number };
+
+export interface UserRateLimits {
+  /** Counts the action once more in the user's current window, unless it has the limit already. */
+  take(userId: UserId, action: RateAction, now: Timestamp, limit: RateLimit): Promise<RateOutcome>;
+}
+
 /** Data stored in a Durable Object per user. */
-export interface UserData extends UserCards, UserSettings, ReadingPositions, ReadingLists {}
+export interface UserData extends UserCards, UserSettings, ReadingPositions, ReadingLists, UserRateLimits {}
 
 export type StoredPosition = z.output<typeof schemas.StoredPosition>;

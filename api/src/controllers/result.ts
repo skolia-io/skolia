@@ -10,6 +10,7 @@ export type Result = Json<unknown, ContentfulStatusCode> | NoContent | BlobResul
 export interface Json<T, S extends ContentfulStatusCode> {
   status: S;
   body: T;
+  headers?: Readonly<Record<string, string>>;
 }
 
 export type Ok<T> = Json<T, 200>;

@@ -85,9 +85,22 @@ CREATE TABLE document_status (
   data TEXT NOT NULL CHECK (json_valid(data) AND json_type(data) = 'object')
 ) STRICT, WITHOUT ROWID;
 
+CREATE TABLE permission (
+  name TEXT NOT NULL PRIMARY KEY,
+  description TEXT NOT NULL
+) STRICT, WITHOUT ROWID;
+
 CREATE TABLE role (
   name TEXT NOT NULL PRIMARY KEY
 ) STRICT, WITHOUT ROWID;
+
+CREATE TABLE role_permission (
+  role TEXT NOT NULL REFERENCES role (name),
+  permission TEXT NOT NULL REFERENCES permission (name),
+  PRIMARY KEY (role, permission)
+) STRICT, WITHOUT ROWID;
+
+CREATE INDEX role_permission_permission_idx ON role_permission (permission);
 
 CREATE TABLE "session" (
   -- Better Auth: signed-in sessions.

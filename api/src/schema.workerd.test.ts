@@ -6,6 +6,7 @@ import { authOptions } from "./auth.ts";
 import { ALICE, local, useLocal } from "./testing/app.ts";
 import { authConfig } from "./testing/harness.ts";
 import { DOCUMENT_QUERIES } from "./worker/adapters/document-queries.ts";
+import { PERMISSION_QUERIES } from "./worker/adapters/permissions.ts";
 import { INGEST_QUERIES } from "@skolia/ingest/history";
 
 useLocal();
@@ -30,7 +31,9 @@ test("every D1 table is STRICT, and timestamps must be toISOString()'s", async (
       "background_migration",
       "document",
       "document_status",
+      "permission",
       "role",
+      "role_permission",
       "session",
       "tag",
       "user",
@@ -97,6 +100,27 @@ test("roles are seeded and new roles can be added without changing the schema", 
   }
 });
 
+test("permissions are seeded, granted to roles, and new ones can be added without changing the schema", async () => {
+  const db = local.env.DB;
+  assert.deepEqual((await db.prepare("SELECT name FROM permission ORDER BY name").all()).results, [{ name: "unlimited-rate" }]);
+  assert.deepEqual((await db.prepare("SELECT role, permission FROM role_permission ORDER BY role, permission").all()).results, [
+    { role: "system", permission: "unlimited-rate" },
+  ]);
+  const grant = (role: string, permission: string) =>
+    db.prepare("INSERT INTO role_permission (role, permission) VALUES (?, ?)").bind(role, permission).run();
+  await assert.rejects(grant("nobody", "unlimited-rate"), /FOREIGN KEY constraint failed/);
+  await assert.rejects(grant("standard", "future"), /FOREIGN KEY constraint failed/);
+  await assert.rejects(grant("system", "unlimited-rate"), /UNIQUE constraint failed/);
+  await db.prepare("INSERT INTO permission (name, description) VALUES ('future', 'Something new')").run();
+  try {
+    await grant("standard", "future");
+    await assert.rejects(db.prepare("DELETE FROM permission WHERE name = 'future'").run(), /FOREIGN KEY constraint failed/);
+  } finally {
+    await db.prepare("DELETE FROM role_permission WHERE permission = 'future'").run();
+    await db.prepare("DELETE FROM permission WHERE name = 'future'").run();
+  }
+});
+
 test("a status may precede its document; the database checks structure, not app enum values", async () => {
   const db = local.env.DB;
   const at = "2026-11-07T00:00:00.000Z";
@@ -134,9 +158,9 @@ async function attributionId(licence: string): Promise<number> {
 }
 
 // A SCAN that names an index walks it in order, as list does over the public entries' partial index
-test("no document query scans a whole table or sorts its rows", async () => {
+test("no document or permission query scans a whole table or sorts its rows", async () => {
   const plans = await Promise.all(
-    Object.entries(DOCUMENT_QUERIES).map(async ([name, sql]) => {
+    Object.entries({ ...DOCUMENT_QUERIES, ...PERMISSION_QUERIES }).map(async ([name, sql]) => {
       const { results } = await local.env.DB.prepare(`EXPLAIN QUERY PLAN ${sql}`)
         .bind(...Array.from({ length: parameters(sql) }, () => "x"))
         .all<{ detail: string }>();

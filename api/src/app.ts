@@ -20,6 +20,7 @@ import { log } from "@skolia/util/log";
 import {
   NOT_SIGNED_IN,
   NO_BODY,
+  RETRY_AFTER,
   REDOC_PAGE,
   SCALAR_PAGE,
   SIGNED_IN,
@@ -345,7 +346,7 @@ export function createApp(deps: Deps) {
       mine(
         TAGS.documents,
         "Import a text",
-        "A text someone else imported gets the user's own entry, with their title, visibility and licence. A failed import is retried by importing the same text again.",
+        "A text someone else imported gets the user's own entry, with their title, visibility and licence. A failed import is retried by importing the same text again. Each import counts against the user's limit of imports in a window of time, which skolia.io's own accounts aren't held to.",
       ),
       limit,
       validator("json", schemas.ImportRequest, badRequest()),
@@ -355,6 +356,7 @@ export function createApp(deps: Deps) {
         400: error("A tag skolia doesn't have"),
         401: error("Not signed in"),
         413: error("The text is too long"),
+        429: { ...error("The user has imported as many texts as the window allows"), headers: RETRY_AFTER },
       }),
       (c) => signedIn(c, (user) => documents.importText(deps, user, c.req.valid("json")), "sign in to import"),
     )
@@ -480,7 +482,7 @@ type Sent<R> = R extends BlobResult | NotModified
 function send<R extends Result>(c: Context, result: R): Sent<R> {
   if ("etag" in result) return sendBlob(c, result) as Sent<R>;
   if (!("body" in result)) return c.body(null, 204) as Sent<R>;
-  return c.json(result.body as object, result.status) as unknown as Sent<R>;
+  return c.json(result.body as object, result.status, result.headers) as unknown as Sent<R>;
 }
 
 /** Workers can't decompress Brotli, so a client that doesn't accept a blob's encoding

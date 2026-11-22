@@ -13,6 +13,8 @@ import type { IngestJobs, JobQueue } from "../ports/ingest.ts";
 import type { IngestParams } from "@skolia/ingest/rpc";
 import { IngestRuns, type JobsOf } from "../worker/adapters/ingest.ts";
 import { D1Documents } from "../worker/adapters/documents.ts";
+import { D1Permissions } from "../worker/adapters/permissions.ts";
+import { IMPORT_RATE, type RateLimit } from "../rate-limits.ts";
 import { RpcLexicon } from "../worker/adapters/lexicon.ts";
 import { loadLexicon as load, type TestEntry } from "@skolia/lexicon/testing";
 
@@ -43,11 +45,19 @@ export const NOW = "2026-11-04T00:00:00Z";
 export const TEXT = "Idę do starego psa.";
 export const ALICE = { name: "Alice", email: "alice@example.com" };
 
-/** jobsOf: what the ingest container answers about its jobs; none is running unless given. */
-export function setup({ auth = local.auth, at = NOW, jobsOf = async () => null }: { auth?: Auth; at?: string; jobsOf?: JobsOf } = {}) {
+/** jobsOf: what the ingest container answers about its jobs; none is running unless given.
+ * importRate: the deployment's, unless given. */
+export function setup({
+  auth = local.auth,
+  at = NOW,
+  jobsOf = async () => null,
+  importRate = IMPORT_RATE,
+}: { auth?: Auth; at?: string; jobsOf?: JobsOf; importRate?: RateLimit } = {}) {
   const { env } = local;
   return createApp({
     auth,
+    permissions: new D1Permissions(env.DB),
+    importRate,
     users: new DurableObjectUsers(env.USER),
     lexicon: new RpcLexicon(env.LEXICON),
     documents: new D1Documents(env.DB.withSession("first-primary")),

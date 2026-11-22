@@ -28,6 +28,7 @@ import {
   TAG_VALUE,
   UPOS,
   ROLE_NAMES,
+  PERMISSION_NAMES,
   VISIBILITIES,
   WORD_CARD_KINDS,
   isShareable,
@@ -61,6 +62,7 @@ export const ReviewId = z.uuid().brand<"ReviewId">();
 
 export const Visibility = z.enum(VISIBILITIES).meta({ id: "Visibility" });
 export const RoleName = z.enum(ROLE_NAMES);
+export const PermissionName = z.enum(PERMISSION_NAMES);
 
 export const LemmaId = z
   .templateLiteral([Lang, ":", z.string().min(1).max(MAX_LEMMA_LENGTH), ":", z.enum(UPOS)])

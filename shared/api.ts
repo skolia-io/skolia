@@ -474,6 +474,11 @@ export type Reviewed = z.output<typeof schemas.Reviewed>;
 export const ROLE_NAMES = ["standard", "system"] as const;
 export type RoleName = (typeof ROLE_NAMES)[number];
 
+/** What a role lets its users do, granted in D1's role_permission. unlimited-rate: no rate
+ * limits, such as on imports. */
+export const PERMISSION_NAMES = ["unlimited-rate"] as const;
+export type PermissionName = (typeof PERMISSION_NAMES)[number];
+
 export type User = z.output<typeof schemas.User>;
 
 export type Version = z.output<typeof schemas.Version>;

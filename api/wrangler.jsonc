@@ -41,7 +41,9 @@
   // document is in its container's line. Deployed, the auth secrets are wrangler secrets;
   // wrangler dev takes them from api/.env.local (DEVELOP.md). READER_LEXICON_CONCURRENCY:
   // how many lexicon entries the reader fetches at once (api/src/reader-config.ts; unset,
-  // as in dev, it's 6); changing it is a deploy (infra/README.md).
+  // as in dev, it's 6); changing it is a deploy (infra/README.md). IMPORT_RATE_LIMIT,
+  // IMPORT_RATE_WINDOW_SECONDS: how many texts a user may import in how many seconds, unless
+  // their role grants unlimited-rate (api/src/rate-limits.ts; unset, 20 an hour).
   "env": {
     "dev": {
       "name": "skolia",
@@ -66,7 +68,12 @@
       "d1_databases": [{ "binding": "DB", "database_name": "skolia", "migrations_dir": "migrations" }],
       "services": [{ "binding": "LEXICON", "service": "skolia-lexicon", "entrypoint": "LexiconService" }],
       "r2_buckets": [{ "binding": "BLOBS", "bucket_name": "skolia-documents" }],
-      "vars": { "BASE_URL": "https://skolia.io", "READER_LEXICON_CONCURRENCY": "6" },
+      "vars": {
+        "BASE_URL": "https://skolia.io",
+        "READER_LEXICON_CONCURRENCY": "6",
+        "IMPORT_RATE_LIMIT": "20",
+        "IMPORT_RATE_WINDOW_SECONDS": "3600"
+      },
       "workflows": [
         { "name": "skolia-ingest", "binding": "INGEST_WORKFLOW", "class_name": "IngestWorkflow", "script_name": "skolia-ingest" }
       ],
@@ -83,7 +90,12 @@
       "d1_databases": [{ "binding": "DB", "database_name": "skolia-staging", "migrations_dir": "migrations" }],
       "services": [{ "binding": "LEXICON", "service": "skolia-lexicon-staging", "entrypoint": "LexiconService" }],
       "r2_buckets": [{ "binding": "BLOBS", "bucket_name": "skolia-documents-staging" }],
-      "vars": { "BASE_URL": "https://staging.skolia.io", "READER_LEXICON_CONCURRENCY": "6" },
+      "vars": {
+        "BASE_URL": "https://staging.skolia.io",
+        "READER_LEXICON_CONCURRENCY": "6",
+        "IMPORT_RATE_LIMIT": "20",
+        "IMPORT_RATE_WINDOW_SECONDS": "3600"
+      },
       "workflows": [
         {
           "name": "skolia-ingest-staging",

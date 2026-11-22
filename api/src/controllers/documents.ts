@@ -35,6 +35,10 @@ import type {
   StoredDocument,
 } from "../ports/documents.ts";
 import type { IngestJobs, JobQueue } from "../ports/ingest.ts";
+import type { Permissions } from "../ports/permissions.ts";
+import type { UserRateLimits } from "../ports/users.ts";
+import type { RateLimit } from "../rate-limits.ts";
+import { overLimit } from "./rate-limits.ts";
 import { NO_CONTENT, fail, ok, type BlobResult, type Failed, type Json, type NoContent, type NotModified, type Ok } from "./result.ts";
 
 const logger = log("documents");
@@ -87,14 +91,17 @@ async function unknownTag(deps: { documents: DocumentTags }, tags: Tags): Promis
 
 /** 202 if the text is queued, 200 if it's already here and not failed (a failed import is
  * retried by importing the same text again). A text someone else imported gets the user's
- * own entry, with their title, visibility and licence. */
+ * own entry, with their title, visibility and licence. Each import counts against the
+ * user's importRate; 429 past it. */
 export async function importText(
-  deps: DocumentEditDeps,
+  deps: DocumentEditDeps & { users: UserRateLimits; permissions: Permissions; importRate: RateLimit },
   user: User,
   body: z.output<typeof schemas.ImportRequest>,
-): Promise<Json<DocumentSummary, 200> | Json<DocumentSummary, 202> | Failed<400>> {
+): Promise<Json<DocumentSummary, 200> | Json<DocumentSummary, 202> | Failed<400 | 429>> {
   const unknown = await unknownTag(deps, body.tags);
   if (unknown !== null) return unknown;
+  const limited = await overLimit(deps, user, "import", deps.importRate);
+  if (limited !== null) return limited;
   const fields: EntryFields = {
     title: body.title?.trim().slice(0, MAX_TITLE_LENGTH) || firstWords(body.text),
     visibility: body.visibility,

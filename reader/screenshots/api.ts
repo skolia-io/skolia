@@ -438,7 +438,10 @@ function deps(signedIn: boolean, annotations: readonly Annotation[]): Deps {
       }),
       position: async () => null,
       setPosition: async () => {},
+      take: async () => ({ kind: "taken" }),
     },
+    permissions: { grants: async () => false },
+    importRate: { limit: 20, windowSeconds: 3600 },
     lexicon: {
       entries: async (ids) => ({ entries: ids.flatMap((id) => entry(id) ?? []), featureSets: { pl: featureSets } }),
     },

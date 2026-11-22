@@ -19,19 +19,11 @@ import type {
   CardState,
 } from "@skolia/shared/api";
 import type { PageRequest } from "@skolia/shared/page";
-import type {
-  CardOutcome,
-  DueCards,
-  ReviewOutcome,
-  StoredPosition,
-  ReadingLists,
-  ReadingPositions,
-  UserCards,
-  UserSettings,
-} from "../../ports/users.ts";
+import type { CardOutcome, DueCards, ReviewOutcome, StoredPosition, RateAction, RateOutcome, UserData } from "../../ports/users.ts";
+import type { RateLimit } from "../../rate-limits.ts";
 import type { User } from "../user.ts";
 
-export class DurableObjectUsers implements UserCards, UserSettings, ReadingPositions, ReadingLists {
+export class DurableObjectUsers implements UserData {
   private readonly users: DurableObjectNamespace<User>;
 
   constructor(users: DurableObjectNamespace<User>) {
@@ -118,5 +110,8 @@ export class DurableObjectUsers implements UserCards, UserSettings, ReadingPosit
   }
   async readingListDocuments(userId: UserId, id: ReadingListId, lang: Lang | undefined, page: PageRequest<ReadingKey>) {
     return this.users.getByName(userId).readingListDocuments(id, lang, page);
+  }
+  async take(userId: UserId, action: RateAction, now: Timestamp, limit: RateLimit): Promise<RateOutcome> {
+    return this.users.getByName(userId).take(action, now, limit);
   }
 }
