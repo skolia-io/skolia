@@ -27,7 +27,7 @@
   import { createQuery, useQueryClient } from "@tanstack/svelte-query";
   import { lexiconInfoQuery, prefetchEntry, tokenLemma } from "../../lib/lexicon.ts";
   import { audioQuery, configQuery, userQuery } from "../../lib/queries.ts";
-  import { type AudioAnnotation, inRange, placeAudio } from "../../lib/annotations.ts";
+  import { type AudioAnnotation, byLength, clipsOf, piecesIn, placeAudio } from "../../lib/annotations.ts";
 
   let { id }: { id: DocumentId } = $props();
 
@@ -124,12 +124,13 @@
   createClozes(() => id);
   const audioAnnotations = createQuery(() => audioQuery(id));
 
-  /** Play buttons by the piece they go before. */
-  const places = $derived(
-    doc && reading && audioAnnotations.data
-      ? placeAudio(reading.text, doc.pieces, audioAnnotations.data)
-      : new Map<number, readonly AudioAnnotation[]>(),
+  const recordings = $derived(
+    reading && audioAnnotations.data ? byLength(reading.text, audioAnnotations.data) : { paragraphs: [], shorter: [] },
   );
+  /** Play buttons by the piece they go before. */
+  const places = $derived(doc ? placeAudio(doc.pieces, recordings.paragraphs) : new Map<number, readonly AudioAnnotation[]>());
+  /** The pieces of words and phrases recorded, underlined; their word sheets play them. */
+  const recorded = $derived(doc ? piecesIn(doc.pieces, recordings.shorter) : new Set<number>());
 
   let audio = $state<HTMLAudioElement>();
   /** The clip the audio element has, playing or paused. */
@@ -143,15 +144,9 @@
     return URL.canParse(source) ? new URL(source).hostname.replace(/^www\./u, "") : "source";
   }
 
-  /** Whether the piece is in the clip playing: a word in its range, or a gap between two. */
-  function lit(i: number): boolean {
-    const pieces = doc?.pieces ?? [];
-    const inClip = (j: number) => {
-      const piece = pieces[j];
-      return playing !== null && piece !== undefined && inRange(playing, piece);
-    };
-    return pieces[i]?.kind === "gap" ? inClip(i - 1) && inClip(i + 1) : inClip(i);
-  }
+  /** The pieces in the clip playing: the words in its range, and the gaps between them. */
+  const playingPieces = $derived(doc && playing ? piecesIn(doc.pieces, [playing]) : new Set<number>());
+  const lit = (i: number) => playingPieces.has(i);
 
   /** Plays the clip, or pauses it if it's playing; another clip stops the one playing. */
   function playOrPause(placed: AudioAnnotation): void {
@@ -536,13 +531,13 @@
                   {/if}
                 </button>
               {/each}{#if p.kind === "gap"}
-                {#if lit(i)}
-                  <span class="playing">{p.text}</span>
+                {#if lit(i) || recorded.has(i)}
+                  <span class={{ playing: lit(i), recorded: recorded.has(i) }}>{p.text}</span>
                 {:else}
                   {p.text}
                 {/if}
               {:else if p.punct}
-                <span class={["punct", { playing: lit(i) }]}>{p.text}</span>
+                <span class={["punct", { playing: lit(i), recorded: recorded.has(i) }]}>{p.text}</span>
               {:else}
                 <span
                   role="button"
@@ -554,6 +549,7 @@
                       head: p.id === headPiece,
                       trigger: p.id === triggerPiece,
                       playing: lit(i),
+                      recorded: recorded.has(i),
                     },
                   ]}
                   onpointerdown={(event) => {
@@ -602,6 +598,9 @@
       sentenceTokens={sentenceTokens}
       sentenceText={sentenceText}
       documentId={id}
+      clips={clipsOf(reading.text, recordings.shorter, piece)}
+      clipPlaying={playing?.id ?? null}
+      onplay={playOrPause}
       onselectToken={(sentence, index) => (selected = doc?.pieceOf.get(tokenKey(sentence, index)) ?? selected)}
       onclose={() => (selected = null)}
     />
@@ -850,6 +849,12 @@
   span.playing {
     background: var(--current);
     border-radius: 0;
+  }
+
+  /* A word or a phrase recorded; head and trigger marks, later, take its place */
+  .recorded {
+    text-decoration: underline dotted 1px color-mix(in srgb, var(--muted) 70%, transparent);
+    text-underline-offset: 4px;
   }
 
   .w {

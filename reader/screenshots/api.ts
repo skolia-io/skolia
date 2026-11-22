@@ -78,8 +78,9 @@ const narration: readonly Annotation[] = [...text.trimEnd().matchAll(/[^\n]+/gu)
   addedAt: Timestamp.parse("2026-11-07T10:00:00.000Z"),
 }));
 
-/** Recordings shorter than a paragraph: single words, two on one line, and a phrase over a line break. */
-export const shortAudio: readonly Annotation[] = ["roku", "1878", "Stefano", "warszawscy kupcy", "jadłodajni"].map((words, n) => {
+/** Recordings shorter than a paragraph: single words, two on one line, a phrase over a line
+ * break, and a word of that phrase on its own. */
+export const shortAudio: readonly Annotation[] = ["roku", "1878", "Stefano", "warszawscy kupcy", "jadłodajni", "kupcy"].map((words, n) => {
   const start = text.indexOf(words);
   if (start < 0) throw new Error(`no ${words} in Lalka`);
   return {

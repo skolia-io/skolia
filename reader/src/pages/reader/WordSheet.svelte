@@ -2,7 +2,7 @@
   import { untrack } from "svelte";
   import { createQueries, useQueryClient } from "@tanstack/svelte-query";
   import { entryQuery, formAudioQuery, prefetchEntry, tokenLemma } from "../../lib/lexicon.ts";
-  import type { DocumentId, Lang } from "@skolia/shared/api";
+  import type { AnnotationId, DocumentId, Lang } from "@skolia/shared/api";
   import type { Entry, Recording, Token } from "@skolia/shared/schema";
   import { LANGUAGES } from "@skolia/shared/lang";
   import type { Piece } from "@skolia/shared/doc";
@@ -19,6 +19,8 @@
   import Button from "../../components/Button.svelte";
   import ParadigmTable from "../../components/ParadigmTable.svelte";
   import Pronunciations from "../../components/Pronunciations.svelte";
+  import Recordings from "../../components/Recordings.svelte";
+  import type { AudioAnnotation, Clip } from "../../lib/annotations.ts";
   import SentenceDiagram from "./SentenceDiagram.svelte";
   import { sheet, type SheetView } from "../../lib/sheet.svelte.ts";
   import { clauseOf, parseSentence } from "@skolia/shared/tree";
@@ -34,6 +36,9 @@
     sentenceTokens,
     sentenceText,
     documentId,
+    clips,
+    clipPlaying,
+    onplay,
     onselectToken,
     onclose,
   }: {
@@ -47,6 +52,11 @@
     /** A sentence's text and where it starts in the document. */
     sentenceText: (sentence: number) => { start: number; text: string } | null;
     documentId: DocumentId;
+    /** The text's recordings of the word or a phrase it's in, shorter than a paragraph. */
+    clips: readonly Clip[];
+    /** The recording playing in the text, if any. */
+    clipPlaying: AnnotationId | null;
+    onplay: (annotation: AudioAnnotation) => void;
     onselectToken: (sentence: number, index: number) => void;
     onclose: () => void;
   } = $props();
@@ -452,7 +462,7 @@
     />
   {/if}
 
-  {#each words as word (word.ref.index)}
+  {#each words as word, index (word.ref.index)}
     {@const token = word.ref.token}
     <section class="word">
       <div class="head">
@@ -512,6 +522,9 @@
       {/snippet}
       {#if word.said.length > 0 || (word.lemmaSaid.length > 0 && word.entry)}
         <Pronunciations said={word.said} lemma={word.entry ? { text: word.entry.lemma, lang, said: word.lemmaSaid } : undefined} />
+      {/if}
+      {#if index === 0}
+        <Recordings clips={clips} word={piece.text} lang={lang} playing={clipPlaying} onplay={onplay} />
       {/if}
       <p class="grammar">
         {[word.partOfWord ?? UPOS_LABEL[token.upos], ...featureWords(token.feats)].join(" · ")}
