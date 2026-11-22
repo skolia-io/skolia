@@ -27,8 +27,8 @@ on:
 # deploy of an environment at a time, and the plan, made at the start, holds: a newer run
 # cancels this one, and starts once it has stopped. A step that changes what's deployed
 # finishes first (.github/uninterruptible.sh). A tag's run and a merge group's run aren't
-# cancelled; a tag's staging deploy waits for main's (deploy-staging), so it may redo what
-# main's just did.
+# cancelled here. Main and tag runs share the environment-staging lock, held through
+# staging and any promotion to production.
 concurrency:
   group: ci-${{ github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
@@ -278,18 +278,16 @@ jobs:
       - uses: ./.github/actions/pnpm
       - run: .github/uninterruptible.sh just deploy-shared
 
-  # A tag's and main's runs both deploy staging: one at a time, as the plan reads what's
-  # deployed
-  deploy-staging:
+  # Lock staging through production promotion, so another tag or main deploy can't
+  # change staging between the release's tests and promotion.
+  release:
     if: ${{ !cancelled() && !failure() && needs.plan.result == 'success' && fromJSON(needs.plan.outputs.plan).deploys.staging }}
     needs: [plan, mirror-providers]
     concurrency:
       group: environment-staging
       cancel-in-progress: false
-    uses: ./.github/workflows/deploy.yml
-    with:
-      env: staging
-      plan: ${{ toJSON(fromJSON(needs.plan.outputs.plan).deploys.staging) }}
+      queue: max
+    uses: ./.github/workflows/release.yml
     secrets: inherit
 
   # The previews' Google sign-in (oauth-proxy/): one for all of them, from main
@@ -308,24 +306,3 @@ jobs:
       - uses: ./.github/actions/setup
       - uses: ./.github/actions/pnpm
       - run: .github/uninterruptible.sh just deploy-oauth-proxy
-
-  check-tag-on-main:
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-      - run: git merge-base --is-ancestor "$GITHUB_SHA" origin/main
-
-  deploy-production:
-    if: ${{ !cancelled() && !failure() && needs.plan.result == 'success' && fromJSON(needs.plan.outputs.plan).deploys.production }}
-    needs: [plan, deploy-staging, check-tag-on-main]
-    concurrency:
-      group: environment-production
-      cancel-in-progress: false
-    uses: ./.github/workflows/deploy.yml
-    with:
-      env: production
-      plan: ${{ toJSON(fromJSON(needs.plan.outputs.plan).deploys.production) }}
-    secrets: inherit
