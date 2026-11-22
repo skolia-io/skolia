@@ -51,7 +51,7 @@ def dump(path: Path) -> str:
     ("lang", "commons", "expected"),
     [
         ("en", None, (10, build.Stats(entries=12, skipped=2, pronounced=5, recorded=2))),
-        ("fr", None, (9, build.Stats(entries=13, skipped=2, pronounced=6))),
+        ("fr", None, (9, build.Stats(entries=13, skipped=2, pronounced=6, recorded=1))),
         (
             "pl",
             FIXTURES / "pl.commons.txt",

@@ -16,7 +16,7 @@ from .pronunciation import merge_recordings
 from .schema import Example, Paradigm, Pronunciation, Recording, Relation, Sense
 from .source import Converted, LexiconSource, Pronounced
 
-LEXICON_VERSION = "10"
+LEXICON_VERSION = "11"
 """Goes up when what the build makes changes, so every environment loads it again."""
 
 
@@ -197,12 +197,14 @@ def rows(
         ),
         key=lambda pair: pair[0],
     )
-    with_senses: dict[str, list[str]] = {}
+    with_senses: dict[str, dict[Upos, str]] = {}
     for entry_id, entry in by_id:
         if entry.senses:
-            with_senses.setdefault(entry.lemma, []).append(entry_id)
+            with_senses.setdefault(entry.lemma, {})[entry.upos] = entry_id
     relations = {
-        entry_id: [_resolved(lang, relation, with_senses) for relation in entry.relations]
+        entry_id: [
+            _resolved(lang, relation, entry.upos, with_senses) for relation in entry.relations
+        ]
         for entry_id, entry in by_id
     }
     for base, derivative in dict.fromkeys(derivatives):
@@ -237,15 +239,23 @@ def _verb_id(lang: str, lemma: str) -> str:
     return f"{lang}:{lemma}:VERB"
 
 
-def _resolved(lang: str, relation: Relation, with_senses: Mapping[str, list[str]]) -> Relation:
+def _resolved(
+    lang: str, relation: Relation, upos: Upos, with_senses: Mapping[str, Mapping[Upos, str]]
+) -> Relation:
     """The relation naming its target's entry: an aspect partner's is its verb; another's
-    is the one entry with senses spelled like it, if there's one."""
+    is the entry with senses spelled like it, and when there are several, the one of the
+    source's part of speech (doggy, a noun, is from the noun dog, not the verb), else the
+    noun."""
     match relation["kind"]:
         case "aspect-partner":
             target: str | None = _verb_id(lang, relation["lemma"])
         case "derived-from" | "variant-of":
-            matches = with_senses.get(relation["lemma"], [])
-            target = matches[0] if len(matches) == 1 else None
+            matches = with_senses.get(relation["lemma"], {})
+            target = (
+                next(iter(matches.values()))
+                if len(matches) == 1
+                else matches.get(upos) or matches.get("NOUN")
+            )
         case _:
             assert_never(relation["kind"])
     data = store.relation_data(relation)

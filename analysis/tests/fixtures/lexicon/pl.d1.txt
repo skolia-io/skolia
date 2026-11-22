@@ -4058,7 +4058,7 @@ psa	PROPN	$VERSION	{"pronunciations":[{"ipa":"/psa/"}],"recordings":[]}
 ## meta (key, value)
 attribution	Meanings and pronunciations from Wiktionary (https://en.wiktionary.org) via kaikki.org, CC BY-SA 4.0; recordings of words from Wikimedia Commons (https://commons.wikimedia.org), mostly Lingua Libre's, each credited and licensed on its file page; forms from Morfeusz 2 / SGJP (http://morfeusz.sgjp.pl), BSD 2-clause; verb valency from Walenty, IPI PAN (http://zil.ipipan.waw.pl/Walenty), CC BY-SA 4.0
 lang	pl
-version	10+kaikki-b587661bc6d6+morfeusz-1.99.15+commons-00ee1937c274
+version	11+kaikki-b587661bc6d6+morfeusz-1.99.15+commons-00ee1937c274
 ## relation (source_id, version, ord, target_lemma, target_id, kind, data)
 pl:bzikać:VERB	$VERSION	0	bzykać	NULL	variant-of	{"tags": ["intransitive", "regional"]}
 pl:golić:VERB	$VERSION	0	zgolić	pl:zgolić:VERB	aspect-partner	{"aspect": "Perf"}
