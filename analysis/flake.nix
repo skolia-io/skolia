@@ -39,31 +39,46 @@
       n2c = nix2container.packages.${system};
       cacert = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
 
-      # The venv from uv.lock
-      workspace = uv2nix.lib.workspace.loadWorkspace { workspaceRoot = ./.; };
+      # The venvs from the repo's uv workspace (../pyproject.toml, ../uv.lock): the analysis,
+      # the lexicon build (../lexicon) and what both use (../lib/py)
+      workspace = uv2nix.lib.workspace.loadWorkspace { workspaceRoot = ../.; };
       pythonSet =
         (pkgs.callPackage pyproject-nix.build.packages { python = pkgs.python312; }).overrideScope
           (
             lib.composeManyExtensions [
               pyproject-build-systems.overlays.wheel
               (workspace.mkPyprojectOverlay { sourcePreference = "wheel"; })
-              # Only what the package is built from, so other changes here make no new image
-              (_: prev: {
-                skolia-analysis = prev.skolia-analysis.overrideAttrs {
-                  src = lib.fileset.toSource {
-                    root = ./.;
-                    fileset = lib.fileset.unions [
-                      ./pyproject.toml
-                      ./src
-                    ];
-                  };
-                };
-              })
+              # Only what each package is built from, so other changes (tests, scripts) make no
+              # new image or lexicon
+              (
+                _: prev:
+                let
+                  built =
+                    root:
+                    lib.fileset.toSource {
+                      inherit root;
+                      fileset = lib.fileset.unions [
+                        (root + "/pyproject.toml")
+                        (root + "/src")
+                      ];
+                    };
+                in
+                {
+                  skolia-analysis = prev.skolia-analysis.overrideAttrs { src = built ./.; };
+                  skolia-lexicon = prev.skolia-lexicon.overrideAttrs { src = built ../lexicon; };
+                  skolia = prev.skolia.overrideAttrs { src = built ../lib/py; };
+                }
+              )
             ]
           );
-      venv = pythonSet.mkVirtualEnv "skolia-ingest-env" workspace.deps.default;
-      # Everything but the project, for a layer a code change doesn't touch
-      depsEnv = pythonSet.mkVirtualEnv "skolia-ingest-deps" pythonSet.skolia-analysis.dependencies;
+      venv = pythonSet.mkVirtualEnv "skolia-ingest-env" { skolia-analysis = [ ]; };
+      # Everything but the workspace's packages, for a layer a code change doesn't touch
+      depsEnv = pythonSet.mkVirtualEnv "skolia-ingest-deps" (
+        removeAttrs pythonSet.skolia-analysis.dependencies [ "skolia" ]
+      );
+      # The lexicon build's, without the analysis or its dependencies (torch, stanza, COMBO),
+      # so the lexicon changes only when it, lib/py or their dependencies do
+      lexiconEnv = pythonSet.mkVirtualEnv "skolia-lexicon-env" { skolia-lexicon = [ ]; };
 
       # The models, pinned by revision and hash
       fetched =
@@ -204,7 +219,7 @@
           )
         ) (lib.filter (l: l != "") (lib.splitString "\n" (builtins.readFile ./inputs.sha256)))
       );
-      walenty = pkgs.runCommand "skolia-walenty" { nativeBuildInputs = [ venv pkgs.unzip ]; } ''
+      walenty = pkgs.runCommand "skolia-walenty" { nativeBuildInputs = [ lexiconEnv pkgs.unzip ]; } ''
         mkdir $out
         unzip -q ${input."walenty_20180630-text.zip"} -d walenty
         skolia-build-valency walenty/walenty_20180630-text $out/pl-valency.json
@@ -218,17 +233,17 @@
         name = "lexicon-migrations";
       };
       lexicon = {
-        en = pkgs.runCommand "skolia-lexicon-en" { nativeBuildInputs = [ venv ]; } ''
+        en = pkgs.runCommand "skolia-lexicon-en" { nativeBuildInputs = [ lexiconEnv ]; } ''
           mkdir $out
           skolia-build-lexicon en ${input."kaikki.org-dictionary-English.jsonl"} ${migrations} \
             $out/en.sqlite
         '';
-        fr = pkgs.runCommand "skolia-lexicon-fr" { nativeBuildInputs = [ venv ]; } ''
+        fr = pkgs.runCommand "skolia-lexicon-fr" { nativeBuildInputs = [ lexiconEnv ]; } ''
           mkdir $out
           skolia-build-lexicon fr ${input."kaikki.org-dictionary-French.jsonl"} ${migrations} \
             $out/fr.sqlite
         '';
-        pl = pkgs.runCommand "skolia-lexicon-pl" { nativeBuildInputs = [ venv ]; } ''
+        pl = pkgs.runCommand "skolia-lexicon-pl" { nativeBuildInputs = [ lexiconEnv ]; } ''
           mkdir $out
           skolia-build-lexicon pl ${input."kaikki.org-dictionary-Polish.jsonl"} ${migrations} \
             $out/pl.sqlite --commons ${input."commons-recordings-pl.txt"} --data ${walenty}

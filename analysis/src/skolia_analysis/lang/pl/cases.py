@@ -15,9 +15,11 @@ what a broader version did on PDB and why the treebank undercounts it.
 
 from dataclasses import dataclass
 
+from skolia.pl.valency import Requirement, Valency
+from skolia.ud import Case, Deprel, Feats, Reading, Upos, VerbForm
+
 from ...blob import token_reading
-from ...schema import Case, CaseReason, Deprel, Feats, Reading, Token, Upos, VerbForm
-from .valency import Requirement, Valency
+from ...schema import CaseReason, Token
 
 # Complements whose case the verb decides
 GOVERNED: frozenset[Deprel] = frozenset({"obj", "iobj", "obl:arg"})

@@ -7,7 +7,7 @@ place where untyped parser output becomes typed. Anything not in schema.py raise
 from collections.abc import Mapping
 from typing import TypeGuard, cast, get_args, get_type_hints
 
-from .schema import Deprel, Feats, Upos
+from skolia.ud import Deprel, Feats, Upos
 
 
 class UnknownLabel(ValueError):

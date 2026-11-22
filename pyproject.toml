@@ -1,0 +1,49 @@
+# The Python projects, one uv workspace with one lock and one .venv: the analysis, the lexicon
+# build, and what both use (lib/py). Ruff's config is here for all of them; each has its
+# own pyright section.
+[tool.uv.workspace]
+members = ["analysis", "lexicon", "lib/py"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["analysis/scripts/vendor"]
+
+[tool.ruff.lint]
+select = [
+    "A", "ASYNC", "B", "BLE", "C4", "C90", "DTZ", "E", "EXE", "F", "FA", "FBT", "FLY", "FURB",
+    "G", "I", "ICN", "INT", "ISC", "LOG", "PERF", "PGH", "PIE", "PL", "PT", "PTH", "RET",
+    "RSE", "RUF", "SIM", "SLF", "SLOT", "T10", "T20", "TID", "TRY", "UP", "W",
+]
+# Allow intra-package relative imports and assertions that describe a single invariant.
+ignore = [
+    "TID252", "PT018",
+    # Dispatch by match returns from each arm; branch counts catch what matters
+    "PLR0911",
+    # PLR0913 counts all arguments; FBT catches the unreadable positional ones
+    "PLR0917",
+    "PLR2004",
+    # Plugins import their models lazily
+    "PLC0415",
+    # Polish words in test names
+    "PLC2401",
+    # lambda: list[T]() gives a typed default_factory
+    "PLW0108",
+    # pyright checks returns
+    "RET503",
+    "TRY003", "TRY301",
+]
+
+# IPA symbols in pronunciations: stress, length, and vowels that look like Latin letters
+allowed-confusables = ["ˈ", "ː", "ɪ", "ɑ", "ɡ"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["skolia_analysis", "skolia_lexicon", "skolia"]
+
+[tool.ruff.lint.per-file-ignores]
+"*.pyi" = ["PIE790"]
+# Builders of parser output take a word's fields as arguments
+"**/tests/**" = ["SLF001", "PLR0913"]
+# Their reports and generated code are what they print
+"analysis/scripts/**/eval_*.py" = ["T201"]
+"analysis/scripts/gen_ts_types.py" = ["T201"]

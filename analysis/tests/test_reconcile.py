@@ -1,5 +1,5 @@
+from skolia.ud import Feats, Reading, Upos
 from skolia_analysis.reconcile import same_lemma_and_upos, same_upos
-from skolia_analysis.schema import Feats, Reading, Upos
 
 
 def reading(lemma: str, upos: Upos, feats: Feats, xpos: str = "") -> Reading:

@@ -10,8 +10,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from .lexicon.entry import Frames
-from .lexicon.source import LexiconSource
 from .parsed import ParsedSentence, Parser
 from .schema import Blob, ExpressionDef
 
@@ -63,11 +61,4 @@ class LanguagePlugin(Protocol):
     def analyzer(self, parser: Parser, options: Options, data: Path | None) -> Analyzer:
         """data: the language's data directory, for the files the plugin uses besides the
         lexicon; None to analyse without them."""
-        ...
-
-    def lexicon_source(self) -> LexiconSource: ...
-
-    def frames(self, data: Path | None) -> Frames:
-        """Its words' valency frames, for its lexicon's entries (lexicon/entry.py); with
-        data, or none."""
         ...

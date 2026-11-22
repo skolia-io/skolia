@@ -1,0 +1,283 @@
+"""Polish lexicon: Kaikki entries in the analyser's conventions, paradigms from Morfeusz.
+
+The analyser decides what a lemma_id looks like (PDB conventions: który is DET, dużo is
+DET, participles belong to the verb), so each Kaikki headword is looked up in Morfeusz
+and converted with the same code the analyser uses.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Iterator
+from importlib.metadata import version
+from typing import TYPE_CHECKING
+
+from skolia.pl.morfeusz import MorfeuszCandidates, interpretation_readings, split_homonym
+from skolia.pl.nkjp import VERB_FORM_CLASSES, tag_class
+from skolia.ud import Aspect, Feats, Upos
+
+from .. import kaikki
+from .. import senses as kaikki_senses
+from ..kaikki import KaikkiEntry, KaikkiSound
+from ..pronunciation import pronunciations, recordings
+from ..schema import Accent, AspectPartner, Form, Paradigm, Relation
+from ..source import Converted, Pronounced
+
+if TYPE_CHECKING:
+    from morfeusz2 import Morfeusz
+
+ATTRIBUTION = (
+    "Meanings and pronunciations from Wiktionary (https://en.wiktionary.org) via kaikki.org, "
+    "CC BY-SA 4.0; "
+    "recordings of words from Wikimedia Commons (https://commons.wikimedia.org), "
+    "mostly Lingua Libre's, each credited and licensed on its file page; "
+    "forms from Morfeusz 2 / SGJP (http://morfeusz.sgjp.pl), BSD 2-clause; "
+    "verb valency from Walenty, IPI PAN (http://zil.ipipan.waw.pl/Walenty), CC BY-SA 4.0"
+)
+
+# Kaikki part of speech -> the UPOS the analyser may give the same word. The first is the
+# fallback when Morfeusz doesn't know the headword.
+KAIKKI_POS: dict[str, tuple[Upos, ...]] = {
+    "noun": ("NOUN", "PROPN"),
+    "name": ("PROPN", "NOUN"),
+    "verb": ("VERB", "AUX"),
+    "adj": ("ADJ", "DET"),
+    "adv": ("ADV", "DET", "PART"),
+    "pron": ("PRON", "DET"),
+    "det": ("DET",),
+    "num": ("NUM", "DET"),
+    "prep": ("ADP",),
+    "postp": ("ADP",),
+    "conj": ("CCONJ", "SCONJ"),
+    "particle": ("PART", "AUX", "ADV"),
+    "intj": ("INTJ",),
+}
+# Kaikki parts of speech left out: affixes, letters, punctuation; phrases and proverbs
+# become multi-word expressions later.
+
+NORMAL_SPEECH = "normal speech"
+PRESCRIPTIVE = "prescriptive"
+
+REFLEXIVE_SUFFIX = " się"
+"""Wiktionary has entries like "bać się"; the analyser gives bać + się as two tokens."""
+REFLEXIVE_TAG = "się"
+
+# Tags on a form-of sense that make it an inflected form ("genitive plural of kuna",
+# "comparative of stary", "passive participle of robić"). The analyser already gives
+# those words the target's lemma, so these senses add nothing.
+INFLECTION_TAGS = kaikki.INFLECTION_TAGS | {
+    "nominative",
+    "genitive",
+    "dative",
+    "accusative",
+    "instrumental",
+    "locative",
+    "vocative",
+    "future",
+    "conditional",
+    "impersonal",
+    "adverbial",
+    "anterior",
+    "comparative",
+    "superlative",
+}
+ASPECTS: dict[str, Aspect] = {"imperfective": "Imp", "perfective": "Perf"}
+# Wiktionary's tags for a word's gender and aspect, which its paradigm's features say
+GRAMMAR_TAGS = frozenset(
+    {
+        "masculine",
+        "feminine",
+        "neuter",
+        "animal-not-person",
+        "person",
+        "personal",
+        "inanimate",
+        "animate",
+        *ASPECTS,
+    }
+)
+# Paradigms leave out PronType and ExtPos: the sentence decides them, not the form (jakie
+# is interrogative, PronType=Int, or relative, Rel, depending on use), so the token's
+# form still matches whichever the parser chose.
+
+# Wiktionary noun gender codes (pl-noun etc.) -> the analyser's features. Codes are
+# gender-animacy with an optional -p for plural-only nouns: m-pr is a masculine person
+# (student), m-anml an animal (pies), m-in inanimate (stół), vr-p a virile plural-only
+# noun. nv-p (non-virile plural-only: drzwi) sets nothing comparable.
+GENDER: dict[str, Feats] = {
+    "m-pr": {"Gender": "Masc", "Animacy": "Hum"},
+    "m-anml": {"Gender": "Masc", "Animacy": "Nhum"},
+    "m-an": {"Gender": "Masc", "Animacy": "Nhum"},
+    "m-in": {"Gender": "Masc", "Animacy": "Inan"},
+    "m": {"Gender": "Masc"},
+    "vr": {"Gender": "Masc", "Animacy": "Hum"},
+    "f": {"Gender": "Fem"},
+    "n": {"Gender": "Neut"},
+}
+GENDER_TEMPLATES = {"pl-noun", "pl-proper noun", "pl-prop"}
+GENERIC_HEAD_TEMPLATE = "head"
+PLURAL_ONLY_SUFFIX = "-p"
+
+# Function words Wiktionary's extract lacks or glosses unhelpfully. The page for "i" is
+# so large that its language sections live on subpages, which Kaikki doesn't read.
+HAND_SENSES: dict[tuple[str, Upos], list[str]] = {
+    ("i", "CCONJ"): ["and", "(i ... i ...) both ... and ..."],
+    ("i", "PART"): ["also, too; even"],
+}
+
+
+class Source:
+    """Kaikki's Polish entries, each headword filed under the UPOS Morfeusz gives it."""
+
+    attribution = ATTRIBUTION
+    grammar_tags = GRAMMAR_TAGS
+
+    def __init__(self) -> None:
+        self._candidates = MorfeuszCandidates()
+        self._paradigms = Paradigms()
+
+    @property
+    def version(self) -> str:
+        return f"morfeusz-{version('morfeusz2')}"
+
+    def paradigms(self, lemma: str, upos: Upos) -> list[Paradigm]:
+        return self._paradigms(lemma, upos)
+
+    def hand_entries(self) -> Iterator[Converted]:
+        for (lemma, upos), glosses in HAND_SENSES.items():
+            yield Converted(lemma, (upos,), [{"gloss": g, "tags": []} for g in glosses])
+
+    def convert(self, entry: KaikkiEntry) -> Converted | None:
+        word, pos = entry.get("word", ""), entry.get("pos", "")
+        if pos not in KAIKKI_POS or not word:
+            return None
+        extra_tags: list[str] = []
+        if " " in word:
+            if not (pos == "verb" and word.endswith(REFLEXIVE_SUFFIX)):
+                return None
+            word = word.removesuffix(REFLEXIVE_SUFFIX)
+            extra_tags.append(REFLEXIVE_TAG)
+        gender = _gender(entry)
+        senses = [
+            s
+            for kaikki_sense in entry.get("senses", [])
+            if (s := kaikki_senses.sense(kaikki_sense, INFLECTION_TAGS, gender, extra_tags))
+            is not None
+        ]
+        if not senses:
+            return None
+        derived = kaikki_senses.relations(entry, INFLECTION_TAGS, GRAMMAR_TAGS)
+        relations = list(derived) + list(_aspect_partners(entry, word))
+        return Converted(word, self._upos(word, pos), senses, relations)
+
+    def pronounce(self, entry: KaikkiEntry) -> Pronounced | None:
+        word, pos = entry.get("word", ""), entry.get("pos", "")
+        if pos not in KAIKKI_POS or not word or " " in word:
+            return None
+        sounds = entry.get("sounds", [])
+        found = pronunciations(sounds, _standard) or pronunciations(sounds, _prescriptive)
+        heard = recordings(sounds)
+        return Pronounced(word, KAIKKI_POS[pos], found, heard) if found or heard else None
+
+    def _upos(self, word: str, pos: str) -> tuple[Upos, ...]:
+        """The analyser's UPOS for this headword: Morfeusz readings with this lemma whose
+        UPOS fits the Kaikki part of speech, or the default for it."""
+        allowed = KAIKKI_POS[pos]
+        (readings,) = self._candidates(word, [word])
+        found = {r["upos"] for r in readings if r["lemma"] == word and r["upos"] in allowed}
+        return tuple(u for u in allowed if u in found) or allowed[:1]
+
+
+class Paradigms:
+    def __init__(self) -> None:
+        import morfeusz2
+
+        self._morf: Morfeusz = morfeusz2.Morfeusz()
+
+    def __call__(self, lemma: str, upos: Upos) -> list[Paradigm]:
+        """Every form of the lemma Morfeusz can generate, one paradigm per homonym. A verb's
+        paradigm includes its participles and gerunds. A lemma of several words, which
+        Morfeusz refuses, has none."""
+        by_homonym: dict[str, list[Form]] = {}
+        seen: set[tuple[str, str]] = set()
+        try:
+            generated = self._morf.generate(lemma)
+        except RuntimeError:
+            return []
+        for interpretation in generated:
+            orth, base, _tag, _names, _qualifiers = interpretation
+            base_lemma, homonym = split_homonym(base)
+            if base_lemma != lemma:
+                continue
+            for reading in interpretation_readings(interpretation):
+                if not _in_paradigm(upos, reading["upos"], reading["xpos"]):
+                    continue
+                key = (orth, reading["xpos"])
+                if key in seen:
+                    continue
+                seen.add(key)
+                feats = reading["feats"].copy()
+                feats.pop("PronType", None)
+                feats.pop("ExtPos", None)
+                form: Form = {"form": orth, "xpos": reading["xpos"], "feats": feats}
+                by_homonym.setdefault(homonym, []).append(form)
+        return [{"homonym": h, "forms": forms} for h, forms in by_homonym.items()]
+
+
+def _in_paradigm(entry_upos: Upos, form_upos: Upos, xpos: str) -> bool:
+    if entry_upos == "VERB":
+        return form_upos in ("VERB", "AUX") or tag_class(xpos) in VERB_FORM_CLASSES
+    nominal = {"NOUN", "PROPN"}
+    if entry_upos in nominal:
+        return form_upos in nominal
+    return form_upos == entry_upos
+
+
+def _standard(sound: KaikkiSound) -> list[Accent] | None:
+    """Today's standard Polish: no tag (Middle Polish, Łowicz) and no note but "normal
+    speech". The regions are in notes."""
+    if sound.get("tags") or sound.get("note", NORMAL_SPEECH) != NORMAL_SPEECH:
+        return None
+    return []
+
+
+def _prescriptive(sound: KaikkiSound) -> list[Accent] | None:
+    """The textbook form, for words Wiktionary gives only that for (galaktyka)."""
+    if sound.get("tags") or sound.get("note") != PRESCRIPTIVE:
+        return None
+    return []
+
+
+def _gender(entry: KaikkiEntry) -> list[Feats]:
+    codes: list[str] = []
+    for template in entry.get("head_templates", []):
+        args = template.get("args", {})
+        if template.get("name") in GENDER_TEMPLATES:
+            codes += args.get("1", "").split(",")
+        elif template.get("name") == GENERIC_HEAD_TEMPLATE:
+            codes += [v for k, v in args.items() if k.startswith("g")]
+    found: list[Feats] = []
+    for qualified in codes:
+        # drop qualifiers like m-an! or m-anml<l:colloquial>
+        code = qualified.split("<")[0].rstrip("!").removesuffix(PLURAL_ONLY_SUFFIX)
+        feats = GENDER.get(code)
+        if feats is not None and feats not in found:
+            found.append(feats)
+    return found
+
+
+def _aspect_partners(entry: KaikkiEntry, word: str) -> Iterator[Relation]:
+    """Wiktionary lists a verb's aspect partner as a form tagged only with its aspect."""
+    if entry.get("pos") != "verb":
+        return
+    for form in entry.get("forms", []):
+        partner = form.get("form", "")
+        match form.get("tags", []):
+            case [tag] if tag in ASPECTS and partner and partner != word:
+                found: AspectPartner = {
+                    "kind": "aspect-partner",
+                    "lemma": partner,
+                    "aspect": ASPECTS[tag],
+                }
+                yield found
+            case _:
+                pass

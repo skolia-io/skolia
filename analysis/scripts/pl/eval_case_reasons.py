@@ -11,8 +11,8 @@ import random
 from collections import Counter
 from pathlib import Path
 
+from skolia.pl.valency import Valency
 from skolia_analysis.lang.pl import plugin as pl
-from skolia_analysis.lang.pl.valency import Valency
 from skolia_analysis.schema import Token
 from skolia_analysis.treebank import CachedParser, gold_text
 

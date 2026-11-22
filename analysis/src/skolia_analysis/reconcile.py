@@ -9,7 +9,7 @@ measured with scripts/eval_ud.py; the policies differ in how far they may move.
 
 from collections.abc import Callable, Sequence
 
-from .schema import Feats, Reading
+from skolia.ud import Feats, Reading
 
 type Policy = Callable[[Reading, Sequence[Reading]], Reading | None]
 """(parser reading, dictionary readings) -> replacement, or None to keep the parser's."""

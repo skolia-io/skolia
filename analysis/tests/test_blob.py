@@ -1,11 +1,5 @@
-from skolia_analysis.blob import (
-    Language,
-    build,
-    lemma_id,
-    match_expressions,
-    utf16_offsets,
-    utf16_slice,
-)
+from skolia.lemma import lemma_id
+from skolia_analysis.blob import Language, build, match_expressions, utf16_offsets, utf16_slice
 from skolia_analysis.parsed import ParsedSentence, ParsedToken, ParsedWord
 from skolia_analysis.schema import ExpressionDef
 

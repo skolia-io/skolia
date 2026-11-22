@@ -22,9 +22,9 @@ from pathlib import Path
 
 import structlog
 
+from skolia.log import configure_logging
 from skolia_analysis import lang, reconcile
 from skolia_analysis.conllu import write
-from skolia_analysis.log import configure_logging
 from skolia_analysis.parsed import Parser
 from skolia_analysis.plugin import Options
 from skolia_analysis.treebank import CachedParser, gold_text

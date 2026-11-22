@@ -9,12 +9,10 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
-from ...lexicon.entry import Frames, no_frames
 from ...parsed import Parser
 from ...parsers.stanza_parser import StanzaParser
 from ...plugin import Options
 from ..plain import PlainAnalyzer
-from .lexicon import Source
 
 LANG = "en"
 PLUGIN_VERSION = "0.2"
@@ -43,12 +41,3 @@ def analyzer(parser: Parser, options: Options, data: Path | None) -> PlainAnalyz
     return PlainAnalyzer(
         lang=LANG, version=PLUGIN_VERSION, parser=parser, expressions=options.expressions
     )
-
-
-def lexicon_source() -> Source:
-    return Source()
-
-
-def frames(data: Path | None) -> Frames:
-    """None: there's no valency lexicon for English."""
-    return no_frames

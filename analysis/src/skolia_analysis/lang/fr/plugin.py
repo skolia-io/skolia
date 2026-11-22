@@ -9,13 +9,11 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
-from ...lexicon.entry import Frames, no_frames
 from ...parsed import Parser
 from ...parsers.stanza_parser import StanzaParser
 from ...plugin import Options
 from ..plain import PlainAnalyzer
 from .lemmas import relemmatize
-from .lexicon import Source
 
 LANG = "fr"
 PLUGIN_VERSION = "0.3"
@@ -49,12 +47,3 @@ def analyzer(parser: Parser, options: Options, data: Path | None) -> PlainAnalyz
         expressions=options.expressions,
         preprocess=relemmatize,
     )
-
-
-def lexicon_source() -> Source:
-    return Source()
-
-
-def frames(data: Path | None) -> Frames:
-    """None: there's no valency lexicon for French."""
-    return no_frames

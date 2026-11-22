@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from skolia.ud import Deprel, Feats, Upos
 from skolia_analysis.blob import SCHEMA
 from skolia_analysis.ingest import cli
 from skolia_analysis.ingest.schema import analysis_name
@@ -14,7 +15,7 @@ from skolia_analysis.ingest.worker import versions
 from skolia_analysis.lang.en import plugin as en
 from skolia_analysis.parsed import ParsedSentence, ParsedToken, ParsedWord, align
 from skolia_analysis.plugin import Options
-from skolia_analysis.schema import Blob, Deprel, ExpressionDef, Feats, Upos
+from skolia_analysis.schema import Blob, ExpressionDef
 
 MODEL = "test-model"
 TEXT = "I can't find the café 🙂. She gave up."
