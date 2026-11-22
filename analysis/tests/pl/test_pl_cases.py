@@ -172,6 +172,19 @@ def test_genitive_after_być_describes() -> None:
     assert reasons(tokens)[:2] == [("Jakiego", "agreement", 1), ("koloru", "description", 2)]
 
 
+def test_possessive_genitive_after_być_does_not_describe() -> None:
+    # Dom jest mojego brata.
+    mojego = tok("mojego", "mój", "DET", 3, "det:poss")
+    mojego["feats"] = {"Case": "Gen", "Number": "Sing", "Gender": "Masc", "Poss": "Yes"}
+    tokens = [
+        noun("Dom", "dom", 3, "nsubj", "Nom"),
+        tok("jest", "być", "AUX", 3, "cop"),
+        mojego,
+        noun("brata", "brat", None, "root", "Gen"),
+    ]
+    assert reasons(tokens)[3] == ("brata", None, None)
+
+
 def reading(lemma: str, case: Case, upos: Upos = "NOUN") -> Reading:
     feats: Feats = {"Case": case, "Number": "Sing", "Gender": "Masc", "Animacy": "Nhum"}
     return {"lemma": lemma, "upos": upos, "xpos": f"x:{case.lower()}", "feats": feats}

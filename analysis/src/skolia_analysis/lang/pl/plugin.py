@@ -23,7 +23,7 @@ from ...schema import Blob, ExpressionDef, Token
 from . import cases
 
 LANG = "pl"
-PLUGIN_VERSION = "0.9"
+PLUGIN_VERSION = "0.10"
 
 # Parser models, by name. Each loads on first use. All are trained on UD Polish PDB, whose
 # conventions schema.py and the dictionary conversion assume. Scores: analysis/EVALUATION.md.

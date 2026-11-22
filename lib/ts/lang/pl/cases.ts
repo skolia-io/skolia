@@ -61,7 +61,7 @@ export function explainCase(tokens: Token[], index: number, depth = 0): CaseExpl
       case "predicate":
         return `After ${governor}, a noun that says what the subject is goes in the instrumental (jest lekarzem).`;
       case "description":
-        return `After ${governor}, a genitive says what the subject is like (jest średniego wzrostu, jakiego koloru?).`;
+        return `With an adjective, a genitive says what something is like, after ${governor} or after a noun (jest średniego wzrostu, ściany jasnego koloru).`;
       case "possessive":
         return `It belongs to ${word}: "of" is the genitive (dom brata).`;
       case "noun-complement":
