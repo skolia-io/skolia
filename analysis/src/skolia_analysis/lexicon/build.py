@@ -10,13 +10,13 @@ from typing import NamedTuple, assert_never, cast
 from ..blob import lemma_id
 from ..schema import Feats, Upos
 from . import commons, kaikki, store
-from .entry import FeatsTable, Frames, Lexicon, Row, make, no_frames
+from .entry import FeatsTable, Frames, Row, make, no_frames
 from .pronunciation import merge as merge_pronunciations
 from .pronunciation import merge_recordings
 from .schema import Example, Paradigm, Pronunciation, Recording, Relation, Sense
 from .source import Converted, LexiconSource, Pronounced
 
-LEXICON_VERSION = "9"
+LEXICON_VERSION = "10"
 """Goes up when what the build makes changes, so every environment loads it again."""
 
 
@@ -296,20 +296,21 @@ def build(
     extract = read(source, inputs.kaikki)
     by_word = commons.recordings(lang, commons.read(inputs.commons)) if inputs.commons else {}
     built = rows(lang, source, extract.converted, extract.derivatives)
-    lexicon = Lexicon(
-        {row.lemma_id: row for row in built},
-        _by_spelling(extract.pronunciations),
-        _by_spelling(extract.recordings),
-        by_word,
-    )
+    by_id = {row.lemma_id: row for row in built}
     feats = FeatsTable()
     entries = [
-        _entry_row(lexicon, row._replace(paradigms=paradigms), frames, feats)
+        _entry_row(by_id, row._replace(paradigms=paradigms), frames, feats)
         for row in built
         for paradigms in [row.paradigms or source.paradigms(row.lemma, row.upos)]
     ]
     meta = {"lang": lang, "version": _version(source, inputs), "attribution": source.attribution}
-    contents = store.Contents(meta, entries, _edges(built), feats.table, _audio(lexicon))
+    contents = store.Contents(
+        meta,
+        entries,
+        _edges(built),
+        feats.table,
+        _audio(extract.pronunciations, extract.recordings, by_word),
+    )
     stats = Stats(
         entries=extract.read,
         skipped=extract.read - len(extract.converted),
@@ -320,17 +321,10 @@ def build(
     return contents, stats
 
 
-def _by_spelling[T](
-    by_word_upos: Mapping[tuple[str, Upos], list[T]],
-) -> dict[str, dict[Upos, list[T]]]:
-    found: dict[str, dict[Upos, list[T]]] = {}
-    for (word, upos), values in sorted(by_word_upos.items()):
-        found.setdefault(word, {})[upos] = values
-    return found
-
-
-def _entry_row(lexicon: Lexicon, row: Row, frames: Frames, feats: FeatsTable) -> store.EntryRow:
-    data = store.to_json(make(lexicon, row, frames, feats))
+def _entry_row(
+    rows: Mapping[str, Row], row: Row, frames: Frames, feats: FeatsTable
+) -> store.EntryRow:
+    data = store.to_json(make(rows, row, frames, feats))
     return store.EntryRow(row.lemma_id, row.lemma, row.upos, data, len(row.senses))
 
 
@@ -349,33 +343,33 @@ def _edges(built: Iterable[Row]) -> list[store.Edge]:
     ]
 
 
-def _audio(lexicon: Lexicon) -> list[store.AudioRow]:
-    """Each spelling's pronunciations and recordings by part of speech, and Commons'."""
-    spellings = lexicon.pronunciations.keys() | lexicon.recordings.keys()
-    found: list[store.AudioRow] = []
-    for form in sorted(spellings | lexicon.word_recordings.keys()):
-        pronunciations = lexicon.pronunciations.get(form, {})
-        recordings = lexicon.recordings.get(form, {})
-        found += [
-            store.AudioRow(
-                form,
-                upos,
-                store.to_json(
-                    {
-                        "pronunciations": pronunciations.get(upos, []),
-                        "recordings": recordings.get(upos, []),
-                    }
-                ),
-            )
-            for upos in sorted(pronunciations.keys() | recordings.keys())
-        ]
-        if heard := lexicon.word_recordings.get(form):
-            found.append(
-                store.AudioRow(
-                    form, None, store.to_json({"pronunciations": [], "recordings": heard})
-                )
-            )
-    return found
+def _audio(
+    pronunciations: Pronunciations,
+    recordings: Recordings,
+    by_word: Mapping[str, list[Recording]],
+) -> list[store.AudioRow]:
+    """Each spelling's pronunciations and recordings by part of speech, and Commons'
+    recordings of it, whatever its part of speech, under none. The lexicon Worker picks
+    among them for a form (lexicon/src/store.ts)."""
+    said = [
+        store.AudioRow(
+            form,
+            upos,
+            store.to_json(
+                {
+                    "pronunciations": pronunciations.get((form, upos), []),
+                    "recordings": recordings.get((form, upos), []),
+                }
+            ),
+        )
+        for form, upos in sorted(pronunciations.keys() | recordings.keys())
+    ]
+    heard = [
+        store.AudioRow(form, None, store.to_json({"pronunciations": [], "recordings": found}))
+        for form, found in sorted(by_word.items())
+        if found
+    ]
+    return said + heard
 
 
 def _version(source: LexiconSource, inputs: Inputs) -> str:

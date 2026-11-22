@@ -58,7 +58,7 @@ def test_entry_shares_feature_sets_and_groups_forms() -> None:
     ]
     row = Row("pl:pies:NOUN", "pies", "NOUN", [DOG], [], [{"homonym": "Sm2", "forms": forms}], {})
     feats = entry.FeatsTable()
-    result = entry.make(entry.Lexicon(), row, no_frames, feats)
+    result = entry.make({}, row, no_frames, feats)
     compacted = result["paradigms"][0]["forms"]
     assert [(f, [feats.table[i] for i in ids]) for f, ids in compacted] == [
         ("psa", [gen, acc]),
@@ -69,7 +69,7 @@ def test_entry_shares_feature_sets_and_groups_forms() -> None:
 
     strach = parse_schema("pies: pewny: : : : {np(gen)}", "noun")
     with_frames = entry.make(
-        entry.Lexicon(),
+        {},
         row,
         lambda lemma, upos: [strach] if (lemma, upos) == ("pies", "NOUN") else [],
         feats,
@@ -83,28 +83,8 @@ def test_grammar_adds_what_every_form_has() -> None:
         {"form": "psem", "xpos": "subst:sg:inst:m2", "feats": {"Case": "Ins", "Gender": "Masc"}},
     ]
     row = Row("pl:pies:NOUN", "pies", "NOUN", [DOG], [], [{"homonym": "", "forms": forms}], {})
-    made = entry.make(entry.Lexicon(), row, no_frames, entry.FeatsTable())
+    made = entry.make({}, row, no_frames, entry.FeatsTable())
     assert made["grammar"] == {"Gender": "Masc"}
-
-
-def test_pronunciation_fallbacks() -> None:
-    lead: Recording = {"audio": "En-lead.ogg", "mp3_url": "https://x/En-lead.ogg.mp3"}
-    read: Recording = {"audio": "En-read.ogg", "mp3_url": "https://x/En-read.ogg.mp3"}
-    lexicon = entry.Lexicon(
-        pronunciations={
-            "be": {"VERB": [{"ipa": "/biː/"}]},
-            "lead": {"NOUN": [{"ipa": "/lɛd/"}], "VERB": [{"ipa": "/liːd/"}]},
-            "led": {"VERB": [{"ipa": "/lɛd/"}]},
-        },
-        recordings={"lead": {"VERB": [lead]}, "read": {"VERB": [read]}},
-    )
-    assert entry.pronounce(lexicon, "Lead", "NOUN") == [{"ipa": "/lɛd/"}]
-    assert entry.pronounce(lexicon, "lead", "VERB") == [{"ipa": "/liːd/"}]
-    assert entry.pronounce(lexicon, "be", "AUX") == [{"ipa": "/biː/"}]
-    assert entry.pronounce(lexicon, "xyzzy", "NOUN") == []
-    assert entry.pronounce(lexicon, "read", "VERB") == []
-    assert entry.record(lexicon, "read", "VERB") == [read]
-    assert entry.record(lexicon, "lead", "NOUN") == []
 
 
 def test_commons_names_give_their_words() -> None:
@@ -129,23 +109,6 @@ def test_commons_recordings_are_lingua_libres_first() -> None:
     found = commons.recordings("pl", ["Pl-pies.ogg", "LL-Q809 (pol)-Olaf-pies.wav", "x.png"])
     assert [r["audio"] for r in found["pies"]] == ["LL-Q809 (pol)-Olaf-pies.wav", "Pl-pies.ogg"]
     assert list(found) == ["pies"]
-
-
-def test_record_falls_back_to_commons_recordings() -> None:
-    wiktionary: Recording = {"audio": "Pl-kot.ogg", "mp3_url": "https://x/Pl-kot.ogg.mp3"}
-    psa: Recording = {"audio": "LL-psa.wav", "mp3_url": "https://x/LL-psa.wav.mp3"}
-    kot: Recording = {"audio": "LL-kot.wav", "mp3_url": "https://x/LL-kot.wav.mp3"}
-    lexicon = entry.Lexicon(
-        pronunciations={
-            "kot": {"NOUN": [{"ipa": "/kɔt/"}]},
-            "pies": {"NOUN": [{"ipa": "/ˈpjɛs/"}]},
-        },
-        recordings={"kot": {"NOUN": [wiktionary]}},
-        word_recordings={"psa": [psa], "kot": [kot]},
-    )
-    assert entry.record(lexicon, "kot", "NOUN") == [wiktionary]
-    assert entry.record(lexicon, "Psa", "NOUN") == [psa]
-    assert entry.record(lexicon, "pies", "NOUN") == []
 
 
 def test_recordings_are_the_sounds_with_audio_each_file_once() -> None:

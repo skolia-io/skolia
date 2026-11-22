@@ -21,7 +21,7 @@ import {
   type Settings,
 } from "@skolia/shared/api";
 import { allPages, type Cursor } from "@skolia/shared/page";
-import type { Entry } from "@skolia/shared/schema";
+import type { StoredEntry } from "@skolia/shared/schema";
 import {
   ALICE,
   NOW,
@@ -507,7 +507,7 @@ test("settings are saved whole, and kept", async () => {
 test("a due card carries its entry whole, as the lexicon built it, from the lexicon Worker", async () => {
   const app = setup();
   const headers = await signedIn();
-  const zgolić: Entry = {
+  const zgolić: StoredEntry = {
     lemma_id: "pl:zgolić:VERB",
     lemma: "zgolić",
     upos: "VERB",
@@ -517,14 +517,13 @@ test("a due card carries its entry whole, as the lexicon built it, from the lexi
       { kind: "derived-from", lemma: "golić", lemma_id: "pl:golić:VERB", how: "perfective" },
       { kind: "aspect-partner", lemma: "golnąć", aspect: "Perf" },
     ],
-    pronunciations: [],
     paradigms: [],
     frames: [],
   };
   await loadLexicon("pl", "lex/1", [zgolić, glossed("pl:golić:VERB", "to shave")]);
   await learn(app, headers, "pl:zgolić:VERB");
   const [card] = (await due(app, headers, "pl")).cards;
-  assert.deepEqual(card?.entry, zgolić);
+  assert.deepEqual(card?.entry, { ...zgolić, pronunciations: [], recordings: [] });
 });
 
 test("a language's cards, of every kind, are listed newest first, a page at a time", async () => {

@@ -195,19 +195,6 @@ export interface VariantOf {
 
 export type Relation = AspectPartner | DerivedFrom | VariantOf;
 
-export type Accent = "UK" | "US";
-
-export interface Pronunciation {
-  ipa: string;
-  accents?: Accent[];
-}
-
-export interface Recording {
-  audio: string;
-  mp3_url: string;
-  tags?: string[];
-}
-
 export type FormRow = [string, number[]];
 
 export interface EntryParadigm {
@@ -462,6 +449,19 @@ export interface Schema {
   positions: Position[];
 }
 
+export type Accent = "UK" | "US";
+
+export interface Pronunciation {
+  ipa: string;
+  accents?: Accent[];
+}
+
+export interface Recording {
+  audio: string;
+  mp3_url: string;
+  tags?: string[];
+}
+
 export interface Entry {
   lemma_id: string;
   lemma: string;
@@ -469,8 +469,19 @@ export interface Entry {
   grammar: Feats;
   senses: Sense[];
   relations: Relation[];
+  paradigms: EntryParadigm[];
+  frames: Schema[];
   pronunciations: Pronunciation[];
-  recordings?: Recording[];
+  recordings: Recording[];
+}
+
+export interface StoredEntry {
+  lemma_id: string;
+  lemma: string;
+  upos: Upos;
+  grammar: Feats;
+  senses: Sense[];
+  relations: Relation[];
   paradigms: EntryParadigm[];
   frames: Schema[];
 }

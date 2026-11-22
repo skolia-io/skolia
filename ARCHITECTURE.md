@@ -248,8 +248,9 @@ Built offline (`analysis/src/skolia_analysis/lexicon/`) into one SQLite file per
 English and French have no Morfeusz: headwords are filed under Kaikki's part of speech mapped to UPOS, and Wiktionary's inflection table gives the paradigm.
 
 ```
-entry(lemma_id, version, lemma, upos, data, lemma_lower, sense_count)  data: the whole Entry as JSON;
-  relations, feature sets and each spelling's pronunciations and recordings in tables of their own
+entry(lemma_id, version, lemma, upos, data, lemma_lower, sense_count)  data: the Entry as JSON but its audio;
+  relations, feature sets and each spelling's pronunciations and recordings in tables of their own,
+  from which the Worker gives an entry its lemma's audio as it does any form's
   senses:    gloss, tags (slang, dated...), examples, and `when`: the features that select
              the sense (pies the dog: Animacy=Nhum; the cop: Animacy=Hum)
   grammar:   a `when` every sense shares (pani: Gender=Fem)

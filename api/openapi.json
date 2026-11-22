@@ -408,18 +408,6 @@
               "$ref": "#/components/schemas/Relation"
             }
           },
-          "pronunciations": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Pronunciation"
-            }
-          },
-          "recordings": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Recording"
-            }
-          },
           "paradigms": {
             "type": "array",
             "items": {
@@ -431,6 +419,18 @@
             "items": {
               "$ref": "#/components/schemas/Schema"
             }
+          },
+          "pronunciations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Pronunciation"
+            }
+          },
+          "recordings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Recording"
+            }
           }
         },
         "required": [
@@ -440,9 +440,10 @@
           "grammar",
           "senses",
           "relations",
-          "pronunciations",
           "paradigms",
-          "frames"
+          "frames",
+          "pronunciations",
+          "recordings"
         ],
         "additionalProperties": false
       },
@@ -983,53 +984,6 @@
           "kind",
           "lemma",
           "tags"
-        ],
-        "additionalProperties": false
-      },
-      "Pronunciation": {
-        "type": "object",
-        "properties": {
-          "ipa": {
-            "type": "string"
-          },
-          "accents": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Accent"
-            }
-          }
-        },
-        "required": [
-          "ipa"
-        ],
-        "additionalProperties": false
-      },
-      "Accent": {
-        "type": "string",
-        "enum": [
-          "UK",
-          "US"
-        ]
-      },
-      "Recording": {
-        "type": "object",
-        "properties": {
-          "audio": {
-            "type": "string"
-          },
-          "mp3_url": {
-            "type": "string"
-          },
-          "tags": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
-        },
-        "required": [
-          "audio",
-          "mp3_url"
         ],
         "additionalProperties": false
       },
@@ -2281,6 +2235,53 @@
           "kind",
           "phrase",
           "parts"
+        ],
+        "additionalProperties": false
+      },
+      "Pronunciation": {
+        "type": "object",
+        "properties": {
+          "ipa": {
+            "type": "string"
+          },
+          "accents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Accent"
+            }
+          }
+        },
+        "required": [
+          "ipa"
+        ],
+        "additionalProperties": false
+      },
+      "Accent": {
+        "type": "string",
+        "enum": [
+          "UK",
+          "US"
+        ]
+      },
+      "Recording": {
+        "type": "object",
+        "properties": {
+          "audio": {
+            "type": "string"
+          },
+          "mp3_url": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "audio",
+          "mp3_url"
         ],
         "additionalProperties": false
       },

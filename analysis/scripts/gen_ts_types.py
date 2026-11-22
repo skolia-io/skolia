@@ -32,6 +32,7 @@ from skolia_analysis.lexicon import schema as lexicon_schema
 ROOTS: list[object] = [
     schema.Blob,
     lexicon_schema.Entry,
+    lexicon_schema.StoredEntry,
     ingest_schema.IngestJob,
     ingest_schema.JobAnswer,
     ingest_schema.JobResult,
