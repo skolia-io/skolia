@@ -483,6 +483,7 @@ function deps(signedIn: boolean, annotations: readonly Annotation[]): Deps {
     },
     ingestHistory: { recent: async () => INGEST_HISTORY },
     version: "dev",
+    reader: { lexiconConcurrency: 6 },
     now: () => NOW,
   };
 }

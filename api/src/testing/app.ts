@@ -55,6 +55,7 @@ export function setup({ auth = local.auth, at = NOW, jobsOf = async () => null }
     queue: new RecordingStarts(new IngestRuns(env.INGEST_WORKFLOW, jobsOf), local.started),
     ingestHistory: new D1IngestHistory(env.INGEST_DB),
     version: "v1.2.3",
+    reader: { lexiconConcurrency: 8 },
     now: () => new Date(at),
     checkResponses: true,
   });

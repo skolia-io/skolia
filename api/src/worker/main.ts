@@ -14,6 +14,7 @@ import { D1Documents } from "./adapters/documents.ts";
 import type { LexiconRpc } from "@skolia/lexicon/rpc";
 import { RpcLexicon } from "./adapters/lexicon.ts";
 import { DurableObjectUsers } from "./adapters/users.ts";
+import { readerConfig } from "../reader-config.ts";
 import { R2Blobs } from "./adapters/blobs.ts";
 import type { User } from "./user.ts";
 
@@ -45,6 +46,8 @@ interface Env {
   /** infra/plan.py version, a var (just deploy-web) rather than in the bundle, so the bundle's
    * Nix out path doesn't change with it; unset under wrangler dev */
   VERSION?: string;
+  /** How many lexicon entries the reader fetches at once (reader-config.ts) */
+  READER_LEXICON_CONCURRENCY?: string;
 }
 
 /** A Better Auth instance per request: it sets itself up on first use and keeps that
@@ -85,6 +88,7 @@ export default {
       users: new DurableObjectUsers(env.USER),
       lexicon: new RpcLexicon(env.LEXICON),
       version: env.VERSION ?? "dev",
+      reader: readerConfig(env),
       documents: new D1Documents(env.DB.withSession("first-primary")),
       blobs: new R2Blobs(env.BLOBS),
       queue: new IngestRuns(env.INGEST_WORKFLOW, (lang) => env.INGESTER.getByName(lang).jobs(lang)),

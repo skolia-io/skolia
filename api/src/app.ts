@@ -100,9 +100,9 @@ export function createApp(deps: Deps) {
     })
     .get(
       "/api/version",
-      describe({ tags: [TAGS.account], summary: "The deployed version", security: [] }),
-      responds({ 200: json(schemas.Version, "The version, from git describe") }),
-      async (c) => c.json({ version: deps.version } satisfies Version, 200),
+      describe({ tags: [TAGS.account], summary: "The deployed version, and what the reader is set to do", security: [] }),
+      responds({ 200: json(schemas.Version, "The version, from git describe, and the reader's config") }),
+      async (c) => c.json({ version: deps.version, reader: deps.reader } satisfies Version, 200),
     )
     .on(["GET", "POST"], "/api/auth/*", describe({ hide: true }), (c) => deps.auth.handle(c.req.raw))
     .get("/api/openapi.json", describe({ hide: true }), (c) => c.json({ ...spec, info: { ...spec.info, version: deps.version } }, 200))

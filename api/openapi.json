@@ -58,10 +58,28 @@
         "properties": {
           "version": {
             "type": "string"
+          },
+          "reader": {
+            "$ref": "#/components/schemas/ReaderConfig"
           }
         },
         "required": [
-          "version"
+          "version",
+          "reader"
+        ],
+        "additionalProperties": false
+      },
+      "ReaderConfig": {
+        "type": "object",
+        "properties": {
+          "lexiconConcurrency": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 32
+          }
+        },
+        "required": [
+          "lexiconConcurrency"
         ],
         "additionalProperties": false
       },
@@ -3340,11 +3358,11 @@
         "tags": [
           "Account"
         ],
-        "summary": "The deployed version",
+        "summary": "The deployed version, and what the reader is set to do",
         "security": [],
         "responses": {
           "200": {
-            "description": "The version, from git describe",
+            "description": "The version, from git describe, and the reader's config",
             "content": {
               "application/json": {
                 "schema": {

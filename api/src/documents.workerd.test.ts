@@ -39,10 +39,8 @@ import { body, expectStatus } from "@skolia/util/responses";
 
 useLocal();
 
-test("the version is the build's", async () => {
-  const res = await setup().request("/api/version");
-  assert.equal(res.status, 200);
-  assert.deepEqual(await res.json(), { version: "v1.2.3" });
+test("the version is the build's, with the reader's config", async () => {
+  assert.deepEqual(await body("version", client(setup()).version.$get()), { version: "v1.2.3", reader: { lexiconConcurrency: 8 } });
 });
 
 test("the typed client imports, lists and gets a document, and sees a 404 as not ok", async () => {

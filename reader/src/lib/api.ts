@@ -44,6 +44,7 @@ import {
   type Reviewed,
   type Settings,
   type User,
+  type Version,
 } from "@skolia/shared/api";
 import { allPages, type Cursor } from "@skolia/shared/page";
 import { SCHEMA, type Blob, type Upos } from "@skolia/shared/schema";
@@ -122,11 +123,12 @@ export async function listDocuments(
   return response.json();
 }
 
-/** The deployed version, which the build doesn't know (api/src/worker/main.ts VERSION). */
-export async function getVersion(): Promise<string> {
+/** The deployed version and the reader's config, which the build doesn't know
+ * (api/src/worker/main.ts VERSION, api/src/reader-config.ts). */
+export async function getVersion(): Promise<Version> {
   const response = await api.version.$get();
   if (!response.ok) throw await failure(response);
-  return (await response.json()).version;
+  return response.json();
 }
 
 /** The tags that can be given. */

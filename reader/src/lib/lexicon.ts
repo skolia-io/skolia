@@ -1,11 +1,11 @@
 import { queryOptions, type QueryClient } from "@tanstack/svelte-query";
-import { langOf, type Lang, type LemmaId } from "@skolia/shared/api";
+import { LEXICON_CONCURRENCY, langOf, type Lang, type LemmaId } from "@skolia/shared/api";
 import type { Token } from "@skolia/shared/schema";
 import { LemmaId as LemmaIdSchema } from "@skolia/shared/schemas";
 import { getEntry, getFormAudio, getLexiconInfo, LexiconVersionChanged } from "./api.ts";
+import { versionQuery } from "./queries.ts";
 
 const VERSION_CHECK_INTERVAL = 60 * 60 * 1000;
-const CONCURRENCY = 6;
 
 export function tokenLemma(token: Token): LemmaId | undefined {
   return LemmaIdSchema.safeParse(token.lemma_id).data;
@@ -16,6 +16,12 @@ type Job = { readonly id: LemmaId; readonly version: string | null; readonly run
 class EntryQueue {
   private pending: Job[] = [];
   private active = 0;
+  /** How many run at once: the deployment's (/api/version), once the reader has it. */
+  private readonly concurrency: () => number;
+
+  constructor(concurrency: () => number) {
+    this.concurrency = concurrency;
+  }
 
   get(id: LemmaId, version: string | null) {
     return new Promise<Awaited<ReturnType<typeof getEntry>>>((resolve, reject) => {
@@ -34,7 +40,7 @@ class EntryQueue {
   }
 
   private drain(): void {
-    while (this.active < CONCURRENCY) {
+    while (this.active < this.concurrency()) {
       const job = this.pending.shift();
       if (job === undefined) return;
       this.active++;
@@ -51,7 +57,7 @@ const queues = new WeakMap<QueryClient, EntryQueue>();
 function queueOf(client: QueryClient): EntryQueue {
   const existing = queues.get(client);
   if (existing !== undefined) return existing;
-  const queue = new EntryQueue();
+  const queue = new EntryQueue(() => client.getQueryData(versionQuery.queryKey)?.reader.lexiconConcurrency ?? LEXICON_CONCURRENCY.default);
   queues.set(client, queue);
   return queue;
 }

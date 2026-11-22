@@ -17,6 +17,10 @@ export const CARD_PAGE: PageSize = { fallback: 50, max: 1000 };
 export const READING_PAGE: PageSize = { fallback: 24, max: 50 };
 export const ANNOTATION_PAGE: PageSize = { fallback: 500, max: 1000 };
 
+/** How many lexicon entries the reader fetches at once: the deployment's
+ * READER_LEXICON_CONCURRENCY (api/wrangler.jsonc), or the default when it's unset or invalid. */
+export const LEXICON_CONCURRENCY = { default: 6, max: 32 } as const;
+
 /** Most annotations an entry has. */
 export const MAX_ANNOTATIONS = 2000;
 /** Most annotations one request adds: D1 runs one batch of at most 1,000 statements, two per
@@ -473,5 +477,7 @@ export type RoleName = (typeof ROLE_NAMES)[number];
 export type User = z.output<typeof schemas.User>;
 
 export type Version = z.output<typeof schemas.Version>;
+
+export type ReaderConfig = z.output<typeof schemas.ReaderConfig>;
 
 export type ApiError = z.output<typeof schemas.ApiError>;
