@@ -2,16 +2,12 @@
 // user (migrations/0001_initial.sql), replacing its last key, so each run has its own
 // and none is kept anywhere.
 // usage: SYNC_CURATED_API_KEY=<key> node src/sync-curated-key.ts > key.sql
-import { sql } from "@skolia/util/sql";
 import { keyFromEnv, replaceKeySql } from "./api-keys.ts";
 
 export const CURATED_USER = "curated";
 
-// The key's id before the script was named sync-curated, deleted with each new key
-const OLD_KEY_ID = "seed";
-
 export function syncCuratedKeySql(key: string, at: string): string[] {
-  return [sql.inline(sql`DELETE FROM "apikey" WHERE "id" = ${OLD_KEY_ID};`), ...replaceKeySql("sync-curated", CURATED_USER, key, at)];
+  return replaceKeySql("sync-curated", CURATED_USER, key, at);
 }
 
 if (import.meta.main) {
