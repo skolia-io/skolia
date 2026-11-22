@@ -1,0 +1,73 @@
+name: Deploy staging and promote
+
+# ci.yml holds the staging lock for this entire call, including promotion. Replan under
+# that lock: the plan made before waiting might describe a different staging deployment.
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+  pull-requests: read
+  actions: read
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    outputs:
+      staging: ${{ steps.plan.outputs.staging }}
+      production: ${{ steps.plan.outputs.production }}
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Require the current main commit
+        run: |
+          set -o pipefail
+          main=$(git ls-remote --exit-code origin refs/heads/main | cut -f1)
+          candidate=$(git rev-parse HEAD)
+          if [[ "$candidate" != "$main" ]]; then
+            echo "::error::Refusing to deploy $candidate: main is at $main. Release the current main commit instead."
+            exit 1
+          fi
+      - uses: ./.github/actions/setup
+      - id: plan
+        run: |
+          case "$GITHUB_REF" in
+            refs/tags/v*)
+              plan=$(infra/plan.py plan staging production)
+              # A release always gets a fresh staging E2E pass, even if the Worker is current.
+              staging=$(jq -ce '.deploys.staging | objects | .e2e = true' <<< "$plan")
+              production=$(jq -ce '.deploys.production | objects' <<< "$plan")
+              echo "production=$production" >> "$GITHUB_OUTPUT"
+              ;;
+            refs/heads/main)
+              plan=$(infra/plan.py plan staging)
+              staging=$(jq -ce '.deploys.staging | objects' <<< "$plan")
+              ;;
+            *) exit 1 ;;
+          esac
+          echo "staging=$staging" >> "$GITHUB_OUTPUT"
+
+  deploy-staging:
+    needs: plan
+    uses: ./.github/workflows/deploy.yml
+    with:
+      env: staging
+      plan: ${{ needs.plan.outputs.staging }}
+    secrets: inherit
+
+  deploy-production:
+    needs: [plan, deploy-staging]
+    if: >-
+      needs.plan.result == 'success' && needs.plan.outputs.production != '' &&
+      needs.deploy-staging.result == 'success' &&
+      needs.deploy-staging.outputs.serving == 'true' &&
+      needs.deploy-staging.outputs.e2e == 'success'
+    uses: ./.github/workflows/deploy.yml
+    with:
+      env: production
+      plan: ${{ needs.plan.outputs.production }}
+    secrets: inherit
