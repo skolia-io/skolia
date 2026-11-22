@@ -308,6 +308,16 @@ test("word sheet", async ({ page }) => {
   await expect(page).toHaveScreenshot("word-sheet.png");
 });
 
+test("word sheet, all meanings unfold and fold", async ({ page }) => {
+  await open(page, WORD);
+  const senses = page.getByRole("complementary", { name: "Word details" }).locator("ol.senses > li");
+  await expect(senses).toHaveCount(3);
+  await page.getByRole("button", { name: "All 11 meanings" }).click();
+  await expect(senses).toHaveCount(11);
+  await page.getByRole("button", { name: "Fewer meanings" }).click();
+  await expect(senses).toHaveCount(3);
+});
+
 // wiele: its lemma's own form, but the object of mówiono, so accusative, and a cloze card
 test("word sheet, a form that is its lemma", async ({ page }) => {
   await open(page, `#/doc/${LALKA}?w=1.21`);
