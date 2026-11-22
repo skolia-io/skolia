@@ -11,14 +11,18 @@ mkdir -p "$root/data/inputs"
 
 [ $# -gt 0 ] || set -- en fr pl
 for lang in "$@"; do
+  built=("$root/analysis#lexicon-$lang")
   case $lang in
     en) names=" kaikki.org-dictionary-English.jsonl " ;;
     fr) names=" kaikki.org-dictionary-French.jsonl " ;;
-    pl) names=" kaikki.org-dictionary-Polish.jsonl walenty_20180630-text.zip commons-recordings-pl.txt " ;;
+    pl)
+      names=" kaikki.org-dictionary-Polish.jsonl walenty_20180630-text.zip commons-recordings-pl.txt "
+      built+=("$root/analysis#walenty")
+      ;;
     *) echo "fetch_inputs.sh: unknown language $lang" >&2; exit 2 ;;
   esac
   # --max-jobs 0: fetch, but never build
-  if nix build --no-link --max-jobs 0 "$root/analysis#lexicon-$lang" 2>/dev/null; then
+  if nix build --no-link --max-jobs 0 "${built[@]}" 2>/dev/null; then
     continue
   fi
   while read -r sha name; do
