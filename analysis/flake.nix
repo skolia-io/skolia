@@ -255,6 +255,10 @@
         {
           PATH = "${venv}/bin";
           PYTHONUNBUFFERED = "1";
+          # One PyTorch thread: the container has 1 vCPU (INSTANCE in ingest/src/main.ts),
+          # and PyTorch otherwise starts one per CPU it sees. In wrangler dev (amd64
+          # emulated on Apple silicon, 18 CPUs) the Polish analysis took 3.8x as long with 18
+          OMP_NUM_THREADS = "1";
           HOME = "/tmp";
           SSL_CERT_FILE = cacert;
           HF_HUB_OFFLINE = "1";
