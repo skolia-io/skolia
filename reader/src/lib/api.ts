@@ -20,6 +20,7 @@ import {
   type CardId,
   type CardKey,
   type CardMade,
+  type Config,
   type CardState,
   type DocumentId,
   type DocumentKey,
@@ -127,6 +128,13 @@ export async function getVersion(): Promise<string> {
   const response = await api.version.$get();
   if (!response.ok) throw await failure(response);
   return (await response.json()).version;
+}
+
+/** What the reader is set to do in this deployment (api/src/reader-config.ts). */
+export async function getConfig(): Promise<Config> {
+  const response = await api.config.$get();
+  if (!response.ok) throw await failure(response);
+  return response.json();
 }
 
 /** The tags that can be given. */

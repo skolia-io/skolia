@@ -7,7 +7,7 @@ import type { Context, TypedResponse } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import type { JSONParsed } from "hono/utils/types";
 import * as z from "zod";
-import { ANNOTATION_BATCH, MAX_TEXT_LENGTH, type ApiError, type User, type Version } from "@skolia/shared/api";
+import { ANNOTATION_BATCH, MAX_TEXT_LENGTH, type ApiError, type Config, type User, type Version } from "@skolia/shared/api";
 import * as schemas from "@skolia/shared/schemas";
 import * as annotations from "./controllers/annotations.ts";
 import * as cards from "./controllers/cards.ts";
@@ -43,6 +43,8 @@ const DOCUMENT_ID_MESSAGE = "document id must be 64 lowercase hex characters";
 const ANNOTATION_ID_MESSAGE = "annotation id must be 64 lowercase hex characters";
 // An annotation's data is a URL or so: room for each of a batch to be 2 KiB, or a few to be big
 const MAX_ANNOTATION_BATCH_BYTES = 2 * 1024 * ANNOTATION_BATCH;
+/** /api/config changes only with a deploy: a few minutes' copy is current enough. */
+const CONFIG_CACHE = "public, max-age=300";
 
 export type AppType = ReturnType<typeof createApp>;
 
@@ -103,6 +105,12 @@ export function createApp(deps: Deps) {
       describe({ tags: [TAGS.account], summary: "The deployed version", security: [] }),
       responds({ 200: json(schemas.Version, "The version, from git describe") }),
       async (c) => c.json({ version: deps.version } satisfies Version, 200),
+    )
+    .get(
+      "/api/config",
+      describe({ tags: [TAGS.account], summary: "What the reader is set to do in this deployment", security: [] }),
+      responds({ 200: json(schemas.Config, "The config, which changes only with a deploy") }),
+      async (c) => c.json({ reader: deps.reader } satisfies Config, 200, { "cache-control": CONFIG_CACHE }),
     )
     .on(["GET", "POST"], "/api/auth/*", describe({ hide: true }), (c) => deps.auth.handle(c.req.raw))
     .get("/api/openapi.json", describe({ hide: true }), (c) => c.json({ ...spec, info: { ...spec.info, version: deps.version } }, 200))

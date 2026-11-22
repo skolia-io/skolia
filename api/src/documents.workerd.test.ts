@@ -40,9 +40,13 @@ import { body, expectStatus } from "@skolia/util/responses";
 useLocal();
 
 test("the version is the build's", async () => {
-  const res = await setup().request("/api/version");
-  assert.equal(res.status, 200);
-  assert.deepEqual(await res.json(), { version: "v1.2.3" });
+  assert.deepEqual(await body("version", client(setup()).version.$get()), { version: "v1.2.3" });
+});
+
+test("the config is the deployment's, to anyone, cached for a few minutes", async () => {
+  const response = await expectStatus("config", client(setup()).config.$get(), 200);
+  assert.equal(response.headers.get("cache-control"), "public, max-age=300");
+  assert.deepEqual(await response.json(), { reader: { lexiconConcurrency: 8 } });
 });
 
 test("the typed client imports, lists and gets a document, and sees a 404 as not ok", async () => {
