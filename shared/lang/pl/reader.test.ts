@@ -65,6 +65,7 @@ const PIES: Entry = {
   upos: "NOUN",
   grammar: {},
   pronunciations: [],
+  recordings: [],
   senses: [
     { gloss: "cop", tags: [], when: [{ Gender: "Masc", Animacy: "Hum" }] },
     { gloss: "dog", tags: [], when: [{ Gender: "Masc", Animacy: "Nhum" }] },

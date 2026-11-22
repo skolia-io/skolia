@@ -115,8 +115,8 @@ class Recording(TypedDict):
     """Where the speaker is from, as Wiktionary tags it: Germany, Berlin."""
 
 
-class Entry(TypedDict):
-    """A whole word entry built by lexicon/entry.py, stored in D1 and served by the Worker."""
+class StoredEntry(TypedDict):
+    """A whole word entry as lexicon/entry.py builds it and D1 stores it."""
 
     lemma_id: str
     lemma: str
@@ -129,10 +129,16 @@ class Entry(TypedDict):
     the words it's derived from (zgolić, a perfective of golić, means what golić does),
     without their examples or selectors."""
     relations: list[Relation]
-    pronunciations: list[Pronunciation]
-    """How the lemma is said."""
-    recordings: NotRequired[list[Recording]]
     paradigms: list[EntryParadigm]
     frames: list[Schema]
     """How the word combines with others (Walenty valency schemata), for a verb both
     with and without się (Schema.reflexive). Empty when Walenty lacks the word."""
+
+
+class Entry(StoredEntry):
+    """An entry as the lexicon Worker serves it: with its lemma's audio, which the Worker
+    looks up in form_pronunciation as it does any form's (lexicon/src/store.ts)."""
+
+    pronunciations: list[Pronunciation]
+    """How the lemma is said."""
+    recordings: list[Recording]

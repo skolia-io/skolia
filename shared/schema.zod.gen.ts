@@ -199,19 +199,6 @@ export const VariantOf: z.ZodType<types.VariantOf> = /* @__PURE__ */ (() => z.ob
 
 export const Relation: z.ZodType<types.Relation> = /* @__PURE__ */ (() => z.union([AspectPartner, DerivedFrom, VariantOf]).meta({ id: "Relation" }))();
 
-export const Accent: z.ZodType<types.Accent> = /* @__PURE__ */ (() => z.enum(["UK", "US"]).meta({ id: "Accent" }))();
-
-export const Pronunciation: z.ZodType<types.Pronunciation> = /* @__PURE__ */ (() => z.object({
-  ipa: z.string(),
-  accents: z.array(Accent).exactOptional(),
-}).meta({ id: "Pronunciation" }))();
-
-export const Recording: z.ZodType<types.Recording> = /* @__PURE__ */ (() => z.object({
-  audio: z.string(),
-  mp3_url: z.string(),
-  tags: z.array(z.string()).exactOptional(),
-}).meta({ id: "Recording" }))();
-
 export const FormRow: z.ZodType<types.FormRow> = /* @__PURE__ */ (() => z.tuple([z.string(), z.array(z.number().int())]).meta({ id: "FormRow" }))();
 
 export const EntryParadigm: z.ZodType<types.EntryParadigm> = /* @__PURE__ */ (() => z.object({
@@ -466,6 +453,19 @@ export const Schema: z.ZodType<types.Schema> = /* @__PURE__ */ (() => z.object({
   positions: z.array(Position),
 }).meta({ id: "Schema" }))();
 
+export const Accent: z.ZodType<types.Accent> = /* @__PURE__ */ (() => z.enum(["UK", "US"]).meta({ id: "Accent" }))();
+
+export const Pronunciation: z.ZodType<types.Pronunciation> = /* @__PURE__ */ (() => z.object({
+  ipa: z.string(),
+  accents: z.array(Accent).exactOptional(),
+}).meta({ id: "Pronunciation" }))();
+
+export const Recording: z.ZodType<types.Recording> = /* @__PURE__ */ (() => z.object({
+  audio: z.string(),
+  mp3_url: z.string(),
+  tags: z.array(z.string()).exactOptional(),
+}).meta({ id: "Recording" }))();
+
 export const Entry: z.ZodType<types.Entry> = /* @__PURE__ */ (() => z.object({
   lemma_id: z.string(),
   lemma: z.string(),
@@ -473,11 +473,22 @@ export const Entry: z.ZodType<types.Entry> = /* @__PURE__ */ (() => z.object({
   grammar: Feats,
   senses: z.array(Sense),
   relations: z.array(Relation),
-  pronunciations: z.array(Pronunciation),
-  recordings: z.array(Recording).exactOptional(),
   paradigms: z.array(EntryParadigm),
   frames: z.array(Schema),
+  pronunciations: z.array(Pronunciation),
+  recordings: z.array(Recording),
 }).meta({ id: "Entry" }))();
+
+export const StoredEntry: z.ZodType<types.StoredEntry> = /* @__PURE__ */ (() => z.object({
+  lemma_id: z.string(),
+  lemma: z.string(),
+  upos: Upos,
+  grammar: Feats,
+  senses: z.array(Sense),
+  relations: z.array(Relation),
+  paradigms: z.array(EntryParadigm),
+  frames: z.array(Schema),
+}).meta({ id: "StoredEntry" }))();
 
 export const IngestJob: z.ZodType<types.IngestJob> = /* @__PURE__ */ (() => z.object({
   doc: z.string(),

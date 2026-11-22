@@ -1,6 +1,6 @@
 import * as z from "zod";
 import { LANGS, UPOS, langOf, parseLemmaId, type FeatureSets, type Lang, type LemmaId, type Lookup } from "@skolia/shared/api";
-import type { Entry, Relation, Upos } from "@skolia/shared/schema";
+import type { Entry, Relation, StoredEntry, Upos } from "@skolia/shared/schema";
 import { sql, type Sql } from "@skolia/util/sql";
 import { prepare } from "@skolia/util/d1";
 import * as schemas from "@skolia/shared/schemas";
@@ -40,6 +40,11 @@ export function lexiconsOf(env: LexiconBindings): Record<Lang, D1Database> {
   return Object.fromEntries(LANGS.map((lang) => [lang, env[lexiconBinding(lang)]])) as Record<Lang, D1Database>;
 }
 
+/** For a word the lexicon has only under other parts of speech, the ones a dictionary
+ * files a word with this UPOS under, most likely first: an auxiliary is a verb to
+ * Wiktionary (must, AUX: the verb, not the noun a must). Subordinators aren't listed: the
+ * most senses pick better than any fixed order (because is a conjunction, before and until
+ * prepositions). */
 const CLOSEST_UPOS: Partial<Record<Upos, readonly Upos[]>> = {
   AUX: ["VERB"],
   PROPN: ["NOUN"],
@@ -48,6 +53,8 @@ const CLOSEST_UPOS: Partial<Record<Upos, readonly Upos[]>> = {
   PRON: ["DET"],
   PART: ["ADV"],
 };
+
+const AudioRow = z.object({ form: z.string(), upos: z.string(), data: z.string() });
 
 const Candidate = z.object({ lemma_id: schemas.LemmaId, upos: z.enum(UPOS), sense_count: z.number() });
 
@@ -77,31 +84,13 @@ export class D1Lexicon implements Lexicon {
   }
 
   async formAudio(lang: Lang, version: string, form: string, upos: Upos): Promise<FormAudio> {
-    const db = this.dbs[lang];
-    const spellings = [...new Set([form, form.toLowerCase()])];
-    const { results } = await prepare(db, QUERIES.formAudio(version, spellings)).all<{ form: string; upos: string; data: string }>();
-    const rows = spellings.map(
-      (spelling) => new Map(results.filter((row) => row.form === spelling).map((row) => [row.upos, JSON.parse(row.data) as FormAudio])),
+    const spellings = spellingsOf(form);
+    const { results } = await prepare(this.dbs[lang], QUERIES.formAudio(version, spellings)).all();
+    return audioOf(
+      spellings,
+      results.map((row) => AudioRow.parse(row)),
+      upos,
     );
-    function find(field: keyof FormAudio): FormAudio | undefined {
-      for (const byPos of rows) {
-        for (const pos of [upos, ...(CLOSEST_UPOS[upos] ?? [])]) {
-          const audio = byPos.get(pos);
-          if (audio?.[field].length) return audio;
-        }
-      }
-      for (const byPos of rows) {
-        for (const [pos, audio] of byPos) {
-          if (pos !== "" && audio[field].length) return audio;
-        }
-      }
-    }
-    const spoken = find("pronunciations");
-    const heard = (spoken ?? find("recordings"))?.recordings ?? [];
-    return {
-      pronunciations: spoken?.pronunciations ?? [],
-      recordings: heard.length ? heard : (rows.map((byPos) => byPos.get("")?.recordings).find((audio) => audio?.length) ?? []),
-    };
   }
 
   async resolve(lang: Lang, version: string, id: LemmaId, include: Include): Promise<Found> {
@@ -190,6 +179,35 @@ async function featureSets(db: D1DatabaseSession, version: string, ids: Readonly
   return sets as FeatureSets;
 }
 
+/** A form's spellings to look up: as written, then lowercased (a sentence's first word). */
+function spellingsOf(form: string): readonly string[] {
+  return [...new Set([form, form.toLowerCase()])];
+}
+
+/** A form's audio from its spellings' rows (QUERIES.formAudio), as the build files them: by
+ * part of speech, and Commons' recordings of a spelling under none (upos ""). The
+ * pronunciations are those filed under upos or the closest other part of speech (be as
+ * AUX is Wiktionary's verb), the spelling as written before lowercased, and failing that
+ * under any part of speech. The recordings are the ones filed with those pronunciations,
+ * since a homograph's would be wrong (the noun lead, /lɛd/, has none; the verb's, /liːd/,
+ * would mislead). A form with no pronunciation is matched the same way by its
+ * recordings, and one with neither gets Commons'. */
+export function audioOf(spellings: readonly string[], rows: readonly z.output<typeof AudioRow>[], upos: Upos): FormAudio {
+  const bySpelling = spellings.map(
+    (spelling) => new Map(rows.filter((row) => row.form === spelling).map((row) => [row.upos, JSON.parse(row.data) as FormAudio])),
+  );
+  const closest = [upos, ...(CLOSEST_UPOS[upos] ?? [])];
+  function find(field: keyof FormAudio): FormAudio | undefined {
+    const filed = bySpelling.flatMap((byPos) => closest.flatMap((pos) => byPos.get(pos) ?? []));
+    const any = bySpelling.flatMap((byPos) => [...byPos].flatMap(([pos, audio]) => (pos === "" ? [] : [audio])));
+    return [...filed, ...any].find((audio) => audio[field].length > 0);
+  }
+  const spoken = find("pronunciations");
+  const heard = (spoken ?? find("recordings"))?.recordings ?? [];
+  const commons = bySpelling.map((byPos) => byPos.get("")?.recordings ?? []).find((audio) => audio.length > 0) ?? [];
+  return { pronunciations: spoken?.pronunciations ?? [], recordings: heard.length > 0 ? heard : commons };
+}
+
 /** The selector's entries' ids in version: a list, or a subquery that seeks entry_lemma. */
 function idsOf(version: string, selector: Selector): Sql {
   return "ids" in selector ? sql.tuple(selector.ids) : QUERIES.spelt(version, selector.lemma);
@@ -227,10 +245,21 @@ export const QUERIES = {
   served: () => sql`SELECT version FROM loaded`,
 };
 
-/** The selector's entries of version, by id. */
+/** The selector's entries of version, by id, each with its lemma's audio as formAudio
+ * finds a form's: one formAudio seek per entry, in one batch. */
 async function entriesOf(db: D1DatabaseSession, version: string, selector: Selector): Promise<Entry[]> {
   const { results } = await prepare(db, QUERIES.entries(version, idsOf(version, selector))).all();
-  return results.map((row) => JSON.parse(EntryRow.parse(row).data) as Entry);
+  const stored = results.map((row) => JSON.parse(EntryRow.parse(row).data) as StoredEntry);
+  if (stored.length === 0) return [];
+  const audio = await db.batch(stored.map((entry) => prepare(db, QUERIES.formAudio(version, spellingsOf(entry.lemma)))));
+  return stored.map((entry, i) => ({
+    ...entry,
+    ...audioOf(
+      spellingsOf(entry.lemma),
+      (audio[i]?.results ?? []).map((row) => AudioRow.parse(row)),
+      entry.upos,
+    ),
+  }));
 }
 
 /** The relations of version pointing at each entry, by source id, MAX_INCOMING at most:

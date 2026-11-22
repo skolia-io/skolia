@@ -7,7 +7,7 @@ import { sql, type Sql } from "@skolia/util/sql";
 import { LICENSE } from "./licence.ts";
 import { MAX_INCOMING } from "./ports.ts";
 import { QUERIES } from "./store.ts";
-import { glossed, loadLexicon, type TestEntry } from "./testing/load.ts";
+import { glossed, loadAudio, loadLexicon, type TestEntry } from "./testing/load.ts";
 import { client, env, setup, useLocal } from "./testing/local.ts";
 
 useLocal();
@@ -38,7 +38,6 @@ test("an entry and its feature sets come from the loaded version", async () => {
     "lex/2",
     [
       glossed("pl:pies:NOUN", "dog", {
-        pronunciations: [{ ipa: "/ˈpjɛs/" }],
         paradigms: [
           {
             homonym: "",
@@ -57,6 +56,8 @@ test("an entry and its feature sets come from the loaded version", async () => {
       { Case: "Dat", Number: "Sing" },
     ],
   );
+  await loadAudio(env, "pl", "lex/1", [["pies", "NOUN", { pronunciations: [{ ipa: "/pjɛs/" }] }]]);
+  await loadAudio(env, "pl", "lex/2", [["pies", "NOUN", { pronunciations: [{ ipa: "/ˈpjɛs/" }] }]]);
   const {
     entries: [pies],
     related,
@@ -219,6 +220,53 @@ test("form audio is versioned and a homograph keeps its own pronunciation", asyn
   assert.deepEqual(await body("noun", get("Lead", "NOUN")), { pronunciations: [{ ipa: "/lɛd/" }], recordings: [] });
   assert.deepEqual(await body("verb", get("lead", "VERB")), { pronunciations: [{ ipa: "/liːd/" }], recordings: [recording] });
   assert.deepEqual(await body("unknown word", get("missing", "NOUN")), { pronunciations: [], recordings: [] });
+});
+
+test("an entry's audio falls back as a form's does", async () => {
+  const app = setup();
+  const lead = { audio: "En-lead.ogg", mp3_url: "https://example.com/En-lead.mp3" };
+  const read = { audio: "En-read.ogg", mp3_url: "https://example.com/En-read.mp3" };
+  const entries = ["en:be:AUX", "en:lead:NOUN", "en:lead:VERB", "en:read:VERB", "en:xyzzy:NOUN"] as const;
+  await loadLexicon(
+    env,
+    "en",
+    "lex/1",
+    entries.map((id) => glossed(id, id)),
+  );
+  await loadAudio(env, "en", "lex/1", [
+    ["be", "VERB", { pronunciations: [{ ipa: "/biː/" }] }],
+    ["lead", "NOUN", { pronunciations: [{ ipa: "/lɛd/" }] }],
+    ["lead", "VERB", { pronunciations: [{ ipa: "/liːd/" }], recordings: [lead] }],
+    ["read", "VERB", { recordings: [read] }],
+  ]);
+  const audio = async (id: (typeof entries)[number]) => {
+    const [entry] = (await body(id, lookup(app, id))).entries;
+    return { pronunciations: entry?.pronunciations, recordings: entry?.recordings };
+  };
+  // be as AUX is Wiktionary's verb
+  assert.deepEqual(await audio("en:be:AUX"), { pronunciations: [{ ipa: "/biː/" }], recordings: [] });
+  // The noun has no recording of its own, and the verb's says /liːd/
+  assert.deepEqual(await audio("en:lead:NOUN"), { pronunciations: [{ ipa: "/lɛd/" }], recordings: [] });
+  assert.deepEqual(await audio("en:lead:VERB"), { pronunciations: [{ ipa: "/liːd/" }], recordings: [lead] });
+  assert.deepEqual(await audio("en:read:VERB"), { pronunciations: [], recordings: [read] });
+  assert.deepEqual(await audio("en:xyzzy:NOUN"), { pronunciations: [], recordings: [] });
+});
+
+test("a form without recordings of its own has Commons'", async () => {
+  const app = setup();
+  await loadLexicon(env, "pl", "lex/1", [glossed("pl:kot:NOUN", "cat")]);
+  const recording = (audio: string) => ({ audio, mp3_url: `https://example.com/${audio}.mp3` });
+  await loadAudio(env, "pl", "lex/1", [
+    ["kot", "NOUN", { recordings: [recording("Pl-kot.ogg")] }],
+    ["kot", "", { recordings: [recording("LL-Q809 (pol)-kot.wav")] }],
+    ["psa", "", { recordings: [recording("LL-Q809 (pol)-psa.wav")] }],
+  ]);
+  const get = (form: string) =>
+    client(app).lexicons[":lang"].forms[":form"].$get({ param: { lang: "pl", form }, query: { upos: "NOUN", version: "lex/1" } });
+  const [kot] = (await body("kot", lookup(app, "pl:kot:NOUN"))).entries;
+  assert.deepEqual(kot?.recordings, [recording("Pl-kot.ogg")]);
+  assert.deepEqual(await body("psa", get("Psa")), { pronunciations: [], recordings: [recording("LL-Q809 (pol)-psa.wav")] });
+  assert.deepEqual(await body("pies", get("pies")), { pronunciations: [], recordings: [] });
 });
 
 test("entries by spelling are the lemma's, one per part of speech; 404 for a spelling with none", async () => {
