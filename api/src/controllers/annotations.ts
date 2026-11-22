@@ -1,4 +1,4 @@
-// An entry's annotations: what its user attached to ranges of its text (shared/annotations.ts),
+// An entry's annotations: what its user attached to ranges of its text (lib/ts/annotations.ts),
 // seen by whoever sees the entry.
 import type * as z from "zod";
 import {

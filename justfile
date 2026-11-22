@@ -4,14 +4,14 @@
 
 set shell := ["bash", "-euo", "pipefail", "-c"]
 
-# Each has its own lexicon database, LEXICON_{LANG} in lexicon/wrangler.template.jsonc (shared/api.ts LANGS)
+# Each has its own lexicon database, LEXICON_{LANG} in lexicon-api/wrangler.template.jsonc (lib/ts/api.ts LANGS)
 langs := "en fr pl"
 
 _default:
     @just --list
 
 # Typecheck and lint everything
-check: (lint "api") (lint "e2e") (lint "ingest") (lint "lexicon") (lint "oauth-proxy") (lint "reader") (lint "shared") (lint "util") (lint "analysis") (lint "terraform")
+check: (lint "api") (lint "e2e") (lint "ingest") (lint "lexicon-api") (lint "oauth-proxy") (lint "reader") (lint "lib/ts") (lint "util") (lint "analysis") (lint "terraform")
 
 # One project's checks and tests, CI's check job for it: a workspace package's directory, analysis or terraform (infra/plan.py projects)
 check-project project: (lint project) && (unit project)
@@ -41,8 +41,8 @@ lint project:
         pnpm exec oxfmt --check {{ project }} package.json .oxfmtrc.json .oxlintrc.json
         pnpm exec oxlint {{ project }}
         pnpm --filter ./{{ project }} run --if-present check
-        case {{ project }} in api | lexicon) redocly lint {{ project }}/openapi.json ;; esac
-        case {{ project }} in lexicon) infra/load-lexicon.py config local --check ;; esac
+        case {{ project }} in api | lexicon-api) redocly lint {{ project }}/openapi.json ;; esac
+        case {{ project }} in lexicon-api) infra/load-lexicon.py config local --check ;; esac
         ;;
     esac
 
@@ -59,7 +59,7 @@ unit project:
 
 # Format everything just check checks the format of
 fmt:
-    pnpm exec oxfmt --write api e2e ingest lexicon oauth-proxy reader shared util infra package.json .oxfmtrc.json .oxlintrc.json
+    pnpm exec oxfmt --write api e2e ingest lexicon-api oauth-proxy reader lib/ts util infra package.json .oxfmtrc.json .oxlintrc.json
     cd analysis && uv run --locked ruff format . ../infra/*.py
     terraform -chdir=infra fmt -recursive
 
@@ -69,7 +69,7 @@ lint-rust manifest="Cargo.toml":
     cargo clippy --manifest-path "$1" --workspace --all-targets --all-features -- -D warnings -D clippy::pedantic
 
 # Unit tests, and the built Worker's Durable Object in workerd
-test: build (unit "api") (unit "e2e") (unit "ingest") (unit "lexicon") (unit "oauth-proxy") (unit "reader") (unit "shared") (unit "util") (unit "analysis")
+test: build (unit "api") (unit "e2e") (unit "ingest") (unit "lexicon-api") (unit "oauth-proxy") (unit "reader") (unit "lib/ts") (unit "util") (unit "analysis")
 
 # Screenshots of the reader's pages (reader/screenshots) in Playwright's Linux image, so they come
 # out the same on a Mac and in CI. --update-snapshots accepts what changed. --ipc=host, as
@@ -86,11 +86,11 @@ build:
     pnpm --filter @skolia/reader build
     pnpm --dir api exec wrangler deploy --dry-run --outdir dist --env dev
 
-# Write the API's and the lexicon's OpenAPI specs (api/openapi.json, lexicon/openapi.json) from their routes;
-# api/src/openapi.test.ts and lexicon/src/spec.test.ts fail until you do
+# Write the API's and the lexicon's OpenAPI specs (api/openapi.json, lexicon-api/openapi.json) from their routes;
+# api/src/openapi.test.ts and lexicon-api/src/spec.test.ts fail until you do
 openapi:
     node api/src/spec.ts
-    node lexicon/src/spec.ts
+    node lexicon-api/src/spec.ts
 
 # wrangler dev (all four Workers, the ingest container, local D1/R2/queue) and the reader's Vite server,
 # with the curated texts in curated/ synced once the API is up
@@ -117,10 +117,10 @@ dev-sync-curated:
 dev-api: install images env-local
     pnpm --filter @skolia/reader build
     pnpm exec wrangler d1 migrations apply DB --local --env dev </dev/null
-    for lang in {{ langs }}; do pnpm exec wrangler d1 migrations apply "LEXICON_$(tr a-z A-Z <<<"$lang")" -c ../lexicon/wrangler.jsonc --local --persist-to .wrangler/state --env dev </dev/null; done
+    for lang in {{ langs }}; do pnpm exec wrangler d1 migrations apply "LEXICON_$(tr a-z A-Z <<<"$lang")" -c ../lexicon-api/wrangler.jsonc --local --persist-to .wrangler/state --env dev </dev/null; done
     pnpm exec wrangler d1 migrations apply INGEST_DB -c ../ingest/wrangler.jsonc --local --persist-to .wrangler/state --env dev </dev/null
     just load-lexicon local
-    pnpm exec wrangler dev -c wrangler.jsonc -c wrangler.internal.jsonc -c ../ingest/wrangler.jsonc -c ../lexicon/wrangler.jsonc --env dev --port 8787
+    pnpm exec wrangler dev -c wrangler.jsonc -c wrangler.internal.jsonc -c ../ingest/wrangler.jsonc -c ../lexicon-api/wrangler.jsonc --env dev --port 8787
 
 # The Node packages, as pnpm-lock.yaml has them
 install:
@@ -241,15 +241,15 @@ deploy-internal env:
     infra/wrangler.sh {{ env }} deploy -c "$config"
     infra/plan.py deployed {{ env }} internal
 
-# The lexicon Worker (lexicon/): its public API, and the LexiconService the skolia Worker binds, so before it.
-# Bound to the databases just load-lexicon loaded this checkout's builds into (lexicon/wrangler.template.jsonc).
+# The lexicon Worker (lexicon-api/): its public API, and the LexiconService the skolia Worker binds, so before it.
+# Bound to the databases just load-lexicon loaded this checkout's builds into (lexicon-api/wrangler.template.jsonc).
 deploy-lexicon env:
     #!/usr/bin/env bash
     set -euo pipefail
     case {{ env }} in pr-*) sample="--sample 3000" ;; *) sample= ;; esac
     infra/plan.py deploying {{ env }} lexicon-worker
     infra/load-lexicon.py config {{ env }} $sample
-    pnpm --dir lexicon exec wrangler deploy -c wrangler.{{ env }}.jsonc --env {{ env }}
+    pnpm --dir lexicon-api exec wrangler deploy -c wrangler.{{ env }}.jsonc --env {{ env }}
     infra/plan.py deployed {{ env }} lexicon-worker
 
 # The skolia Worker (reader and API) with wrangler, with Terraform's BETTER_AUTH_SECRET and, if set,

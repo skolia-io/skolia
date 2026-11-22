@@ -414,7 +414,7 @@ export function createApp(deps: Deps) {
       anyone(
         TAGS.documents,
         "A document's analysis",
-        "By its name in DocumentSummary.reading: its sentences and tokens (Blob in shared/schema.gen.ts), Brotli-compressed.",
+        "By its name in DocumentSummary.reading: its sentences and tokens (Blob in lib/ts/schema.gen.ts), Brotli-compressed.",
       ),
       describe({ responses: PART_RESPONSES }),
       async (c) =>

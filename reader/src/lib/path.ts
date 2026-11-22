@@ -1,4 +1,4 @@
-// Turns a diagram's lines of points (shared/diagram.ts) into SVG paths.
+// Turns a diagram's lines of points (lib/ts/diagram.ts) into SVG paths.
 import type { Point } from "@skolia/shared/diagram";
 
 const distance = (a: Point, b: Point): number => Math.hypot(b.x - a.x, b.y - a.y);

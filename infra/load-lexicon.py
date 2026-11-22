@@ -21,13 +21,13 @@ built_from is the last build found to have its rows: a later build with the same
 changes it. state prints current if a database's built_from is OUT, else stale (just
 load-lexicon, to skip the build). config binds the databases whose built_from is this
 checkout's builds (nix eval), and fails if one has none, then writes
-lexicon/wrangler.{env}.jsonc from lexicon/wrangler.template.jsonc. One deploy of an
+lexicon-api/wrangler.{env}.jsonc from lexicon-api/wrangler.template.jsonc. One deploy of an
 environment runs at a time, so built_from doesn't move between its load and its config.
 infra/gc-lexicon.py deletes the databases no Worker binds.
 
 local is wrangler dev's database (api/.wrangler/state, just dev-api), or with --persist-to,
 the one in DIR (e2e/e2e.sh): one per language, emptied and loaded again. Its config,
-lexicon/wrangler.jsonc, is committed; config local --check fails if it's out of date.
+lexicon-api/wrangler.jsonc, is committed; config local --check fails if it's out of date.
 Needs the credentials infra/wrangler.sh needs.
 """
 
@@ -52,7 +52,7 @@ from cloudflare import Database, Json, JsonObject
 INFRA = Path(__file__).resolve().parent
 ROOT = INFRA.parent
 WRANGLER = INFRA / "wrangler.sh"
-LEXICON = ROOT / "lexicon"
+LEXICON = ROOT / "lexicon-api"
 
 log = logging.getLogger("load-lexicon")
 TEMPLATE = LEXICON / "wrangler.template.jsonc"
@@ -238,7 +238,7 @@ def content_version(db: sqlite3.Connection, lang: str, sample: int | None) -> st
 
 
 def schema(db: sqlite3.Connection) -> list[str]:
-    """The export's tables and indexes, as lexicon/migrations made them, without its meta or
+    """The export's tables and indexes, as lexicon-api/migrations made them, without its meta or
     SQLite's own (sqlite_stat1), which D1 won't make."""
     rows = cast(
         list[tuple[str]],

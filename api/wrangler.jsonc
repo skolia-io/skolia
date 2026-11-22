@@ -34,7 +34,7 @@
   // tagged deployment.environment.name; dev is wrangler dev's and the tests'. A preview's
   // config is staging's with its own names (infra/preview.py).
   //
-  // DB, BLOBS: the documents. LEXICON: the lexicon Worker (lexicon/wrangler.jsonc), whose
+  // DB, BLOBS: the documents. LEXICON: the lexicon Worker (lexicon-api/wrangler.jsonc), whose
   // LexiconService the cards use and whose API is passed through at /api/lexicon/.
   // INGEST_WORKFLOW: the ingest Worker's runs of ingest (ingest/wrangler.jsonc), one
   // started for each document to analyse. INGESTER: the ingest Worker's, asked where a

@@ -3,7 +3,7 @@
   "categories": {
     "correctness": "error"
   },
-  "ignorePatterns": ["shared/schema.gen.ts", "shared/schema.zod.gen.ts"],
+  "ignorePatterns": ["lib/ts/schema.gen.ts", "lib/ts/schema.zod.gen.ts"],
   "rules": {
     "eslint/no-unused-vars": [
       "error",

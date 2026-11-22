@@ -23,11 +23,11 @@ d1() {
   pnpm exec wrangler d1 "$@" --local --persist-to "$state" --env dev >/dev/null
 }
 d1 migrations apply DB
-for lang in "$@"; do d1 migrations apply "LEXICON_$(tr a-z A-Z <<<"$lang")" -c ../lexicon/wrangler.jsonc; done
+for lang in "$@"; do d1 migrations apply "LEXICON_$(tr a-z A-Z <<<"$lang")" -c ../lexicon-api/wrangler.jsonc; done
 d1 migrations apply INGEST_DB -c ../ingest/wrangler.jsonc
 just load-lexicon local --sample 3000 --persist-to "$api/$state"
 
-pnpm exec wrangler dev -c wrangler.jsonc -c wrangler.internal.jsonc -c ../ingest/wrangler.jsonc -c ../lexicon/wrangler.jsonc --env dev --persist-to "$state" --port "$port" --show-interactive-dev-session=false >"$log" 2>&1 &
+pnpm exec wrangler dev -c wrangler.jsonc -c wrangler.internal.jsonc -c ../ingest/wrangler.jsonc -c ../lexicon-api/wrangler.jsonc --env dev --persist-to "$state" --port "$port" --show-interactive-dev-session=false >"$log" 2>&1 &
 dev=$!
 stop_dev() {
   local status=$?

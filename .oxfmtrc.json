@@ -13,8 +13,8 @@
   "bracketSpacing": true,
   "ignorePatterns": [
     "pnpm-lock.yaml",
-    "shared/schema.gen.ts",
-    "shared/schema.zod.gen.ts",
+    "lib/ts/schema.gen.ts",
+    "lib/ts/schema.zod.gen.ts",
     "api/openapi.json",
     "reader/screenshots/fixtures",
     "**/*.md",

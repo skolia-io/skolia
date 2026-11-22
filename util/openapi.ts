@@ -2,7 +2,7 @@
 // validators, its summary and responses on describe() and responses(). The marks are plain
 // data, so a Worker doesn't bundle what turns schemas into JSON Schema; openapi-spec.ts
 // does that, in Node, for the spec a Worker serves. The API (api/src/openapi.ts) and the
-// lexicon (lexicon/src/app.ts) both mark their routes this way.
+// lexicon (lexicon-api/src/app.ts) both mark their routes this way.
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { sValidator } from "@hono/standard-validator";
 import type { Context, Env, MiddlewareHandler, ValidationTargets } from "hono";

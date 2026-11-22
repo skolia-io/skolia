@@ -24,7 +24,7 @@
             ]);
         };
       # What the skolia Worker is bundled from
-      workerSource = nodeSource [ ./api ./ingest ./lexicon ./oauth-proxy ./reader ./shared ./util ];
+      workerSource = nodeSource [ ./api ./ingest ./lexicon-api ./oauth-proxy ./reader ./lib/ts ./util ];
       # infra/plan.py's graph: { node = [ path ... ]; } to each node's paths as one source's
       # store path, its content hash. Not Markdown, nor the screenshots' baselines, which are
       # in git LFS, so a checkout without them would differ (plan.py hashes their git tree).

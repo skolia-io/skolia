@@ -1,7 +1,7 @@
 // skolia-api client, typed by the API's routes (AppType), and the lexicon's, typed by its
-// own (lexicon/src/app.ts), which the API passes through at /api/lexicon/. The analysis
+// own (lexicon-api/src/app.ts), which the API passes through at /api/lexicon/. The analysis
 // is a blob the API passes through, typed by the Python schemas
-// (shared/schema.gen.ts); the API is ours, so it's trusted to match.
+// (lib/ts/schema.gen.ts); the API is ours, so it's trusted to match.
 import { hc } from "hono/client";
 import type { AppType } from "@skolia/api/app";
 import type { AppType as LexiconApp, EntriesBody, FormAudio } from "@skolia/lexicon/app";

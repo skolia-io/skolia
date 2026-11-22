@@ -82,5 +82,5 @@ while read -r id name; do
   cf DELETE "d1/database/$id" >/dev/null
 done <<<"$lexicons"
 cf DELETE "r2/buckets/skolia-tfstate/objects/skolia-$env.tfstate" >/dev/null
-rm -rf "$root/infra/.terraform-$env" "$root/api/wrangler.$env.json" "$root/api/wrangler.internal.$env.json" "$root/ingest/wrangler.$env.json" "$root/lexicon/wrangler.$env.jsonc"
+rm -rf "$root/infra/.terraform-$env" "$root/api/wrangler.$env.json" "$root/api/wrangler.internal.$env.json" "$root/ingest/wrangler.$env.json" "$root/lexicon-api/wrangler.$env.jsonc"
 echo "$env is gone"

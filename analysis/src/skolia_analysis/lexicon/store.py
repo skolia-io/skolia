@@ -1,5 +1,5 @@
 """A language's lexicon file: the lexicon Worker's D1 lexicon (LEXICON_{LANG}) as a SQLite file,
-one version's rows in D1's own schema, made by applying lexicon/migrations in order, plus a
+one version's rows in D1's own schema, made by applying lexicon-api/migrations in order, plus a
 meta table with the language, version and attribution. infra/load-lexicon.py copies the
 rows into D1.
 
@@ -65,7 +65,7 @@ class Contents:
 
 
 def write(path: Path, migrations: Path, contents: Contents) -> None:
-    """Replaces the file at path. migrations is lexicon/migrations."""
+    """Replaces the file at path. migrations is lexicon-api/migrations."""
     version = contents.meta["version"]
     path.unlink(missing_ok=True)
     with sqlite3.connect(path) as db:

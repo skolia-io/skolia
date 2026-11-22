@@ -137,7 +137,7 @@ class StoredEntry(TypedDict):
 
 class Entry(StoredEntry):
     """An entry as the lexicon Worker serves it: with its lemma's audio, which the Worker
-    looks up in form_pronunciation as it does any form's (lexicon/src/store.ts)."""
+    looks up in form_pronunciation as it does any form's (lexicon-api/src/store.ts)."""
 
     pronunciations: list[Pronunciation]
     """How the lemma is said."""

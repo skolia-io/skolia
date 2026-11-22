@@ -12,7 +12,7 @@ from skolia_analysis import lang as langs
 from skolia_analysis.lexicon import build, store
 
 FIXTURES = Path(__file__).parent / "fixtures" / "lexicon"
-MIGRATIONS = Path(__file__).resolve().parents[2] / "lexicon" / "migrations"
+MIGRATIONS = Path(__file__).resolve().parents[2] / "lexicon-api" / "migrations"
 
 
 def dump(path: Path) -> str:

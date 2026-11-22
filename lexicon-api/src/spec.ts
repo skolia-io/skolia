@@ -1,4 +1,4 @@
-// The spec lexicon/openapi.json holds, made from the marks on the routes' middleware
+// The spec lexicon-api/openapi.json holds, made from the marks on the routes' middleware
 // (@skolia/util/openapi). just openapi writes it, and spec.test.ts checks it's current.
 import type { OpenAPIV3_1 } from "openapi-types";
 import { specJson } from "@skolia/util/openapi-spec";

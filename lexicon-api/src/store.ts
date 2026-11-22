@@ -29,7 +29,7 @@ const FeatureRow = z.object({ id: z.number().int(), feature: z.string(), value: 
 const LoadedRow = z.object({ version: z.string() });
 
 /** Each language's lexicon database, skolia-lexicon-{lang}[-env], bound as LEXICON_{LANG}
- * (lexicon/wrangler.jsonc). */
+ * (lexicon-api/wrangler.jsonc). */
 export type LexiconBindings = { [L in Lang as `LEXICON_${Uppercase<L>}`]: D1Database };
 
 export function lexiconBinding(lang: Lang): keyof LexiconBindings {

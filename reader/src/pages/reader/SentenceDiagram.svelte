@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Draws a sentence's diagram (shared/diagram.ts) and lets you pick a word in it. The
+  // Draws a sentence's diagram (lib/ts/diagram.ts) and lets you pick a word in it. The
   // layout is worked out in shared; this only turns it into SVG and handles selection.
   import { tick } from "svelte";
   import type { Lang } from "@skolia/shared/api";

@@ -1,7 +1,7 @@
 """Generate TypeScript types from the Python schemas, so the API and reader can't drift.
 
-usage: uv run python scripts/gen_ts_types.py > ../shared/schema.gen.ts
-       uv run python scripts/gen_ts_types.py zod > ../shared/schema.zod.gen.ts
+usage: uv run python scripts/gen_ts_types.py > ../lib/ts/schema.gen.ts
+       uv run python scripts/gen_ts_types.py zod > ../lib/ts/schema.zod.gen.ts
 
 tests/test_ts_types.py fails when the checked-in file is out of date.
 """

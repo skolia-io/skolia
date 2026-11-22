@@ -2,10 +2,10 @@ packages:
   - api
   - e2e
   - ingest
-  - lexicon
+  - lexicon-api
   - oauth-proxy
   - reader
-  - shared
+  - lib/ts
   - util
 # One better-auth for the API and the OAuth proxy, which pass each other its encrypted
 # sign-in state and profile
