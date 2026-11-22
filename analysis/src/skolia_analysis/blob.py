@@ -59,6 +59,15 @@ def own_upos(reading: Reading) -> Upos:
     return reading["upos"]
 
 
+type Revise = Callable[[list[Token]], None]
+"""Revises one sentence's built tokens in place, with the whole tree in view: Polish
+corrects a case the verb rules out and says why each word has its case."""
+
+
+def no_revision(_tokens: list[Token]) -> None:
+    return None
+
+
 @dataclass(frozen=True, kw_only=True)
 class Language:
     """What building a blob needs to know about its language; the defaults add nothing to
@@ -72,6 +81,7 @@ class Language:
     """Replaces the parser's reading with a candidate; None keeps the parser's."""
     expression_gap: ExpressionGap = no_gaps
     entry_upos: EntryUpos = own_upos
+    revise: Revise = no_revision
 
 
 def lemma_id(lang: str, lemma: str | None, upos: Upos) -> str | None:
@@ -107,6 +117,16 @@ def parser_reading(word: ParsedWord) -> Reading:
         "upos": word.upos,
         "xpos": word.xpos or "",
         "feats": word.feats,
+    }
+
+
+def token_reading(token: Token) -> Reading:
+    """The reading a built token shows; before any change, the parser's."""
+    return {
+        "lemma": token["lemma"] or token["text"],
+        "upos": token["upos"],
+        "xpos": token["xpos"] or "",
+        "feats": token["feats"],
     }
 
 
@@ -181,6 +201,7 @@ def build(
             for tok in sent.tokens
             for word, readings in zip(tok.words, _readings(language, tok), strict=True)
         ]
+        language.revise(tokens)
         lemmas = [t["lemma"] for t in tokens]
         gaps = [language.expression_gap(t) for t in tokens]
         built.append(

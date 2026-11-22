@@ -108,11 +108,12 @@ class PolishAnalyzer:
             snap=reconcile.POLICIES[self.snap] if self.snap else None,
             expression_gap=expression_gap,
             entry_upos=entry_upos,
+            revise=self.revise,
         )
-        blob = build(parsed, language, analyzer=self.name, text=text, expressions=self.expressions)
-        tokens = [s["tokens"] for s in blob["sentences"]]
-        cases.apply(tokens, self.valency, correct=self.correct_cases)
-        return blob
+        return build(parsed, language, analyzer=self.name, text=text, expressions=self.expressions)
+
+    def revise(self, tokens: list[Token]) -> None:
+        cases.revise(tokens, self.valency, correct=self.correct_cases)
 
 
 def analyzer(parser: Parser, options: Options, data: Path | None) -> PolishAnalyzer:
