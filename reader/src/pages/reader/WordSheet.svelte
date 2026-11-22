@@ -123,8 +123,8 @@
     if (view === "sentence") expanded = true;
   }
   /** The word whose full lists are shown: another word starts with them folded. */
-  let sensesFor = $state<WordPiece | null>(null);
-  let usesFor = $state<WordPiece | null>(null);
+  let sensesFor = $state.raw<WordPiece | null>(null);
+  let usesFor = $state.raw<WordPiece | null>(null);
   const allSenses = $derived(sensesFor === piece);
   const allUses = $derived(usesFor === piece);
   const SHOWN_USES = 5;
