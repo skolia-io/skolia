@@ -158,11 +158,12 @@ def loaded(db: Database) -> Loaded | None:
 
 def find(lang: str, env: str, matches: Callable[[Loaded], bool]) -> Database | None:
     """env's loaded lang database whose loaded row matches, of any name a load gave one
-    (before they were named for their version, they were named for their build)."""
+    (before they were named for their version, they were named for their build). Got by
+    name, since D1's list leaves out read replication."""
     named = re.compile(rf"skolia-lexicon-{lang}{re.escape(suffix(env))}-[0-9a-f]{{{NAME_HEX}}}")
     for db in cloudflare.databases():
         if named.fullmatch(db.name) and (row := loaded(db)) is not None and matches(row):
-            return db
+            return cloudflare.database(db.name)
     return None
 
 
