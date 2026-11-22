@@ -177,7 +177,7 @@ lexicon-cli lang *args:
     fi
 
 # Load each language's lexicon (staging, production, pr-N or local) from its Nix build, into a D1 database
-# of the build's own (infra/load-lexicon.py); just deploy-lexicon binds it.
+# named for its rows, unless one already has them (infra/load-lexicon.py); just deploy-lexicon binds it.
 # A preview gets each language's entries for wordfreq's 3,000 most common words (infra/load-lexicon.py --sample).
 # A language whose build evaluates to a Nix output already loaded is skipped without building it.
 # With CACHIX_AUTH_TOKEN set (CI), a build is pushed to Cachix, so the next environment substitutes it.

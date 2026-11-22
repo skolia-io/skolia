@@ -13,13 +13,17 @@ env is staging, production, pr-N or local. sqlite is analysis's {lang}.sqlite
 its meta table gives the language. OUT is the Nix output sqlite is in; with --sample (the
 previews' wordfreq N most common words), OUT+sampleN.
 
-A deployed environment's database for a build is skolia-lexicon-{lang}[-env]-{hash of OUT},
-made, loaded and never written again; its loaded row goes in last, so a database without one
-is a load that stopped, and is made again. state prints current if the database is loaded,
-else stale (just load-lexicon, to skip the build). config binds the databases this
-checkout's builds name (nix eval), and fails if one isn't loaded, then writes
-lexicon/wrangler.{env}.jsonc from lexicon/wrangler.template.jsonc. infra/gc-lexicon.py
-deletes the databases no Worker binds.
+A deployed environment's database for a lexicon is skolia-lexicon-{lang}[-env]-{version},
+version being the hash of the rows it holds, so a build whose rows didn't change (most
+changes to analysis) loads nothing. It's made and loaded once; its loaded row goes in last,
+so a database without one is a load that stopped, and is made again. The loaded row's
+built_from is the last build found to have its rows: a later build with the same rows only
+changes it. state prints current if a database's built_from is OUT, else stale (just
+load-lexicon, to skip the build). config binds the databases whose built_from is this
+checkout's builds (nix eval), and fails if one has none, then writes
+lexicon/wrangler.{env}.jsonc from lexicon/wrangler.template.jsonc. One deploy of an
+environment runs at a time, so built_from doesn't move between its load and its config.
+infra/gc-lexicon.py deletes the databases no Worker binds.
 
 local is wrangler dev's database (api/.wrangler/state, just dev-api), or with --persist-to,
 the one in DIR (e2e/e2e.sh): one per language, emptied and loaded again. Its config,
@@ -36,7 +40,7 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
-from collections.abc import Iterable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
@@ -61,7 +65,7 @@ LOCATION = "oc"
 MAX_STATEMENT_BYTES = 90_000
 # 64 bits of SHA-256
 VERSION_HEX = 16
-# 48 bits of SHA-256 of what a database is loaded from
+# 48 bits of the version, in a database's name
 NAME_HEX = 12
 # A string that's all placeholder, so the template is JSONC too
 PLACEHOLDER = re.compile(r"\"\$\{([A-Za-z_][A-Za-z0-9_]*)\}\"")
@@ -98,11 +102,10 @@ def built_from_key(built_from: str, sample: int | None) -> str:
     return built_from if sample is None else f"{built_from}+sample{sample}"
 
 
-def database_name(lang: str, env: str, key: str) -> str:
-    """The database env loads key into: named for it, so the load and the deploy that binds
-    it agree without passing anything between them."""
-    digest = hashlib.sha256(key.encode()).hexdigest()[:NAME_HEX]
-    return f"skolia-lexicon-{lang}{suffix(env)}-{digest}"
+def database_name(lang: str, env: str, version: str) -> str:
+    """The database env serves version from: named for its rows, so a build with the same
+    rows finds it."""
+    return f"skolia-lexicon-{lang}{suffix(env)}-{version[:NAME_HEX]}"
 
 
 def quote(value: str) -> str:
@@ -134,13 +137,40 @@ def local_built_from(target: Local) -> str | None:
     return rows[0]["built_from"] if rows else None
 
 
-def loaded(db: Database, key: str) -> bool:
-    """Whether db has its loaded row, the last a load writes, for key."""
+@dataclass(frozen=True)
+class Loaded:
+    """A database's loaded row: the version it serves, and the last build found to have it."""
+
+    version: str
+    built_from: str
+
+
+def loaded(db: Database) -> Loaded | None:
+    """db's loaded row, the last a load writes, or None if the load didn't finish."""
     tables = cloudflare.query(db, "SELECT name FROM sqlite_master WHERE name = 'loaded'")
     if not tables:
-        return False
-    rows = cloudflare.query(db, "SELECT built_from FROM loaded")
-    return bool(rows) and rows[0]["built_from"] == key
+        return None
+    rows = cloudflare.query(db, "SELECT version, built_from FROM loaded")
+    if not rows:
+        return None
+    return Loaded(cast(str, rows[0]["version"]), cast(str, rows[0]["built_from"]))
+
+
+def find(lang: str, env: str, matches: Callable[[Loaded], bool]) -> Database | None:
+    """env's loaded lang database whose loaded row matches, of any name a load gave one
+    (before they were named for their version, they were named for their build). Got by
+    name, since D1's list leaves out read replication."""
+    named = re.compile(rf"skolia-lexicon-{lang}{re.escape(suffix(env))}-[0-9a-f]{{{NAME_HEX}}}")
+    for db in cloudflare.databases():
+        if named.fullmatch(db.name) and (row := loaded(db)) is not None and matches(row):
+            return cloudflare.database(db.name)
+    return None
+
+
+def built_from(lang: str, env: str, key: str) -> Database | None:
+    """env's database whose built_from is key, which the load and the deploy that binds it
+    agree on without passing anything between them."""
+    return find(lang, env, lambda row: row.built_from == key)
 
 
 def meta(db: sqlite3.Connection) -> tuple[str, str]:
@@ -270,13 +300,17 @@ def write_sql(sql: list[str], scratch: str, lang: str) -> Path:
 
 def load_remote(env: str, db: sqlite3.Connection, key: str, sample: int | None) -> None:
     lang, built = meta(db)
-    name = database_name(lang, env, key)
-    existing = cloudflare.database(name)
-    if existing is not None and loaded(existing, key):
-        if not existing.replicated:
-            cloudflare.replicate(existing)
-        log.info("%s: %s is already loaded", env, name)
+    version = content_version(db, lang, sample)
+    serving = find(lang, env, lambda row: row.version == version)
+    if serving is not None:
+        # One row written, not the lexicon's millions
+        cloudflare.query(serving, f"UPDATE loaded SET built_from = {quote(key)} WHERE id = 1")
+        if not serving.replicated:
+            cloudflare.replicate(serving)
+        log.info("%s: %s already serves %s %s", env, serving.name, lang, version)
         return
+    name = database_name(lang, env, version)
+    existing = cloudflare.database(name)
     if existing is not None:
         log.info("%s: deleting %s, which a load left part way", env, name)
         cloudflare.result("DELETE", f"d1/database/{existing.uuid}")
@@ -285,7 +319,6 @@ def load_remote(env: str, db: sqlite3.Connection, key: str, sample: int | None) 
         cloudflare.result("POST", "d1/database", {"name": name, "primary_location_hint": LOCATION}),
     )
     target = cloudflare.as_database(made)
-    version = content_version(db, lang, sample)
     with tempfile.TemporaryDirectory() as scratch:
         sql = write_sql(schema(db) + statements(db, lang, version, key, sample), scratch, lang)
         mb = round(sql.stat().st_size / 1e6)
@@ -294,7 +327,7 @@ def load_remote(env: str, db: sqlite3.Connection, key: str, sample: int | None) 
         )
         command = [str(WRANGLER), "account", "d1", "execute", name, "--remote", "--yes"]
         subprocess.run([*command, "--file", str(sql)], stdout=subprocess.DEVNULL, check=True)
-    if not loaded(target, key):
+    if loaded(target) != Loaded(version, key):
         raise SystemExit(f"{env}: {name} has no loaded row after loading it")
     # Once it's loaded, so the load's writes go to the primary alone. state counts it, so a
     # load that stopped before it runs again.
@@ -362,11 +395,10 @@ def bound(env: str, sample: int | None) -> dict[str, str]:
     names: dict[str, str] = {}
     for lang in LANGS:
         key = built_from_key(nix_out(lang), sample)
-        name = database_name(lang, env, key)
-        db = cloudflare.database(name)
-        if db is None or not loaded(db, key):
-            raise SystemExit(f"{env}: {name} isn't loaded; just load-lexicon {env} first")
-        names[lang] = name
+        db = built_from(lang, env, key)
+        if db is None:
+            raise SystemExit(f"{env}: no {lang} database has {key}; just load-lexicon {env} first")
+        names[lang] = db.name
     return names
 
 
@@ -426,8 +458,8 @@ def main() -> None:
         if env == "local":
             current = local_built_from(Local(lang, persist_to or DEV_STATE)) == key
         else:
-            db = cloudflare.database(database_name(lang, env, key))
-            current = db is not None and db.replicated and loaded(db, key)
+            db = built_from(lang, env, key)
+            current = db is not None and db.replicated
         print("current" if current else "stale")  # noqa: T201 (CI reads it)
         return
     db = sqlite3.connect(f"file:{cast(Path, args.sqlite)}?mode=ro", uri=True)
