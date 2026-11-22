@@ -480,4 +480,6 @@ export type Version = z.output<typeof schemas.Version>;
 
 export type ReaderConfig = z.output<typeof schemas.ReaderConfig>;
 
+export type Config = z.output<typeof schemas.Config>;
+
 export type ApiError = z.output<typeof schemas.ApiError>;

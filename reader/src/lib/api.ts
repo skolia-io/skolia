@@ -20,6 +20,7 @@ import {
   type CardId,
   type CardKey,
   type CardMade,
+  type Config,
   type CardState,
   type DocumentId,
   type DocumentKey,
@@ -44,7 +45,6 @@ import {
   type Reviewed,
   type Settings,
   type User,
-  type Version,
 } from "@skolia/shared/api";
 import { allPages, type Cursor } from "@skolia/shared/page";
 import { SCHEMA, type Blob, type Upos } from "@skolia/shared/schema";
@@ -123,10 +123,16 @@ export async function listDocuments(
   return response.json();
 }
 
-/** The deployed version and the reader's config, which the build doesn't know
- * (api/src/worker/main.ts VERSION, api/src/reader-config.ts). */
-export async function getVersion(): Promise<Version> {
+/** The deployed version, which the build doesn't know (api/src/worker/main.ts VERSION). */
+export async function getVersion(): Promise<string> {
   const response = await api.version.$get();
+  if (!response.ok) throw await failure(response);
+  return (await response.json()).version;
+}
+
+/** What the reader is set to do in this deployment (api/src/reader-config.ts). */
+export async function getConfig(): Promise<Config> {
+  const response = await api.config.$get();
   if (!response.ok) throw await failure(response);
   return response.json();
 }

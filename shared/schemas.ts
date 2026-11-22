@@ -448,7 +448,10 @@ export const ApiError = z.object({ error: z.string() }).meta({ id: "ApiError" })
 /** What the reader is set to do in this deployment (api/wrangler.jsonc vars). */
 export const ReaderConfig = z.object({ lexiconConcurrency: z.int().min(1).max(LEXICON_CONCURRENCY.max) }).meta({ id: "ReaderConfig" });
 
-export const Version = z.object({ version: z.string(), reader: ReaderConfig }).meta({ id: "Version" });
+/** What this deployment is set to do, public (api/src/reader-config.ts). */
+export const Config = z.object({ reader: ReaderConfig }).meta({ id: "Config" });
+
+export const Version = z.object({ version: z.string() }).meta({ id: "Version" });
 
 export const User = z
   .object({ id: UserId, name: z.string(), email: z.string(), image: z.string().nullable(), type: RoleName })

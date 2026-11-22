@@ -5,7 +5,7 @@
   import { versionUrl } from "../lib/version.ts";
 
   const query = createQuery(() => versionQuery);
-  const version = $derived(query.data?.version ?? "");
+  const version = $derived(query.data ?? "");
   const versionLink = $derived(version ? versionUrl(version) : null);
 </script>
 

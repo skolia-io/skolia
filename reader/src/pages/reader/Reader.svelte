@@ -26,7 +26,7 @@
   import SaveToLists from "../../components/SaveToLists.svelte";
   import { createQuery, useQueryClient } from "@tanstack/svelte-query";
   import { lexiconInfoQuery, prefetchEntry, tokenLemma } from "../../lib/lexicon.ts";
-  import { audioQuery, userQuery, versionQuery } from "../../lib/queries.ts";
+  import { audioQuery, configQuery, userQuery } from "../../lib/queries.ts";
   import { type AudioAnnotation, inRange, placeAudio } from "../../lib/annotations.ts";
 
   let { id }: { id: DocumentId } = $props();
@@ -47,7 +47,7 @@
   const lexicon = createQuery(() => lexiconInfoQuery(reading?.lang));
   const lexiconVersion = $derived(lexicon.data?.version ?? (lexicon.isPending ? undefined : null));
   /** The deployment's lexicon concurrency (lib/lexicon.ts), which prefetching waits for */
-  const deployment = createQuery(() => versionQuery);
+  const deployment = createQuery(() => configQuery);
   function lookup(piece: Piece, version: string | null, priority = false): void {
     if (piece.kind !== "word") return;
     for (const { token } of priority ? piece.words.toReversed() : piece.words) {

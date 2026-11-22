@@ -58,13 +58,21 @@
         "properties": {
           "version": {
             "type": "string"
-          },
+          }
+        },
+        "required": [
+          "version"
+        ],
+        "additionalProperties": false
+      },
+      "Config": {
+        "type": "object",
+        "properties": {
           "reader": {
             "$ref": "#/components/schemas/ReaderConfig"
           }
         },
         "required": [
-          "version",
           "reader"
         ],
         "additionalProperties": false
@@ -3358,15 +3366,37 @@
         "tags": [
           "Account"
         ],
-        "summary": "The deployed version, and what the reader is set to do",
+        "summary": "The deployed version",
         "security": [],
         "responses": {
           "200": {
-            "description": "The version, from git describe, and the reader's config",
+            "description": "The version, from git describe",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Version"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/config": {
+      "get": {
+        "operationId": "getApiConfig",
+        "tags": [
+          "Account"
+        ],
+        "summary": "What the reader is set to do in this deployment",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "The config, which changes only with a deploy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Config"
                 }
               }
             }

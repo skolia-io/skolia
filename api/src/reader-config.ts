@@ -1,5 +1,5 @@
 // What the reader is set to do in a deployment, from the Worker's vars (api/wrangler.jsonc),
-// sent with /api/version. A deploy changes them.
+// sent at /api/config. A deploy changes them.
 import * as z from "zod";
 import { LEXICON_CONCURRENCY, type ReaderConfig } from "@skolia/shared/api";
 import * as schemas from "@skolia/shared/schemas";
