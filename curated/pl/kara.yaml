@@ -1,7 +1,7 @@
 kind: inline
 title: "Kara"
-author: "Adelheid Marie Bwire; translated by Aleksandra Migorska"
-licence: cc-by-4.0
+author: "Adelheid Marie Bwire; translated by Aleksandra Migorska from African Storybook's “Punishment”"
+licence: cc-by-3.0
 source: &story https://global-asp.github.io/storybooks-poland/stories/pl/0342/
 tags:
   level: A2
@@ -33,7 +33,7 @@ annotations:
   "02":
     <<: &narration
       kind: audio
-      licence: cc-by-4.0
+      licence: cc-by-3.0
       author: Helena Gabriela
       source: *story
     url: https://globalstorybooks.net/media/audio/pl/0342/mp3/02.mp3

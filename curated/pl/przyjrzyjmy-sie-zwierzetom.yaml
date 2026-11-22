@@ -1,7 +1,7 @@
 kind: inline
 title: "Przyjrzyjmy się zwierzętom"
-author: "Jenny Katz; translated by Aleksandra Migorska"
-licence: cc-by-nc-4.0
+author: "Jenny Katz; translated by Aleksandra Migorska from African Storybook's “Look at the animals”"
+licence: cc-by-nc-3.0
 source: &story https://global-asp.github.io/storybooks-poland/stories/pl/0002/
 tags:
   level: A1
@@ -25,7 +25,7 @@ annotations:
   "02":
     <<: &narration
       kind: audio
-      licence: cc-by-nc-4.0
+      licence: cc-by-nc-3.0
       author: Helena Gabriela
       source: *story
     url: https://globalstorybooks.net/media/audio/pl/0002/mp3/02.mp3

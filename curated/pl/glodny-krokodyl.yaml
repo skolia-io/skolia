@@ -1,7 +1,7 @@
 kind: inline
 title: "Głodny krokodyl"
-author: "Christian G.; translated by Aleksandra Migorska"
-licence: cc-by-4.0
+author: "Christian G.; translated by Aleksandra Migorska from African Storybook's “The hungry crocodile”"
+licence: cc-by-3.0
 source: &story https://global-asp.github.io/storybooks-poland/stories/pl/0156/
 tags:
   level: A1
@@ -19,7 +19,7 @@ annotations:
   "02":
     <<: &narration
       kind: audio
-      licence: cc-by-4.0
+      licence: cc-by-3.0
       author: Helena Gabriela
       source: *story
     url: https://globalstorybooks.net/media/audio/pl/0156/mp3/02.mp3

@@ -1,7 +1,7 @@
 kind: inline
 title: "Ogień"
-author: "Deborah Namugosa, Beatrice Nabune, Alison Tukei, Rose Sabano; translated by Aleksandra Migorska"
-licence: cc-by-4.0
+author: "Deborah Namugosa, Beatrice Nabune, Alison Tukei, Rose Sabano; translated by Aleksandra Migorska from African Storybook's “Fire”"
+licence: cc-by-3.0
 source: &story https://global-asp.github.io/storybooks-poland/stories/pl/0302/
 tags:
   level: A1
@@ -25,7 +25,7 @@ annotations:
   "02":
     <<: &narration
       kind: audio
-      licence: cc-by-4.0
+      licence: cc-by-3.0
       author: Helena Gabriela
       source: *story
     url: https://globalstorybooks.net/media/audio/pl/0302/mp3/02.mp3

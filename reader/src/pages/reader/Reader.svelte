@@ -136,6 +136,11 @@
   const playing = $derived(paused ? null : clip);
   const isPlaying = (placed: AudioAnnotation) => playing?.id === placed.id;
 
+  /** The source's site, which the credit names: wolnelektury.pl. */
+  function sourceName(source: string): string {
+    return URL.canParse(source) ? new URL(source).hostname.replace(/^www\./u, "") : "source";
+  }
+
   /** Whether the piece is in the clip playing: a word in its range, or a gap between two. */
   function lit(i: number): boolean {
     const pieces = doc?.pieces ?? [];
@@ -460,7 +465,7 @@
           {/if}
         </span>
         {#if summary.source}
-          <span><a href={summary.source} rel="noreferrer">source</a></span>
+          <span><a href={summary.source} rel="noreferrer">{sourceName(summary.source)}</a></span>
         {/if}
         {#if summary.visibility === "private"}
           <span>private</span>
