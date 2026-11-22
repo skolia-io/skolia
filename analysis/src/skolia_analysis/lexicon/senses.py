@@ -13,9 +13,12 @@ from .schema import Derivation, DerivedFrom, Example, Relation, Sense, VariantOf
 MAX_EXAMPLES = 3
 
 FORM_OF_TAG = "form-of"
+ALT_OF_TAG = "alt-of"
+MARKER_TAGS = frozenset({FORM_OF_TAG, ALT_OF_TAG})
+"""Kaikki's tags for a sense that points at another word, not labels of its own."""
 
 # Tags on a form-of sense that say how its word is derived from the target, the first
-# that's there winning: a feminine diminutive is a diminutive
+# that's there winning
 DERIVATIONS: Sequence[tuple[str, Derivation]] = (
     ("diminutive", "diminutive"),
     ("augmentative", "augmentative"),
@@ -24,8 +27,15 @@ DERIVATIONS: Sequence[tuple[str, Derivation]] = (
     ("agent", "agent-noun"),
     ("frequentative", "frequentative"),
     ("iterative", "iterative"),
-    ("feminine", "feminine"),
-    ("masculine", "masculine"),
+)
+
+# Glosses of a form-of sense that make its word the other gender's, when no tag says how
+# it's derived: a feminine diminutive is a diminutive. Not the gender tags: Kaikki gives
+# the word's own gender to every sense, so they'd make cholère, "obsolete form of
+# colère", the feminine of colère.
+EQUIVALENTS: Sequence[tuple[str, Derivation]] = (
+    ("female equivalent of", "feminine"),
+    ("male equivalent of", "masculine"),
 )
 
 # Kaikki sometimes tags an inflected form's sense only form-of, its gloss saying the rest:
@@ -82,16 +92,17 @@ def examples(kaikki_sense: KaikkiSense) -> Iterator[Example]:
 def relations(
     entry: KaikkiEntry, inflection_tags: Collection[str], grammar_tags: Collection[str]
 ) -> Iterator[Relation]:
-    """The words a form-of sense points at, other than an inflection's lemma: derived
-    from ("diminutive of rubel", by DERIVATIONS) or otherwise a variant of ("emphatic form
-    of niech"), each target once. grammar_tags are left off a variant's tags."""
+    """The words a form-of or alt-of sense points at, other than an inflection's lemma:
+    derived from ("diminutive of rubel", by DERIVATIONS and EQUIVALENTS) or otherwise a
+    variant of ("emphatic form of niech", "British standard spelling of color"), each
+    target once. grammar_tags are left off a variant's tags."""
     seen: set[str] = set()
     for kaikki_sense in entry.get("senses", []):
         if is_inflection(kaikki_sense, inflection_tags):
             continue
         tags = kaikki_sense.get("tags", [])
-        how: Derivation | None = next((d for tag, d in DERIVATIONS if tag in tags), None)
-        for target in kaikki_sense.get("form_of", []):
+        how = derivation(kaikki_sense)
+        for target in kaikki_sense.get("form_of", []) + kaikki_sense.get("alt_of", []):
             lemma = target.get("word")
             if not lemma or lemma in seen:
                 continue
@@ -100,6 +111,18 @@ def relations(
                 derived: DerivedFrom = {"kind": "derived-from", "lemma": lemma, "how": how}
                 yield derived
             else:
-                labels = [t for t in tags if t != FORM_OF_TAG and t not in grammar_tags]
+                labels = [t for t in tags if t not in MARKER_TAGS and t not in grammar_tags]
                 variant: VariantOf = {"kind": "variant-of", "lemma": lemma, "tags": labels}
                 yield variant
+
+
+def derivation(kaikki_sense: KaikkiSense) -> Derivation | None:
+    """How a form-of sense's word is derived from its target, if it's a derivation."""
+    tags = kaikki_sense.get("tags", [])
+    glosses = kaikki_sense.get("glosses", [])
+    gloss = glosses[0].lower() if glosses else ""
+    tagged: Derivation | None = next((d for tag, d in DERIVATIONS if tag in tags), None)
+    named: Derivation | None = next(
+        (d for prefix, d in EQUIVALENTS if gloss.startswith(prefix)), None
+    )
+    return tagged or named

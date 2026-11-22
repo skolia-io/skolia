@@ -4,15 +4,17 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from skolia_analysis.lang.pl.walenty.parse import parse_schema
-from skolia_analysis.lexicon import build, commons, entry, pronunciation, store
+from skolia_analysis.lexicon import build, commons, entry, pronunciation, senses, store
 from skolia_analysis.lexicon.entry import Row, no_frames
 from skolia_analysis.lexicon.kaikki import KaikkiEntry, KaikkiSound
 from skolia_analysis.lexicon.schema import (
+    Derivation,
     Entry,
     Form,
     Paradigm,
     Pronunciation,
     Recording,
+    Relation,
     Sense,
 )
 from skolia_analysis.lexicon.source import Converted, Pronounced
@@ -274,3 +276,52 @@ def test_aspect_partners_name_their_targets() -> None:
         {"kind": "aspect-partner", "lemma": "golić", "aspect": "Imp", "lemma_id": "pl:golić:VERB"}
     ]
     assert rows["pl:golić:VERB"].senses == []
+
+
+def test_a_relation_to_a_spelling_of_several_parts_of_speech_takes_its_sources() -> None:
+    """doggy, a noun, is from the noun dog; a verb from the verb; an adjective, with no
+    adjective dog, from the noun."""
+
+    def word(lemma: str, upos: Upos, relations: list[Relation]) -> Converted:
+        return Converted(lemma, (upos,), [{"gloss": lemma, "tags": []}], relations)
+
+    def from_dog(how: Derivation) -> list[Relation]:
+        return [{"kind": "derived-from", "lemma": "dog", "how": how}]
+
+    entries = [
+        word("dog", "NOUN", []),
+        word("dog", "VERB", []),
+        word("doggy", "NOUN", from_dog("diminutive")),
+        word("doggle", "VERB", from_dog("frequentative")),
+        word("doggish", "ADJ", from_dog("endearing")),
+    ]
+    rows = {row.lemma_id: row for row in build.rows("en", VerbSource(), entries)}
+    sources = ["en:doggy:NOUN", "en:doggle:VERB", "en:doggish:ADJ"]
+    assert [rows[source].relations[0].get("lemma_id") for source in sources] == [
+        "en:dog:NOUN",
+        "en:dog:VERB",
+        "en:dog:NOUN",
+    ]
+
+
+def test_relations_read_alt_of_and_take_genders_from_the_gloss() -> None:
+    entry: KaikkiEntry = {
+        "word": "nauczycielka",
+        "pos": "noun",
+        "senses": [
+            {
+                "glosses": ["female equivalent of nauczyciel"],
+                "tags": ["feminine", "form-of"],
+                "form_of": [{"word": "nauczyciel"}],
+            },
+            {
+                "glosses": ["obsolete form of nauczycielica"],
+                "tags": ["alt-of", "feminine", "obsolete"],
+                "alt_of": [{"word": "nauczycielica"}],
+            },
+        ],
+    }
+    assert list(senses.relations(entry, (), {"feminine", "masculine"})) == [
+        {"kind": "derived-from", "lemma": "nauczyciel", "how": "feminine"},
+        {"kind": "variant-of", "lemma": "nauczycielica", "tags": ["obsolete"]},
+    ]

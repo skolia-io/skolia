@@ -2,7 +2,7 @@
 fr:beau:ADJ	$VERSION	beau	ADJ	{"lemma_id":"fr:beau:ADJ","lemma":"beau","upos":"ADJ","grammar":{},"senses":[{"gloss":"beautiful, handsome","tags":[]}],"relations":[],"paradigms":[{"homonym":"","forms":[["beau",[0]],["bel",[0]],["belle",[1]],["beaux",[2]],["belles",[3]]]}],"frames":[]}	beau	1
 fr:chat:NOUN	$VERSION	chat	NOUN	{"lemma_id":"fr:chat:NOUN","lemma":"chat","upos":"NOUN","grammar":{"Gender":"Masc"},"senses":[{"gloss":"cat","tags":[]},{"gloss":"tomcat","tags":["specifically"]}],"relations":[],"paradigms":[{"homonym":"","forms":[["chat",[4]],["chats",[5]]]}],"frames":[]}	chat	2
 fr:chaton:NOUN	$VERSION	chaton	NOUN	{"lemma_id":"fr:chaton:NOUN","lemma":"chaton","upos":"NOUN","grammar":{"Gender":"Masc"},"senses":[{"gloss":"diminutive of chat: kitten","tags":["diminutive"]}],"relations":[{"kind":"derived-from","lemma":"chat","how":"diminutive","lemma_id":"fr:chat:NOUN"}],"paradigms":[{"homonym":"","forms":[["chaton",[4]],["chatons",[5]]]}],"frames":[]}	chaton	1
-fr:cholère:NOUN	$VERSION	cholère	NOUN	{"lemma_id":"fr:cholère:NOUN","lemma":"cholère","upos":"NOUN","grammar":{"Gender":"Fem"},"senses":[{"gloss":"obsolete form of colère","tags":["alt-of","obsolete"]}],"relations":[{"kind":"derived-from","lemma":"colère","how":"feminine","lemma_id":"fr:colère:NOUN"}],"paradigms":[],"frames":[]}	cholère	1
+fr:cholère:NOUN	$VERSION	cholère	NOUN	{"lemma_id":"fr:cholère:NOUN","lemma":"cholère","upos":"NOUN","grammar":{"Gender":"Fem"},"senses":[{"gloss":"obsolete form of colère","tags":["alt-of","obsolete"]}],"relations":[{"kind":"variant-of","lemma":"colère","tags":["obsolete"],"lemma_id":"fr:colère:NOUN"}],"paradigms":[],"frames":[]}	cholère	1
 fr:colère:NOUN	$VERSION	colère	NOUN	{"lemma_id":"fr:colère:NOUN","lemma":"colère","upos":"NOUN","grammar":{"Gender":"Fem"},"senses":[{"gloss":"anger","tags":[]}],"relations":[],"paradigms":[{"homonym":"","forms":[["colère",[4]],["colères",[5]]]}],"frames":[]}	colère	1
 fr:lever:VERB	$VERSION	lever	VERB	{"lemma_id":"fr:lever:VERB","lemma":"lever","upos":"VERB","grammar":{},"senses":[{"gloss":"to get up","tags":["reflexive","pronominal"]},{"gloss":"to raise, lift","tags":["transitive"]}],"relations":[],"paradigms":[{"homonym":"","forms":[["lever",[6]],["levant",[7,8]],["levé",[9]],["levée",[10]],["levés",[11]],["levées",[12]],["lève",[13]]]}],"frames":[]}	lever	2
 fr:livre:NOUN	$VERSION	livre	NOUN	{"lemma_id":"fr:livre:NOUN","lemma":"livre","upos":"NOUN","grammar":{},"senses":[{"gloss":"book","tags":[],"when":[{"Gender":"Masc"}],"examples":[{"text":"J'ai lu ce livre.","translation":"I have read this book."}]},{"gloss":"pound (unit of weight)","tags":[],"when":[{"Gender":"Fem"}]}],"relations":[],"paradigms":[{"homonym":"","forms":[["livre",[4]],["livres",[5]]]}],"frames":[]}	livre	2
@@ -69,14 +69,14 @@ $VERSION	18	VerbForm	Fin
 beau	ADJ	$VERSION	{"pronunciations":[{"ipa":"/bo/"}],"recordings":[]}
 chat	NOUN	$VERSION	{"pronunciations":[{"ipa":"/ʃa/"}],"recordings":[]}
 lever	VERB	$VERSION	{"pronunciations":[{"ipa":"/lə.ve/"}],"recordings":[]}
-livre	NOUN	$VERSION	{"pronunciations":[{"ipa":"/livʁ/"}],"recordings":[]}
+livre	NOUN	$VERSION	{"pronunciations":[{"ipa":"/livʁ/"}],"recordings":[{"audio":"Fr-livre.ogg","mp3_url":"https://example.org/Fr-livre.ogg.mp3"}]}
 parler	VERB	$VERSION	{"pronunciations":[{"ipa":"/paʁ.le/"}],"recordings":[]}
 parlé	VERB	$VERSION	{"pronunciations":[{"ipa":"/paʁ.le/"}],"recordings":[]}
 ## loaded (id, version, built_from)
 ## meta (key, value)
 attribution	Meanings, forms and pronunciations from Wiktionary (https://en.wiktionary.org) via kaikki.org, CC BY-SA 4.0
 lang	fr
-version	10+kaikki-2e4f54f35300
+version	11+kaikki-2e4f54f35300
 ## relation (source_id, version, ord, target_lemma, target_id, kind, data)
 fr:chaton:NOUN	$VERSION	0	chat	fr:chat:NOUN	derived-from	{"how": "diminutive"}
-fr:cholère:NOUN	$VERSION	0	colère	fr:colère:NOUN	derived-from	{"how": "feminine"}
+fr:cholère:NOUN	$VERSION	0	colère	fr:colère:NOUN	variant-of	{"tags": ["obsolete"]}

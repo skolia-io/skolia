@@ -13,7 +13,7 @@ from ...lexicon import kaikki
 from ...lexicon import senses as kaikki_senses
 from ...lexicon.inflections import Inflection, form, inflections, noun_forms, paradigm, unique
 from ...lexicon.kaikki import KaikkiEntry, KaikkiForm, KaikkiSense, KaikkiSound
-from ...lexicon.pronunciation import pronunciations
+from ...lexicon.pronunciation import pronunciations, recordings
 from ...lexicon.schema import Accent, Form, Paradigm, Sense
 from ...lexicon.source import Converted, Pronounced
 from ...schema import Feats, Gender, Mood, Number, Person, Tense, Upos
@@ -108,8 +108,9 @@ class Source:
         upos = kaikki.POS.get(pos)
         if upos is None or not word or " " in word:
             return None
-        found = pronunciations(entry.get("sounds", []), _accents)
-        return Pronounced(word, (upos,), found) if found else None
+        sounds = entry.get("sounds", [])
+        found, heard = pronunciations(sounds, _accents), recordings(sounds)
+        return Pronounced(word, (upos,), found, heard) if found or heard else None
 
     def paradigms(self, lemma: str, upos: Upos) -> list[Paradigm]:
         return []
