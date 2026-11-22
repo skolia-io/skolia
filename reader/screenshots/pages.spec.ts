@@ -269,7 +269,7 @@ test("reader, a paragraph playing", async ({ page }) => {
 test("reader, one tab stop for the text", async ({ page }) => {
   await open(page, `#/doc/${LALKA}`);
   const text = page.locator("article");
-  await page.getByRole("link", { name: "source" }).focus();
+  await page.getByRole("link", { name: "wolnelektury.pl" }).focus();
   await page.keyboard.press("Tab");
   await expect(page.getByRole("button", { name: "Play “W początkach roku 1878, kiedy…”" })).toBeFocused();
   await page.keyboard.press("Tab");
