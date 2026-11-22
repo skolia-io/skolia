@@ -31,7 +31,7 @@ log = structlog.get_logger(module=__name__)
 
 MAX_BODY_BYTES = 4096
 # An attempt's error is cut to this many code points: at most 2 UTF-16 code units each,
-# within MAX_INGEST_ERROR (shared/schemas.ts)
+# within MAX_INGEST_ERROR (lib/ts/schemas.ts)
 MAX_ERROR = 1000
 
 

@@ -261,7 +261,7 @@ def test_parse_job_rejects_bad_messages() -> None:
 
 
 def test_doc_id_matches_the_api() -> None:
-    # The same value is asserted in api/src/app.test.ts against docId in shared/keys.ts
+    # The same value is asserted in api/src/app.test.ts against docId in lib/ts/keys.ts
     expected = "d8fc9f68cd4e27140cbfe3d63851f0d2af4026ce726f9e9cdcb8682a537c71a7"
     assert doc_id("pl", "Idę do domu.") == expected
     assert doc_id("en", "Idę do domu.") != expected

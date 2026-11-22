@@ -59,7 +59,7 @@ review(id, card_id, rating, review_time)      -- append-only
 
 ### Lexicon in D1
 
-The lexicon SQLite is built by Nix (`analysis/flake.nix`, `lexicon`) and only exists inside the ingest images, so the API Worker can't read it. Cards also need what a document's bundle has and the lexicon doesn't: the lemma's pronunciations, and Polish paradigms, which Morfeusz generates during ingest. So `skolia-build-cards` (`analysis/src/skolia_analysis/lexicon/cards.py`) builds a cards lexicon from it, the Nix output `cards-lexicon-{lang}`, which isn't in the images. That goes into a D1 database of its language's own, `skolia-lexicon-{lang}`, bound as `LEXICON_{LANG}` (`lexicon/migrations`), which the lexicon Worker binds and serves. Each environment has its own, previews included.
+The lexicon SQLite is built by Nix (`analysis/flake.nix`, `lexicon`) and only exists inside the ingest images, so the API Worker can't read it. Cards also need what a document's bundle has and the lexicon doesn't: the lemma's pronunciations, and Polish paradigms, which Morfeusz generates during ingest. So `skolia-build-cards` (`analysis/src/skolia_analysis/lexicon/cards.py`) builds a cards lexicon from it, the Nix output `cards-lexicon-{lang}`, which isn't in the images. That goes into a D1 database of its language's own, `skolia-lexicon-{lang}`, bound as `LEXICON_{LANG}` (`lexicon-api/migrations`), which the lexicon Worker binds and serves. Each environment has its own, previews included.
 
 ```sql
 entry(lemma_id, version, lemma, upos, senses, relations, pronunciations, paradigms)

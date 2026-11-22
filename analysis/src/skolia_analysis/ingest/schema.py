@@ -111,7 +111,7 @@ class Versions(TypedDict):
 SHORT_HASH = 12
 
 MAX_TEXT_LENGTH = 20_000
-"""Longest text ingest analyses, in characters; generated into shared/schema.gen.ts for
+"""Longest text ingest analyses, in characters; generated into lib/ts/schema.gen.ts for
 the API and reader. (JavaScript counts UTF-16 units, so the API's check is the stricter
 one for text outside the BMP, such as emoji.) Kept small because analysis time is what
 costs money: at about 46 words a second on an M-series Mac, a text at the limit (about
@@ -120,7 +120,7 @@ costs money: at about 46 words a second on an M-series Mac, a text at the limit 
 
 def doc_id(lang: str, text: str) -> str:
     """sha256 hex of the UTF-8 "{lang}\n{text}": the same text in two languages is two
-    documents. As docId in shared/keys.ts."""
+    documents. As docId in lib/ts/keys.ts."""
     return hashlib.sha256(f"{lang}\n{text}".encode()).hexdigest()
 
 

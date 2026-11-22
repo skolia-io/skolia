@@ -11,8 +11,8 @@
     "../user/migrator.ts",
     "../user/migrations/0*.ts",
     "../user/migrations/index.ts",
-    "../../../shared",
+    "../../../lib/ts",
     "../../../util"
   ],
-  "exclude": ["../../../shared/**/*.test.ts", "../../../shared/scripts", "../../../util/**/*.test.ts"]
+  "exclude": ["../../../lib/ts/**/*.test.ts", "../../../lib/ts/scripts", "../../../util/**/*.test.ts"]
 }

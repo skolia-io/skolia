@@ -3,7 +3,7 @@ import * as schemas from "@skolia/shared/schemas";
 import type { LexiconRpc } from "@skolia/lexicon/rpc";
 import type { Lexicon } from "../../ports/lexicon.ts";
 
-/** The lexicon Worker's LexiconService (lexicon/src/main.ts), bound as LEXICON. RPC's
+/** The lexicon Worker's LexiconService (lexicon-api/src/main.ts), bound as LEXICON. RPC's
  * types widen the paradigms' [form, sets] tuples to arrays, so what comes back is parsed
  * into a Lookup again. */
 export class RpcLexicon implements Lexicon {

@@ -6,7 +6,7 @@
 | `api/` | `skolia-api`: documents, import, serving analyses and bundles | TypeScript, Hono on Workers |
 | `ingest/` | `skolia-ingest`'s Worker: runs ingest for each document (a Workflow) and the analysis containers | TypeScript, Workers |
 | `reader/` | the reader app (phone and desktop) | Svelte 5, TypeScript, Vite |
-| `shared/` | types and blob keys used by api and reader; `schema.gen.ts` is generated from the Python schemas | TypeScript |
+| `lib/ts/` | types and blob keys used by api and reader; `schema.gen.ts` is generated from the Python schemas | TypeScript |
 | `data/` | git-ignored: Kaikki extract, lexicon, local SQLite, sample texts | |
 
 ## Running it all locally
@@ -66,16 +66,16 @@ The public API's (`api/wrangler.jsonc`) once-a-minute Cron Trigger runs one batc
 
 Every table, in D1 and in the Durable Objects, is `STRICT`. SQLite has no date type, so timestamps are `TEXT` in `toISOString()`'s format (`2026-11-07T00:00:00.000Z`), which sorts in time order; each has `CHECK (col IS strftime('%Y-%m-%dT%H:%M:%fZ', col))`, which refuses any other format (`IS`, not `=`, so that a value `strftime` can't read fails rather than passes). SQLite can't change an existing table's type or constraints, so a D1 migration that does rebuilds the table, as `0003_strict.sql` does.
 
-Request bodies, the blobs ingest writes, and database rows are checked with the Zod schemas in `shared/schemas.ts`, and responses are described by them; `shared/api.ts` takes its types from them with type-only imports, so the reader doesn't bundle Zod. Import Zod as `import * as z from "zod"`: `import { z } from "zod"` keeps all of Zod in the Worker bundle, its locales included (807 KiB vs 1163 KiB). esbuild, which wrangler bundles with, can only drop the parts of a namespace it imports itself, and zod's `z` is a namespace it re-exports. `api/src/bundle.test.ts` fails when the gzipped Worker grows past its budget; raise the budget when the growth is wanted.
+Request bodies, the blobs ingest writes, and database rows are checked with the Zod schemas in `lib/ts/schemas.ts`, and responses are described by them; `lib/ts/api.ts` takes its types from them with type-only imports, so the reader doesn't bundle Zod. Import Zod as `import * as z from "zod"`: `import { z } from "zod"` keeps all of Zod in the Worker bundle, its locales included (807 KiB vs 1163 KiB). esbuild, which wrangler bundles with, can only drop the parts of a namespace it imports itself, and zod's `z` is a namespace it re-exports. `api/src/bundle.test.ts` fails when the gzipped Worker grows past its budget; raise the budget when the growth is wanted.
 
 Both are strict TypeScript (`strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`). The API uses TypeScript 7; the reader stays on 6 because svelte-check, which type-checks the `.svelte` components, supports TypeScript 5 and 6 only (move it to 7 when svelte-check does). The tests run the `.ts` files directly with Node's type stripping (wrangler bundles them for Workers); that also means TypeScript-only syntax (enums, parameter properties) isn't allowed (`erasableSyntaxOnly`).
 
-The language-specific parts the reader shows (paradigm layout, case explanations, Walenty frames) are in `shared/lang/<lang>/`, behind the `Language` interface in `shared/lang/types.ts`; the reader only renders them.
+The language-specific parts the reader shows (paradigm layout, case explanations, Walenty frames) are in `lib/ts/lang/<lang>/`, behind the `Language` interface in `lib/ts/lang/types.ts`; the reader only renders them.
 
 After changing a Python schema (`schema.py`, `lexicon/schema.py`, `ingest/schema.py`), regenerate the TypeScript types and their Zod schemas; `tests/test_ts_types.py` fails until you do:
 
 ```fish
-cd analysis; and uv run python scripts/gen_ts_types.py > ../shared/schema.gen.ts; and uv run python scripts/gen_ts_types.py zod > ../shared/schema.zod.gen.ts
+cd analysis; and uv run python scripts/gen_ts_types.py > ../lib/ts/schema.gen.ts; and uv run python scripts/gen_ts_types.py zod > ../lib/ts/schema.zod.gen.ts
 ```
 
 The API's OpenAPI spec is made from its routes (`api/src/openapi.ts`): requests from their validators, responses from each route's `responds(…)`. The tests hold the spec to the API: with `checkResponses`, a response with a status or JSON its route's spec doesn't describe is a 500. `just openapi` writes it to `api/openapi.json`, which `src/openapi.test.ts` checks is current, and the Worker serves it at `/api/openapi.json`, with Scalar's page at `/api/scalar` (and `/api/docs`) and Redoc's at `/api/redoc`.
@@ -178,7 +178,7 @@ keyed by lemma ID and version.
 A version is a hash of the rows `load-lexicon` copies into D1 (`content_version` in `infra/load-lexicon.py`),
 so it changes exactly when an entry does, and a pinned URL's response never changes. Each build is loaded
 into a D1 database of its own, never written again, and `deploy-lexicon` publishes it by deploying the
-lexicon Worker bound to it (`lexicon/wrangler.template.jsonc`). Discovery then returns a new URL key for
+lexicon Worker bound to it (`lexicon-api/wrangler.template.jsonc`). Discovery then returns a new URL key for
 every lookup in that language. An old pinned URL may still hit the edge or a browser's cache, with the old version's data. If it
 reaches the Worker after the version has changed, it returns `409` and the client can rediscover the current
 version. Browsers don't revalidate, so a change to the shape of a `/v1` response must be one an older reader
@@ -216,9 +216,9 @@ Or build from a local extract (Polish takes about 30 s). `--data` is a directory
 `pl-valency.json` (`skolia-build-valency`), for the verbs' frames:
 
 ```fish
-uv run skolia-build-lexicon pl ../data/kaikki/kaikki.org-dictionary-Polish.jsonl ../lexicon/migrations ../data/lexicon/pl.sqlite --commons ../data/inputs/commons-recordings-pl.txt --data ../data/lexicon
-uv run skolia-build-lexicon en ../data/kaikki/kaikki.org-dictionary-English.jsonl ../lexicon/migrations ../data/lexicon/en.sqlite
-uv run skolia-build-lexicon fr ../data/kaikki/kaikki.org-dictionary-French.jsonl ../lexicon/migrations ../data/lexicon/fr.sqlite
+uv run skolia-build-lexicon pl ../data/kaikki/kaikki.org-dictionary-Polish.jsonl ../lexicon-api/migrations ../data/lexicon/pl.sqlite --commons ../data/inputs/commons-recordings-pl.txt --data ../data/lexicon
+uv run skolia-build-lexicon en ../data/kaikki/kaikki.org-dictionary-English.jsonl ../lexicon-api/migrations ../data/lexicon/en.sqlite
+uv run skolia-build-lexicon fr ../data/kaikki/kaikki.org-dictionary-French.jsonl ../lexicon-api/migrations ../data/lexicon/fr.sqlite
 ```
 
 From the repo root, build or reuse the pinned lexicon and look up a lemma:

@@ -1,6 +1,6 @@
 // skolia-api on Cloudflare Workers (api/wrangler.jsonc). Static assets (the reader) are
 // served before the Worker runs, except for /api/*. /api/lexicon/* is the lexicon
-// Worker's API (lexicon/src/app.ts), passed through, so the reader reads it on its own
+// Worker's API (lexicon-api/src/app.ts), passed through, so the reader reads it on its own
 // origin in every environment, previews included.
 import { createApp } from "../app.ts";
 import { BACKGROUND_MIGRATIONS } from "./background-migrations/index.ts";
@@ -29,7 +29,7 @@ const LEXICON_PATH = "/api/lexicon";
 
 interface Env {
   DB: D1Database;
-  /** The lexicon Worker (lexicon/wrangler.jsonc): its LexiconService, and its API */
+  /** The lexicon Worker (lexicon-api/wrangler.jsonc): its LexiconService, and its API */
   LEXICON: Service<LexiconRpc>;
   USER: DurableObjectNamespace<User>;
   BLOBS: R2Bucket;

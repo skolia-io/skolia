@@ -8,8 +8,8 @@
     "src/**/*.workerd.test.ts",
     "src/store.ts",
     "src/main.ts",
-    "../shared/**/*.test.ts",
-    "../shared/scripts",
+    "../lib/ts/**/*.test.ts",
+    "../lib/ts/scripts",
     "../util/**/*.test.ts"
   ]
 }

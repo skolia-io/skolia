@@ -20,7 +20,7 @@ from skolia_analysis.lexicon.schema import (
 from skolia_analysis.lexicon.source import Converted, Pronounced
 from skolia_analysis.schema import Aspect, Feats, Upos
 
-MIGRATIONS = Path(__file__).resolve().parents[2] / "lexicon" / "migrations"
+MIGRATIONS = Path(__file__).resolve().parents[2] / "lexicon-api" / "migrations"
 
 DOG: Sense = {"gloss": "dog", "tags": [], "when": [{"Gender": "Masc", "Animacy": "Nhum"}]}
 COP: Sense = {"gloss": "cop", "tags": [], "when": [{"Gender": "Masc", "Animacy": "Hum"}]}

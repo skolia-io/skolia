@@ -360,7 +360,7 @@ def _audio(
 ) -> list[store.AudioRow]:
     """Each spelling's pronunciations and recordings by part of speech, and Commons'
     recordings of it, whatever its part of speech, under none. The lexicon Worker picks
-    among them for a form (lexicon/src/store.ts)."""
+    among them for a form (lexicon-api/src/store.ts)."""
     said = [
         store.AudioRow(
             form,

@@ -1,4 +1,4 @@
-// skolia-lexicon on Cloudflare Workers (lexicon/wrangler.jsonc): the lexicon's public API
+// skolia-lexicon on Cloudflare Workers (lexicon-api/wrangler.jsonc): the lexicon's public API
 // (app.ts) at lexicon.skolia.io, and LexiconService, which the API binds for its cards and
 // to pass /api/lexicon/* on to the same API.
 import { WorkerEntrypoint } from "cloudflare:workers";

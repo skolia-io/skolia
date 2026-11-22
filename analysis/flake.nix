@@ -211,10 +211,10 @@
       '';
 
       # Each language's lexicon: the lexicon Worker's D1 lexicon as a SQLite file in D1's schema
-      # (lexicon/migrations), which infra/load-lexicon.py copies into D1. Not in the images. The
+      # (lexicon-api/migrations), which infra/load-lexicon.py copies into D1. Not in the images. The
       # migrations keep the store name they had under api/, so moving them changed no build.
       migrations = builtins.path {
-        path = ../lexicon/migrations;
+        path = ../lexicon-api/migrations;
         name = "lexicon-migrations";
       };
       lexicon = {

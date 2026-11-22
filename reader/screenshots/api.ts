@@ -222,7 +222,7 @@ function entry(lemmaId: LemmaIdType): Entry | null {
 
 const featureSets = Object.fromEntries(dictionary.feats.map((feats, id) => [String(id), feats]));
 
-/** The lexicon Worker's (lexicon/src/app.ts), on the fixture's Polish entries. */
+/** The lexicon Worker's (lexicon-api/src/app.ts), on the fixture's Polish entries. */
 const lexicon: Lexicon = {
   served: async () => "lex/1",
   byIds: async (_lang, _version, ids) => found(ids.flatMap((id) => entry(id) ?? [])),

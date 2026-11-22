@@ -64,7 +64,7 @@ export async function startLocal(): Promise<Local> {
       { configPath: "./wrangler.jsonc", env: "dev", prebuiltWorkerDir: DIST, vars: { MUTABLE_FINAL_USER_MIGRATION: "true" } },
       { configPath: "./src/testing/ingest-recorder.jsonc" },
       { configPath: "./wrangler.internal.jsonc", env: "dev" },
-      { configPath: "../lexicon/wrangler.jsonc", env: "dev" },
+      { configPath: "../lexicon-api/wrangler.jsonc", env: "dev" },
     ],
   });
   await server.listen();

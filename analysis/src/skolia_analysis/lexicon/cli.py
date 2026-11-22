@@ -53,7 +53,7 @@ def build_main() -> None:
     )
     parser.add_argument("lang", choices=lang.LANGS)
     parser.add_argument("kaikki", type=Path, help="e.g. kaikki.org-dictionary-Polish.jsonl")
-    parser.add_argument("migrations", type=Path, help="lexicon/migrations")
+    parser.add_argument("migrations", type=Path, help="lexicon-api/migrations")
     parser.add_argument("out", type=Path, help="output .sqlite file (replaced)")
     parser.add_argument(
         "--commons",

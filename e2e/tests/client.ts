@@ -63,7 +63,7 @@ export function client(key?: string): Api {
   return hc<AppType>(base, { fetch: retryingFetch, headers: headers(key) }).api;
 }
 
-/** The lexicon Worker's API (lexicon/src/app.ts), through the skolia Worker's /api/lexicon/. */
+/** The lexicon Worker's API (lexicon-api/src/app.ts), through the skolia Worker's /api/lexicon/. */
 export function lexicon() {
   return hc<LexiconApp>(`${base}/api/lexicon`, { fetch: retryingFetch }).v1;
 }
