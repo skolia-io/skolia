@@ -14,8 +14,8 @@ from collections import Counter
 from collections.abc import Iterator
 from pathlib import Path
 
+from skolia.ud import Feats
 from skolia_analysis.lang.pl import plugin as pl
-from skolia_analysis.schema import Feats
 
 # Depends on the sentence (heads of multi-word units), never in a dictionary
 CONTEXTUAL_FEATS = {"ExtPos"}

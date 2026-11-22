@@ -12,9 +12,9 @@ from collections import Counter
 from collections.abc import Iterator, Mapping
 from pathlib import Path
 
+from skolia.pl.morfeusz import MorfeuszCandidates
+from skolia.ud import Reading
 from skolia_analysis.conllu import GoldWord, read
-from skolia_analysis.lang.pl.morfeusz import MorfeuszCandidates
-from skolia_analysis.schema import Reading
 
 SKIPPED_UPOS = {"PUNCT", "SYM"}
 

@@ -4,12 +4,13 @@ blob, with Morfeusz candidates and Walenty valency, but no parser model."""
 from collections.abc import Sequence
 from importlib.metadata import version
 
+from skolia.pl.valency import Valency
+from skolia.pl.walenty.parse import empty_expansions, parse_schema
+from skolia.ud import Deprel, Feats, Upos
 from skolia_analysis.blob import CandidateLookup
 from skolia_analysis.lang.pl import plugin as pl
-from skolia_analysis.lang.pl.valency import Valency
-from skolia_analysis.lang.pl.walenty.parse import empty_expansions, parse_schema
 from skolia_analysis.parsed import ParsedSentence, ParsedToken, ParsedWord, align
-from skolia_analysis.schema import Blob, Deprel, ExpressionDef, Feats, Token, Upos
+from skolia_analysis.schema import Blob, ExpressionDef, Token
 
 # As in test_pl_cases.py (tests/pl/ is not a package, so it can't be imported)
 VALENCY = Valency(

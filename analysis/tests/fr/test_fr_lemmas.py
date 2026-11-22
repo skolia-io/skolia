@@ -1,8 +1,8 @@
 from typing import Literal
 
+from skolia.ud import Feats, Upos
 from skolia_analysis.lang.fr.lemmas import dictionary_lemma, relemmatize
 from skolia_analysis.parsed import ParsedSentence, ParsedToken, ParsedWord
-from skolia_analysis.schema import Feats, Upos
 
 
 def word(text: str, lemma: str, upos: Upos, feats: Feats) -> ParsedWord:

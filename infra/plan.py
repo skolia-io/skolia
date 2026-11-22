@@ -227,11 +227,20 @@ CHECK_RECIPE = (
 # build, which the API's bundle serves (api/wrangler.jsonc assets), the curated texts
 # (api/src/curated.test.ts) and the TypeScript the analysis generates (tests/test_ts_types.py).
 # The analysis check also runs Ruff on the infrastructure scripts.
+UV_WORKSPACE = ("pyproject.toml", "uv.lock", ".python-version", "typings")
 CHECK_READS: dict[str, tuple[str, ...]] = {
     "api": ("reader", "curated"),
     # just lint lexicon-api checks wrangler.jsonc is load-lexicon.py's render of the template
     "lexicon-api": LEXICON_LOAD,
+    # The uv workspace's projects read its config, lock and stubs, and each other: the
+    # analysis uses lib/py, and the lexicon's entry types (scripts/gen_ts_types.py); the
+    # lexicon's tests build into lexicon-api/migrations
+    "lib/py": UV_WORKSPACE,
+    "lexicon": (*UV_WORKSPACE, "lib/py", "lexicon-api/migrations"),
     "analysis": (
+        *UV_WORKSPACE,
+        "lib/py",
+        "lexicon",
         "lib/ts/schema.gen.ts",
         "lib/ts/schema.zod.gen.ts",
         *(path.relative_to(ROOT).as_posix() for path in sorted((ROOT / "infra").glob("*.py"))),
@@ -241,8 +250,9 @@ CHECK_READS: dict[str, tuple[str, ...]] = {
 
 
 def projects() -> tuple[str, ...]:
-    """What just check-project checks: each workspace package, the analysis and the Terraform."""
-    return (*packages().values(), "analysis", "terraform")
+    """What just check-project checks: each pnpm workspace package, each uv workspace project
+    and the Terraform."""
+    return (*packages().values(), "analysis", "lexicon", "lib/py", "terraform")
 
 
 @cache

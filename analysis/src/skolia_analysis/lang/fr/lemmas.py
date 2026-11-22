@@ -11,8 +11,9 @@ so the meaning shown, changes.
 from collections.abc import Iterable, Mapping
 from dataclasses import replace
 
+from skolia.ud import Number, Person
+
 from ...parsed import ParsedSentence, ParsedToken, ParsedWord
-from ...schema import Number, Person
 
 # (Person[psor], Number[psor]) -> the determiner's headword: ma, mes are under mon
 POSSESSIVES: Mapping[tuple[Person, Number], str] = {

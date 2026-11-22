@@ -12,8 +12,9 @@ from collections import Counter
 from pathlib import Path
 from typing import Literal, cast
 
-from skolia_analysis.lexicon.store import Lexicon
-from skolia_analysis.schema import Blob, Token, Upos
+from skolia.ud import Upos
+from skolia_analysis.schema import Blob, Token
+from skolia_lexicon.store import Lexicon
 
 type Match = Literal["exact", "other-pos", "lowercase", "none"]
 

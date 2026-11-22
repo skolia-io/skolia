@@ -26,7 +26,7 @@ from typing import (
 
 from skolia_analysis import blob, schema
 from skolia_analysis.ingest import schema as ingest_schema
-from skolia_analysis.lexicon import schema as lexicon_schema
+from skolia_lexicon import schema as lexicon_schema
 
 # The top-level types the API and reader use; everything they refer to comes along
 ROOTS: list[object] = [

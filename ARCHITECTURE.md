@@ -243,7 +243,7 @@ French: the same, with Stanza's French `default_accurate` (CamemBERT, trained on
 
 ## Lexicon (static, per language)
 
-Built offline (`analysis/src/skolia_analysis/lexicon/`) into one SQLite file per language in the lexicon Worker's D1 schema (`lexicon-api/migrations`), keyed by the analyser's `lemma_id`, which `infra/load-lexicon.py` copies into D1. The lexicon follows the analyser's conventions: each Kaikki (Wiktionary) headword is looked up in Morfeusz and converted with the analyser's own code, so `który` is filed as DET just as the analyser tags it.
+Built offline (`lexicon/src/skolia_lexicon/`) into one SQLite file per language in the lexicon Worker's D1 schema (`lexicon-api/migrations`), keyed by the analyser's `lemma_id`, which `infra/load-lexicon.py` copies into D1. The lexicon follows the analyser's conventions: each Kaikki (Wiktionary) headword is looked up in Morfeusz and converted with the analyser's own code, so `który` is filed as DET just as the analyser tags it.
 
 English and French have no Morfeusz: headwords are filed under Kaikki's part of speech mapped to UPOS, and Wiktionary's inflection table gives the paradigm.
 

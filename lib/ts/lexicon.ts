@@ -3,7 +3,7 @@ import type { Derivation, Feats, Pronunciation, Relation, Sense } from "@skolia/
 import { featureWords } from "./ud.ts";
 
 /** The sentence decides these, not the form, so paradigms leave them out (see the
- * EntryParadigm docstring in analysis/src/skolia_analysis/lexicon/schema.py). */
+ * EntryParadigm docstring in lexicon/src/skolia_lexicon/schema.py). */
 const CONTEXTUAL: ReadonlySet<string> = new Set(["PronType", "ExtPos"]);
 
 /** The first transcription for each accent: Wiktionary lists the usual one first, then

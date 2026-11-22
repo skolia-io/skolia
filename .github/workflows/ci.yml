@@ -103,9 +103,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
-      - if: matrix.project != 'analysis'
+      - if: ${{ !contains(fromJSON('["analysis", "lexicon", "lib/py"]'), matrix.project) }}
         uses: ./.github/actions/pnpm
-      - if: matrix.project == 'analysis'
+      - if: ${{ contains(fromJSON('["analysis", "lexicon", "lib/py"]'), matrix.project) }}
         uses: ./.github/actions/uv
       - run: just check-project ${{ matrix.project }}
       - run: python3 -I infra/plan.py passed check-${{ matrix.project }}

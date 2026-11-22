@@ -18,8 +18,9 @@ from types import FrameType
 
 import structlog
 
+from skolia.log import configure_logging
+
 from .. import lang
-from ..log import configure_logging
 from ..plugin import Analyzer, Options
 from .blobs import HttpBlobs
 from .http import HttpJobs, serve

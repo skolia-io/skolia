@@ -1,0 +1,32 @@
+[project]
+name = "skolia"
+version = "0.1.0"
+description = "What the analysis and the lexicon build share: UD labels, lemma ids, Polish morphology and valency"
+license = "Apache-2.0"
+requires-python = ">=3.12,<3.14"
+dependencies = [
+    "morfeusz2>=1.99",
+    "structlog>=25.5",
+]
+
+[project.scripts]
+skolia-build-valency = "skolia.pl.valency:build_main"
+
+[dependency-groups]
+dev = [
+    "pyright[nodejs]>=1.1.414",
+    "pytest>=8",
+    "ruff>=0.17.3",
+]
+
+[tool.pyright]
+include = ["src", "tests"]
+stubPath = "../../typings"
+venvPath = "../.."
+venv = ".venv"
+pythonVersion = "3.12"
+typeCheckingMode = "strict"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

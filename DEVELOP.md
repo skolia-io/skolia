@@ -2,11 +2,14 @@
 
 | Folder | What | Language |
 |---|---|---|
-| `analysis/` | analyser, lexicon build, `skolia-ingest`'s container (job worker) | Python, uv |
+| `analysis/` | analyser, `skolia-ingest`'s container (job worker) | Python, uv |
+| `lexicon/` | the lexicon build: Kaikki's extract to each language's SQLite file in the lexicon Worker's D1 schema | Python, uv |
+| `lexicon-api/` | `skolia-lexicon`: the lexicon Worker | TypeScript, Hono on Workers |
 | `api/` | `skolia-api`: documents, import, serving analyses and bundles | TypeScript, Hono on Workers |
 | `ingest/` | `skolia-ingest`'s Worker: runs ingest for each document (a Workflow) and the analysis containers | TypeScript, Workers |
 | `reader/` | the reader app (phone and desktop) | Svelte 5, TypeScript, Vite |
 | `lib/ts/` | types and blob keys used by api and reader; `schema.gen.ts` is generated from the Python schemas | TypeScript |
+| `lib/py/` | what the analysis and the lexicon build share: UD labels, lemma ids, Polish morphology (Morfeusz, NKJP tags) and Walenty | Python, uv |
 | `data/` | git-ignored: Kaikki extract, lexicon, local SQLite, sample texts | |
 
 ## Running it all locally
@@ -82,14 +85,14 @@ The API's OpenAPI spec is made from its routes (`api/src/openapi.ts`): requests 
 
 ## Analysis (Python)
 
-Needs [uv](https://docs.astral.sh/uv/). uv reads `.python-version` and installs Python 3.12 if needed.
+Needs [uv](https://docs.astral.sh/uv/). uv reads `.python-version` and installs Python 3.12 if needed. `analysis/`, `lexicon/` and `lib/py/` are one uv workspace (`pyproject.toml`, `uv.lock` and `.venv` at the root), so the lexicon's Nix build takes only `lexicon/`, `lib/py/` and their dependencies, not the analysis's.
 
 ```fish
 cd analysis
 uv sync                      # runtime + dev dependencies
 ```
 
-Each language is a package under `src/skolia_analysis/lang/` (`lang/pl/`: Morfeusz, NKJP tags, Walenty, case reasons, the Polish lexicon conversion; `lang/en/` and `lang/fr/`: Stanza and the English or French lexicon conversion). The rest of the code is language-neutral and reaches a language through `plugin.py`. Its tests and scripts sit in `tests/pl/` and `scripts/pl/`.
+Each language is a package under `src/skolia_analysis/lang/` (`lang/pl/`: COMBO, case reasons; `lang/en/` and `lang/fr/`: Stanza), using Morfeusz, NKJP tags and Walenty from `lib/py/src/skolia/pl/`; each language's lexicon conversion is `lexicon/src/skolia_lexicon/lang/{lang}.py`. The rest of the code is language-neutral and reaches a language through `plugin.py`. Its tests and scripts sit in `tests/pl/` and `scripts/pl/`.
 
 Models download on first use:
 - COMBO (the default): from Hugging Face into `~/.cache/huggingface/hub`
@@ -275,7 +278,7 @@ uv run skolia-build-valency ../data/walenty/text/walenty_20180630-text ../data/l
 echo "Nie mam czasu." | uv run skolia-analyze --lang pl --data ../data/lexicon --indent 2
 ```
 
-The parser is strict: a construct or value the model doesn't know is an error, so a new Walenty release fails loudly until `lang/pl/walenty/vocabulary.py` or `model.py` covers it. `tests/pl/test_walenty.py` parses and re-renders the whole release when it's downloaded (every line must come back identical), and skips that test otherwise.
+The parser is strict: a construct or value the model doesn't know is an error, so a new Walenty release fails loudly until `lib/py/src/skolia/pl/walenty/vocabulary.py` or `model.py` covers it. `tests/pl/test_walenty.py` parses and re-renders the whole release when it's downloaded (every line must come back identical), and skips that test otherwise.
 
 The Polish plugin reads it as `pl-valency.json` in the data directory (`--data`, or `SKOLIA_DATA` for ingest, set in `analysis/flake.nix`). Coverage and a sample of reasons to read:
 

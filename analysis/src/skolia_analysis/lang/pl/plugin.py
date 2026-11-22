@@ -8,19 +8,19 @@ from dataclasses import dataclass
 from importlib.metadata import version
 from pathlib import Path
 
+from skolia.pl.morfeusz import MorfeuszCandidates
+from skolia.pl.nkjp import VERB_FORM_CLASSES, tag_class
+from skolia.pl.valency import VALENCY_FILE, Valency
+from skolia.ud import Reading, Upos
+
 from ... import reconcile
 from ...blob import CandidateLookup, Language, build
-from ...lexicon.entry import Frames, no_frames
 from ...parsed import ParsedSentence, Parser
 from ...parsers.combo_parser import ComboParser
 from ...parsers.stanza_parser import StanzaParser
 from ...plugin import Options
-from ...schema import Blob, ExpressionDef, Reading, Token, Upos
+from ...schema import Blob, ExpressionDef, Token
 from . import cases
-from .lexicon import Source
-from .morfeusz import MorfeuszCandidates
-from .nkjp import VERB_FORM_CLASSES, tag_class
-from .valency import Valency
 
 LANG = "pl"
 PLUGIN_VERSION = "0.9"
@@ -41,9 +41,6 @@ MODELS: dict[str, Callable[[], Parser]] = {
 # reading isn't one Morfeusz allows.
 DEFAULT_MODEL = "combo"
 DEFAULT_SNAP: str | None = "upos"
-
-VALENCY_FILE = "pl-valency.json"
-"""Walenty's frames in the data directory (skolia-build-valency)."""
 
 
 def parser(model: str = DEFAULT_MODEL) -> Parser:
@@ -125,13 +122,3 @@ def analyzer(parser: Parser, options: Options, data: Path | None) -> PolishAnaly
         snap=options.snap,
         valency=valency(data),
     )
-
-
-def lexicon_source() -> Source:
-    return Source()
-
-
-def frames(data: Path | None) -> Frames:
-    """With data, Walenty's."""
-    walenty = valency(data)
-    return walenty.frames if walenty is not None else no_frames

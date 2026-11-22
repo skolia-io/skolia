@@ -1,0 +1,158 @@
+import pytest
+
+from skolia_lexicon.kaikki import KaikkiEntry
+from skolia_lexicon.lang import pl as lexicon_pl
+
+
+@pytest.fixture(scope="module")
+def source() -> lexicon_pl.Source:
+    return lexicon_pl.Source()
+
+
+@pytest.fixture(scope="module")
+def paradigms() -> lexicon_pl.Paradigms:
+    return lexicon_pl.Paradigms()
+
+
+def test_gender_codes_become_features() -> None:
+    entry: KaikkiEntry = {"head_templates": [{"name": "pl-noun", "args": {"1": "m-anml,m-pr"}}]}
+    assert lexicon_pl._gender(entry) == [  # pyright: ignore[reportPrivateUsage]
+        {"Gender": "Masc", "Animacy": "Nhum"},
+        {"Gender": "Masc", "Animacy": "Hum"},
+    ]
+
+
+def test_inflected_form_pointer_is_skipped_derivation_kept(
+    source: lexicon_pl.Source,
+) -> None:
+    inflected: KaikkiEntry = {
+        "word": "kun",
+        "pos": "noun",
+        "senses": [
+            {
+                "glosses": ["genitive plural of kuna"],
+                "tags": ["form-of", "genitive", "plural"],
+                "form_of": [{"word": "kuna"}],
+            }
+        ],
+    }
+    assert source.convert(inflected) is None
+    diminutive: KaikkiEntry = {
+        "word": "rubelek",
+        "pos": "noun",
+        "senses": [
+            {
+                "glosses": ["diminutive of rubel"],
+                "tags": ["diminutive", "form-of"],
+                "form_of": [{"word": "rubel"}],
+            }
+        ],
+    }
+    converted = source.convert(diminutive)
+    assert converted is not None
+    assert converted.relations == [{"kind": "derived-from", "lemma": "rubel", "how": "diminutive"}]
+
+
+def test_untagged_inflections_are_neither_senses_nor_relations(
+    source: lexicon_pl.Source,
+) -> None:
+    entry: KaikkiEntry = {
+        "word": "ładnych",
+        "pos": "adj",
+        "senses": [
+            {
+                "glosses": ["inflection of ładny:", "genitive/locative plural"],
+                "tags": ["form-of"],
+                "form_of": [{"word": "ładny"}],
+            }
+        ],
+    }
+    assert source.convert(entry) is None
+
+
+def test_a_form_of_that_isnt_a_derivation_is_a_variant(source: lexicon_pl.Source) -> None:
+    entry: KaikkiEntry = {
+        "word": "bzikać",
+        "pos": "verb",
+        "senses": [
+            {
+                "glosses": ["regional form of bzykać"],
+                "tags": ["form-of", "imperfective", "intransitive", "regional"],
+                "form_of": [{"word": "bzykać"}],
+            }
+        ],
+    }
+    converted = source.convert(entry)
+    assert converted is not None
+    assert converted.relations == [
+        {"kind": "variant-of", "lemma": "bzykać", "tags": ["intransitive", "regional"]}
+    ]
+
+
+def test_reflexive_headword_files_under_the_bare_verb(source: lexicon_pl.Source) -> None:
+    entry: KaikkiEntry = {"word": "bać się", "pos": "verb", "senses": [{"glosses": ["to fear"]}]}
+    converted = source.convert(entry)
+    assert converted is not None
+    assert (converted.lemma, converted.upos) == ("bać", ("VERB",))
+    assert converted.senses[0]["tags"] == ["się"]
+
+
+def test_upos_follows_the_analyser(source: lexicon_pl.Source) -> None:
+    entry: KaikkiEntry = {"word": "który", "pos": "pron", "senses": [{"glosses": ["which"]}]}
+    converted = source.convert(entry)
+    assert converted is not None
+    assert converted.upos == ("DET",)
+
+
+def test_aspect_partner() -> None:
+    entry: KaikkiEntry = {
+        "pos": "verb",
+        "forms": [
+            {"form": "zrobić", "tags": ["perfective"]},
+            {"form": "robię", "tags": ["first-person"]},
+        ],
+    }
+    partners = list(lexicon_pl._aspect_partners(entry, "robić"))  # pyright: ignore[reportPrivateUsage]
+    assert partners == [{"kind": "aspect-partner", "lemma": "zrobić", "aspect": "Perf"}]
+
+
+def test_paradigm_is_split_by_homonym(paradigms: lexicon_pl.Paradigms) -> None:
+    found = paradigms("pies", "NOUN")
+    assert len(found) > 1
+    genitives = [f["form"] for p in found for f in p["forms"] if f["feats"].get("Case") == "Gen"]
+    assert "psa" in genitives
+
+
+def test_verb_paradigm_includes_participles(paradigms: lexicon_pl.Paradigms) -> None:
+    forms = [f for p in paradigms("położyć", "VERB") for f in p["forms"]]
+    assert any(f["form"] == "położony" and f["xpos"].startswith("ppas") for f in forms)
+
+
+def test_pronunciations_are_standard_polish(source: lexicon_pl.Source) -> None:
+    entry: KaikkiEntry = {
+        "word": "dziękuję",
+        "pos": "intj",
+        "sounds": [
+            {"note": "normal speech", "ipa": "/d͡ʑɛŋˈku.jɛ/"},
+            {"note": "prescriptive", "ipa": "/d͡ʑɛŋˈku.jɔw̃/"},
+            {"tags": ["Middle", "Polish"], "ipa": "/d͡ʑɛŋˈku.jɛ̃/"},
+            {"note": "Kuyavia", "ipa": "[d͡ʑɛŋˈku.jɛ]"},
+        ],
+    }
+    said = source.pronounce(entry)
+    assert said is not None and said.upos == ("INTJ",)
+    assert said.pronunciations == [{"ipa": "/d͡ʑɛŋˈku.jɛ/"}]
+
+
+def test_prescriptive_pronunciation_when_it_is_the_only_one(source: lexicon_pl.Source) -> None:
+    entry: KaikkiEntry = {
+        "word": "galaktyka",
+        "pos": "noun",
+        "sounds": [
+            {"note": "prescriptive", "ipa": "/ɡaˈlak.tɘ.ka/"},
+            {"note": "Kuyavia", "ipa": "[ɡaˈlak.tɘ.ka]"},
+        ],
+    }
+    said = source.pronounce(entry)
+    assert said is not None
+    assert said.pronunciations == [{"ipa": "/ɡaˈlak.tɘ.ka/"}]

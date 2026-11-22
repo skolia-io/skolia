@@ -7,9 +7,12 @@ from dataclasses import dataclass
 from itertools import accumulate
 from typing import Protocol
 
+from skolia.lemma import NO_LEMMA_ID, lemma_id
+from skolia.ud import Reading, Upos
+
 from . import reconcile
 from .parsed import ParsedSentence, ParsedToken, ParsedWord
-from .schema import Blob, ExpressionDef, ExpressionMatch, Reading, Sentence, Token, Upos
+from .schema import Blob, ExpressionDef, ExpressionMatch, Sentence, Token
 
 SCHEMA = 2
 """The analysis blob's JSON shape. Documents keep their analysis until ingest redoes them,
@@ -17,8 +20,6 @@ so the reader has to read every schema still stored. Add a field as NotRequired,
 a bump. Bump it only when the shape changes, and keep reading the older schema in the
 reader until a batch re-ingest retires it. 1 -> 2: each candidate has its own xpos, and
 a token may have parser (both unused by the reader)."""
-
-NO_LEMMA_ID: set[Upos] = {"PUNCT", "SYM"}
 
 
 def utf16_offsets(text: str) -> list[int]:
@@ -82,12 +83,6 @@ class Language:
     expression_gap: ExpressionGap = no_gaps
     entry_upos: EntryUpos = own_upos
     revise: Revise = no_revision
-
-
-def lemma_id(lang: str, lemma: str | None, upos: Upos) -> str | None:
-    if not lemma or upos in NO_LEMMA_ID:
-        return None
-    return f"{lang}:{lemma}:{upos}"
 
 
 def match_expressions(

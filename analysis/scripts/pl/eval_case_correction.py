@@ -11,9 +11,9 @@ import sys
 from dataclasses import replace
 from pathlib import Path
 
+from skolia.pl.valency import Valency
 from skolia_analysis import conllu
 from skolia_analysis.lang.pl import plugin as pl
-from skolia_analysis.lang.pl.valency import Valency
 from skolia_analysis.parsed import Parser
 from skolia_analysis.schema import Blob
 from skolia_analysis.treebank import CachedParser, gold_text

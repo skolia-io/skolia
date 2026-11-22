@@ -8,7 +8,7 @@ from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from typing import Protocol
 
-from .schema import Deprel, Feats, Upos
+from skolia.ud import Deprel, Feats, Upos
 
 
 @dataclass(frozen=True, slots=True)

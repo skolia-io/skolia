@@ -11,7 +11,7 @@ _default:
     @just --list
 
 # Typecheck and lint everything
-check: (lint "api") (lint "e2e") (lint "ingest") (lint "lexicon-api") (lint "oauth-proxy") (lint "reader") (lint "lib/ts") (lint "util") (lint "analysis") (lint "terraform")
+check: (lint "api") (lint "e2e") (lint "ingest") (lint "lexicon-api") (lint "oauth-proxy") (lint "reader") (lint "lib/ts") (lint "util") (lint "analysis") (lint "lexicon") (lint "lib/py") (lint "terraform")
 
 # One project's checks and tests, CI's check job for it: a workspace package's directory, analysis or terraform (infra/plan.py projects)
 check-project project: (lint project) && (unit project)
@@ -23,11 +23,16 @@ lint project:
     #!/usr/bin/env bash
     set -euo pipefail
     case {{ project }} in
-      analysis)
-        cd analysis
-        uv run --locked ruff check . ../infra/*.py
-        uv run --locked ruff format --check . ../infra/*.py
+      analysis | lexicon | lib/py)
+        cd {{ project }}
+        uv run --locked ruff check .
+        uv run --locked ruff format --check .
         uv run pyright
+        # The infrastructure scripts' Ruff runs with the analysis's
+        if [ {{ project }} = analysis ]; then
+          uv run --locked ruff check ../infra/*.py
+          uv run --locked ruff format --check ../infra/*.py
+        fi
         ;;
       terraform)
         pnpm exec oxfmt --check infra
@@ -52,7 +57,7 @@ unit project:
     #!/usr/bin/env bash
     set -euo pipefail
     case {{ project }} in
-      analysis) cd analysis && uv run pytest -q ;;
+      analysis | lexicon | lib/py) cd {{ project }} && uv run pytest -q ;;
       terraform) ;;
       *) pnpm --filter ./{{ project }} run --if-present test ;;
     esac
@@ -60,7 +65,7 @@ unit project:
 # Format everything just check checks the format of
 fmt:
     pnpm exec oxfmt --write api e2e ingest lexicon-api oauth-proxy reader lib/ts util infra package.json .oxfmtrc.json .oxlintrc.json
-    cd analysis && uv run --locked ruff format . ../infra/*.py
+    uv run --locked ruff format analysis lexicon lib/py infra/*.py
     terraform -chdir=infra fmt -recursive
 
 # Lint a Rust crate or workspace, including tests and examples
@@ -69,7 +74,7 @@ lint-rust manifest="Cargo.toml":
     cargo clippy --manifest-path "$1" --workspace --all-targets --all-features -- -D warnings -D clippy::pedantic
 
 # Unit tests, and the built Worker's Durable Object in workerd
-test: build (unit "api") (unit "e2e") (unit "ingest") (unit "lexicon-api") (unit "oauth-proxy") (unit "reader") (unit "lib/ts") (unit "util") (unit "analysis")
+test: build (unit "api") (unit "e2e") (unit "ingest") (unit "lexicon-api") (unit "oauth-proxy") (unit "reader") (unit "lib/ts") (unit "util") (unit "analysis") (unit "lexicon") (unit "lib/py")
 
 # Screenshots of the reader's pages (reader/screenshots) in Playwright's Linux image, so they come
 # out the same on a Mac and in CI. --update-snapshots accepts what changed. --ipc=host, as
@@ -173,7 +178,7 @@ lexicon-cli lang *args:
     if [ "$#" -eq 0 ]; then
       printf '%s\n' "$out/$lang.sqlite"
     else
-      uv run --project analysis --locked skolia-lexicon --db "$out/$lang.sqlite" "$@"
+      uv run --project lexicon --locked skolia-lexicon --db "$out/$lang.sqlite" "$@"
     fi
 
 # Load each language's lexicon (staging, production, pr-N or local) from its Nix build, into a D1 database
