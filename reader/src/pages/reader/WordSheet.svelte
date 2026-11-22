@@ -122,11 +122,11 @@
     // A diagram needs the height on a phone
     if (view === "sentence") expanded = true;
   }
-  /** The word whose full lists are shown: another word starts with them folded. */
-  let sensesFor = $state.raw<WordPiece | null>(null);
-  let usesFor = $state.raw<WordPiece | null>(null);
-  const allSenses = $derived(sensesFor === piece);
-  const allUses = $derived(usesFor === piece);
+  /** The id of the word whose full lists are shown: another word starts with them folded. */
+  let sensesFor = $state<number | null>(null);
+  let usesFor = $state<number | null>(null);
+  const allSenses = $derived(sensesFor === piece.id);
+  const allUses = $derived(usesFor === piece.id);
   const SHOWN_USES = 5;
 
   /** "kogoś/czegoś [gen.]" -> the words, and the bracketed labels to style apart. */
@@ -571,7 +571,7 @@
             {/each}
           </ol>
           {#if word.senses.length > SHOWN_SENSES}
-            <Button variant="link" onclick={() => (sensesFor = allSenses ? null : piece)}>
+            <Button variant="link" onclick={() => (sensesFor = allSenses ? null : piece.id)}>
               {allSenses ? "Fewer meanings" : `All ${word.senses.length} meanings`}
             </Button>
           {/if}
@@ -618,7 +618,7 @@
               {/each}
             </ul>
             {#if word.uses.length > SHOWN_USES}
-              <Button variant="link" onclick={() => (usesFor = allUses ? null : piece)}>
+              <Button variant="link" onclick={() => (usesFor = allUses ? null : piece.id)}>
                 {allUses ? "Fewer" : `All ${word.uses.length} uses`}
               </Button>
             {/if}
