@@ -6,6 +6,7 @@ wrangler dev and on Cloudflare.
   SKOLIA_LANGS         languages to ingest, comma-separated, e.g. pl,en
   SKOLIA_DATA          optional language data directory (pl: pl-valency.json)
   SKOLIA_IMAGE         the container's image, named in each job's attempts; optional
+  SKOLIA_TORCH_THREADS PyTorch's threads; default one per CPU the container may use
   LOG_FORMAT           json for JSON Lines, otherwise logfmt
 """
 
@@ -23,6 +24,7 @@ from skolia.log import configure_logging
 from .. import lang
 from ..plugin import Analyzer, Options
 from .blobs import HttpBlobs
+from .cpus import set_torch_threads
 from .http import HttpJobs, serve
 from .worker import Ingester
 
@@ -77,6 +79,7 @@ def ingest(queue: HttpJobs) -> None:
     unknown = set(codes) - set(lang.LANGS)
     if unknown:
         sys.exit(f"skolia-ingest: unknown languages in SKOLIA_LANGS: {', '.join(sorted(unknown))}")
+    set_torch_threads()
     started = perf_counter()
     analyzers = {code: analyzer(code, data) for code in codes}
     log.info("loaded analyzers in %.2f s", perf_counter() - started)
