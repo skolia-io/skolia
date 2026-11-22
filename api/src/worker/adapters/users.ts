@@ -1,6 +1,5 @@
 import type {
   CardCounts,
-  CardGroup,
   Card,
   CardId,
   CardKey,
@@ -16,7 +15,8 @@ import type {
   ReadingKey,
   ReviewRequest,
   Settings,
-  CardState,
+  LemmaId,
+  WordState,
 } from "@skolia/shared/api";
 import type { PageRequest } from "@skolia/shared/page";
 import type { CardOutcome, DueCards, ReviewOutcome, StoredPosition, RateAction, RateOutcome, UserData } from "../../ports/users.ts";
@@ -30,15 +30,8 @@ export class DurableObjectUsers implements UserData {
     this.users = users;
   }
 
-  async due(
-    userId: UserId,
-    lang: Lang,
-    now: Timestamp,
-    dayStart: Timestamp,
-    limit: number,
-    group: CardGroup | undefined,
-  ): Promise<DueCards> {
-    return this.users.getByName(userId).due(lang, now, dayStart, limit, group);
+  async due(userId: UserId, lang: Lang, now: Timestamp, dayStart: Timestamp, limit: number): Promise<DueCards> {
+    return this.users.getByName(userId).due(lang, now, dayStart, limit);
   }
 
   async counts(userId: UserId, now: Timestamp, dayStart: Timestamp): Promise<CardCounts[]> {
@@ -57,8 +50,8 @@ export class DurableObjectUsers implements UserData {
     return this.users.getByName(userId).cards(listing);
   }
 
-  async setCardState(userId: UserId, cardId: CardId, state: CardState): Promise<boolean> {
-    return this.users.getByName(userId).setCardState(cardId, state);
+  async setWordState(userId: UserId, lemmaId: LemmaId, state: WordState): Promise<boolean> {
+    return this.users.getByName(userId).setWordState(lemmaId, state);
   }
 
   async deleteCard(userId: UserId, cardId: CardId): Promise<boolean> {

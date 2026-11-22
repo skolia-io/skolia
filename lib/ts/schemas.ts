@@ -2,9 +2,8 @@ import * as z from "zod";
 import {
   ANNOTATION_BATCH,
   ANNOTATION_PAGE,
-  CARD_GROUPS,
   CARD_PAGE,
-  CARD_STATES,
+  WORD_STATES,
   DOCUMENT_PAGE,
   TAG_PAGE,
   LANGS,
@@ -70,9 +69,8 @@ export const LemmaId = z
 
 const PerDay = z.number().int().min(0).max(MAX_NEW_PER_DAY);
 
-/** newLemmasPerDay: new words a day, each with all its word cards; newFormsPerDay: new
- * cloze cards a day; formsWithWords: one review session for both, or one for each. */
-export const Settings = z.object({ newLemmasPerDay: PerDay, newFormsPerDay: PerDay, formsWithWords: z.boolean() });
+/** newLemmasPerDay: new words a day, each with all its cards. */
+export const Settings = z.object({ newLemmasPerDay: PerDay });
 
 /** An ISO 8601 UTC time as a client sends it, any precision; timestamp(new Date(t)) for
  * the stored form. */
@@ -116,8 +114,7 @@ export const ReadingKey = z.tuple([Timestamp, DocumentId]).readonly();
 export const ReadingListDocumentsQuery = pageQuery(ReadingKey, READING_PAGE).extend({ lang: Lang.optional() });
 
 export const CountsQuery = z.object({ dayStart: IsoTime });
-/** group: only its cards; without one, both groups'. */
-export const DueQuery = z.object({ lang: Lang, dayStart: IsoTime, group: z.enum(CARD_GROUPS).optional() });
+export const DueQuery = z.object({ lang: Lang, dayStart: IsoTime });
 
 export const Cloze = z.object({
   documentId: DocumentId,
@@ -163,23 +160,27 @@ export const NewCard = z
   )
   .meta({ id: "NewCard" });
 
-export const CardState = z.enum(CARD_STATES).meta({ id: "CardState" });
+/** A card's words, one or more. */
+const CardWords = z.array(LemmaId).min(1);
 
-/** What changes in a card: its state. */
-export const CardChange = z.object({ state: CardState }).meta({ id: "CardChange" });
+export const WordState = z.enum(WORD_STATES).meta({ id: "WordState" });
+
+/** What changes in a word: its state. */
+export const WordChange = z.object({ state: WordState }).meta({ id: "WordChange" });
 
 export const ScheduleStatus = z.enum(SCHEDULE_STATUSES);
 
-/** A card as the list of them has it. state: whether it's reviewed (learning) or known.
+/** A card as the list of them has it. lemmaIds: its words. state: learning while one of its
+ * words is, so it's reviewed; known once all are.
  * scheduledDays: the interval its last review gave it. lastReviewedAt: when it was last
  * answered, by the reviewer's clock. */
 export const Card = z
   .intersection(
     z.object({
       id: CardId,
-      lemmaId: LemmaId,
+      lemmaIds: CardWords,
       createdAt: Timestamp,
-      state: CardState,
+      state: WordState,
       scheduleStatus: ScheduleStatus,
       dueAt: Timestamp,
       scheduledDays: z.number().min(0),
@@ -214,7 +215,7 @@ export const CardsQuery = pageQuery(CardKey, CARD_PAGE)
     return lemmaId !== undefined ? { lemmaId, after: newest, limit } : { lang: lang!, after: newest, limit };
   });
 
-const ScheduledFields = z.object({ id: CardId, lemmaId: LemmaId, isNew: z.boolean(), dueAt: Timestamp });
+const ScheduledFields = z.object({ id: CardId, lemmaIds: CardWords, isNew: z.boolean(), dueAt: Timestamp });
 
 export const ScheduledCard = z.intersection(ScheduledFields, CardContent);
 
@@ -671,17 +672,16 @@ export const Lookup = z.object({ entries: z.array(gen.Entry), featureSets: z.par
     'The entries asked for that the lexicon has, as the lexicon serves them. Their paradigms\' forms point into feature sets, ["psa", [50, 51]], which featureSets has by language.',
 });
 
-export const DueCard = z.intersection(ScheduledFields.extend({ entry: gen.Entry.nullable() }), CardContent).meta({ id: "DueCard" });
+/** entries: its words' lexicon entries, those the lexicon has, in the order of lemmaIds. */
+export const DueCard = z.intersection(ScheduledFields.extend({ entries: z.array(gen.Entry) }), CardContent).meta({ id: "DueCard" });
 
 const Count = z.number().int().min(0);
 
-export const NewLeft = z.object({ words: Count, forms: Count }) satisfies z.ZodType<Record<(typeof CARD_GROUPS)[number], number>>;
+/** newLeft: how many new words are left of today's allowance. */
+export const Due = z.object({ cards: z.array(DueCard), newLeft: Count, featureSets: FeatureSets }).meta({ id: "Due" });
 
-export const Due = z.object({ cards: z.array(DueCard), newLeft: NewLeft, featureSets: FeatureSets }).meta({ id: "Due" });
-
-export const Tally = z.object({ due: Count, new: Count });
-
-export const CardCounts = z.object({ lang: Lang, words: Tally, forms: Tally }).meta({ id: "CardCounts" });
+/** new: new words, as newLeft counts them. */
+export const CardCounts = z.object({ lang: Lang, due: Count, new: Count }).meta({ id: "CardCounts" });
 
 export const Reviewed = z.object({ cardId: CardId, dueAt: Timestamp });
 

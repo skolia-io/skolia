@@ -5,13 +5,12 @@ import {
   MAX_LOOKUP,
   timestamp,
   type CardCounts,
-  type CardGroup,
   type Card,
   type CardId,
   type CardKey,
   type CardListing,
   type CardMade,
-  type CardState,
+  type LemmaId,
   type Paginated,
   type Due,
   type FeatureSets,
@@ -23,6 +22,7 @@ import {
   type Settings,
   type Timestamp,
   type Identity,
+  type WordState,
 } from "@skolia/shared/api";
 import type { Entry } from "@skolia/shared/schema";
 import type { Clock } from "../ports/index.ts";
@@ -42,15 +42,13 @@ export async function counts(deps: { users: UserCards } & Clock, user: Identity,
   return ok(await deps.users.counts(user.id, timestamp(deps.now()), stored(dayStart)));
 }
 
-/** group: only its cards; undefined, both groups'. */
 export async function due(
   deps: { users: UserCards; lexicon: Lexicon } & Clock,
   user: Identity,
   lang: Lang,
   dayStart: string,
-  group: CardGroup | undefined,
 ): Promise<Ok<Due>> {
-  const { cards, newLeft } = await deps.users.due(user.id, lang, timestamp(deps.now()), stored(dayStart), MAX_DUE, group);
+  const { cards, newLeft } = await deps.users.due(user.id, lang, timestamp(deps.now()), stored(dayStart), MAX_DUE);
   return ok({ ...(await withEntries(deps.lexicon, lang, cards)), newLeft });
 }
 
@@ -108,13 +106,14 @@ export async function cards(deps: { users: UserCards }, user: Identity, listing:
   return ok(await deps.users.cards(user.id, listing));
 }
 
-export async function setCardState(
+/** known takes the word's cards out of reviews; learning puts them back where they were. */
+export async function setWordState(
   deps: { users: UserCards },
   user: Identity,
-  cardId: CardId,
-  state: CardState,
+  lemmaId: LemmaId,
+  state: WordState,
 ): Promise<NoContent | Failed<404>> {
-  return (await deps.users.setCardState(user.id, cardId, state)) ? NO_CONTENT : fail(404, "no such card");
+  return (await deps.users.setWordState(user.id, lemmaId, state)) ? NO_CONTENT : fail(404, "no such word");
 }
 
 /** Any kind of card, with its reviews. */
@@ -140,11 +139,14 @@ function stored(time: string): Timestamp {
 async function withEntries(lexicon: Lexicon, lang: Lang, cards: ScheduledCard[]): Promise<Pick<Due, "cards" | "featureSets">> {
   const entries = new Map<string, Entry>();
   const featureSets: FeatureSets = {};
-  const ids = [...new Set(cards.map((card) => card.lemmaId))];
+  const ids = [...new Set(cards.flatMap((card) => card.lemmaIds))];
   for (let i = 0; i < ids.length; i += MAX_LOOKUP) {
     const found = await lexicon.entries(ids.slice(i, i + MAX_LOOKUP));
     for (const entry of found.entries) entries.set(entry.lemma_id, entry);
     Object.assign(featureSets, found.featureSets[lang]);
   }
-  return { cards: cards.map((card) => ({ ...card, entry: entries.get(card.lemmaId) ?? null })), featureSets };
+  return {
+    cards: cards.map((card) => ({ ...card, entries: card.lemmaIds.flatMap((id) => entries.get(id) ?? []) })),
+    featureSets,
+  };
 }

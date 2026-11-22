@@ -1,6 +1,5 @@
 import type {
   CardCounts,
-  CardGroup,
   Card,
   CardId,
   CardKey,
@@ -11,7 +10,6 @@ import type {
   UserId,
   Lang,
   NewCard,
-  NewLeft,
   ReadingListId,
   ReadingList,
   ReadingKey,
@@ -19,7 +17,8 @@ import type {
   ReviewRequest,
   ScheduledCard,
   Settings,
-  CardState,
+  LemmaId,
+  WordState,
 } from "@skolia/shared/api";
 import type { PageRequest } from "@skolia/shared/page";
 import type * as schemas from "@skolia/shared/schemas";
@@ -28,7 +27,8 @@ import type { RateLimit } from "../rate-limits.ts";
 
 export interface DueCards {
   readonly cards: ScheduledCard[];
-  readonly newLeft: NewLeft;
+  /** New words left of today's allowance. */
+  readonly newLeft: number;
 }
 
 /** out-of-order: answered before the card was made or before its last review.
@@ -42,8 +42,7 @@ export type CardOutcome = { readonly kind: "made" | "had"; readonly cardId: Card
 /** now: the request's time from the API's Clock. dayStart: when the user's day started in
  * their time zone, which is when today's new cards start counting. */
 export interface UserCards {
-  /** group: only its cards; undefined, both groups'. */
-  due(userId: UserId, lang: Lang, now: Timestamp, dayStart: Timestamp, limit: number, group: CardGroup | undefined): Promise<DueCards>;
+  due(userId: UserId, lang: Lang, now: Timestamp, dayStart: Timestamp, limit: number): Promise<DueCards>;
   counts(userId: UserId, now: Timestamp, dayStart: Timestamp): Promise<CardCounts[]>;
   review(userId: UserId, request: ReviewRequest, now: Timestamp): Promise<ReviewOutcome>;
   /** A new card, unless the word had one of its kind, or the text had one at the blank, or
@@ -51,8 +50,8 @@ export interface UserCards {
   makeCard(userId: UserId, card: NewCard, now: Timestamp): Promise<CardOutcome>;
   /** A page of a language's or a word's cards, newest first, or of a text's, by where their blanks start. */
   cards(userId: UserId, listing: CardListing): Promise<Paginated<Card, CardKey>>;
-  /** False if the user has no such card. */
-  setCardState(userId: UserId, cardId: CardId, state: CardState): Promise<boolean>;
+  /** False if the user has no card of the word. */
+  setWordState(userId: UserId, lemmaId: LemmaId, state: WordState): Promise<boolean>;
   /** Deletes the card and its reviews. False if the user has no such card. */
   deleteCard(userId: UserId, cardId: CardId): Promise<boolean>;
 }

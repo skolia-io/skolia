@@ -1,8 +1,8 @@
-// What the signed-in user knows of words, which is their cards: the word sheet asks for its
-// words' cards, makes a word's cards and takes them away, and Review marks a word's cards known.
+// What the signed-in user knows of words: the word sheet asks for its words' cards, makes a
+// word's cards and takes them away, and Review marks a word known.
 import { createMutation, createQuery, mutationOptions } from "@tanstack/svelte-query";
 import { WORD_CARD_KINDS, type Card, type LemmaId } from "@skolia/shared/api";
-import { deleteCard, listWordCards, makeCard, setCardState } from "./api.ts";
+import { deleteCard, listWordCards, makeCard, setWordState } from "./api.ts";
 import { cardsChanged, userQuery } from "./queries.ts";
 
 const WORD_CARDS_KEY = ["me", "cards", "word"] as const;
@@ -10,7 +10,7 @@ const WORD_CARDS_KEY = ["me", "cards", "word"] as const;
 /** Each word's cards, by lemma id. */
 export type WordCards = ReadonlyMap<LemmaId, readonly Card[]>;
 
-/** new: the word has no cards. learning: one of them is reviewed. known: none is. */
+/** new: the word has no cards. learning or known: the word's state, which each of its cards has. */
 export type WordState = "new" | "learning" | "known";
 
 export function wordState(cards: readonly Card[] | undefined): WordState {
@@ -54,12 +54,9 @@ export function createForgetCards() {
   return createMutation(() => forgetMutation);
 }
 
-/** Marks every card of the word known, which takes them out of reviews. */
+/** Marks the word known, which takes its cards out of reviews. */
 const knownMutation = mutationOptions({
-  mutationFn: async (lemmaId: LemmaId) => {
-    const cards = (await listWordCards(lemmaId)) ?? [];
-    await Promise.all(cards.filter((c) => c.state === "learning").map((c) => setCardState(c.id, "known")));
-  },
+  mutationFn: (lemmaId: LemmaId) => setWordState(lemmaId, "known"),
   onSettled: (_done, _error, _lemmaId, _held, { client }) => cardsChanged(client),
 });
 

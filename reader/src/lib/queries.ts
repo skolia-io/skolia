@@ -1,7 +1,7 @@
 // What the reader asks the API for, as TanStack Query options. Keys under "me" are the
 // signed-in user's; signing out forgets everything but who's signed in.
 import { QueryClient, queryOptions, skipToken, type QueryKey } from "@tanstack/svelte-query";
-import type { CardGroup, DocumentId, Lang } from "@skolia/shared/api";
+import type { DocumentId, Lang } from "@skolia/shared/api";
 import { audioAnnotations } from "./annotations.ts";
 import { cardCounts, currentUser, dueCards, getConfig, getIngest, getSettings, getVersion, listAnnotations, listTags } from "./api.ts";
 import { shuffled } from "./review.ts";
@@ -45,12 +45,12 @@ export const countsQuery = queryOptions({ queryKey: ["me", "cards", "counts"], q
 
 /** A review session's cards, shuffled, taken out as they're reviewed, and asked for afresh
  * only by Check again or by coming back to them. None until there's a language. */
-export function dueQuery(lang: Lang | null, group: CardGroup | null) {
+export function dueQuery(lang: Lang | null) {
   return queryOptions({
-    queryKey: ["me", "cards", "due", lang, group],
+    queryKey: ["me", "cards", "due", lang],
     queryFn: lang
       ? async () => {
-          const due = await dueCards(lang, group);
+          const due = await dueCards(lang);
           return due && { ...due, cards: shuffled(due.cards) };
         }
       : skipToken,

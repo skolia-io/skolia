@@ -25,7 +25,7 @@ export type CardPage = Paginated<Card, CardKey> & { readonly entries: ReadonlyMa
 
 async function cardPage(client: QueryClient, lang: Lang, after: Cursor<CardKey> | undefined): Promise<CardPage> {
   const page = await listCards(lang, after);
-  const ids = [...new Set(page.items.map((c) => c.lemmaId))];
+  const ids = [...new Set(page.items.flatMap((c) => c.lemmaIds))];
   const langs = [...new Set(ids.map(langOf))];
   async function load() {
     const versions = new Map(

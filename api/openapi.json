@@ -157,51 +157,21 @@
           "lang": {
             "$ref": "#/components/schemas/Lang"
           },
-          "words": {
-            "type": "object",
-            "properties": {
-              "due": {
-                "type": "integer",
-                "minimum": 0,
-                "maximum": 9007199254740991
-              },
-              "new": {
-                "type": "integer",
-                "minimum": 0,
-                "maximum": 9007199254740991
-              }
-            },
-            "required": [
-              "due",
-              "new"
-            ],
-            "additionalProperties": false
+          "due": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
           },
-          "forms": {
-            "type": "object",
-            "properties": {
-              "due": {
-                "type": "integer",
-                "minimum": 0,
-                "maximum": 9007199254740991
-              },
-              "new": {
-                "type": "integer",
-                "minimum": 0,
-                "maximum": 9007199254740991
-              }
-            },
-            "required": [
-              "due",
-              "new"
-            ],
-            "additionalProperties": false
+          "new": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
           }
         },
         "required": [
           "lang",
-          "words",
-          "forms"
+          "due",
+          "new"
         ],
         "additionalProperties": false
       },
@@ -223,24 +193,9 @@
             }
           },
           "newLeft": {
-            "type": "object",
-            "properties": {
-              "words": {
-                "type": "integer",
-                "minimum": 0,
-                "maximum": 9007199254740991
-              },
-              "forms": {
-                "type": "integer",
-                "minimum": 0,
-                "maximum": 9007199254740991
-              }
-            },
-            "required": [
-              "words",
-              "forms"
-            ],
-            "additionalProperties": false
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
           },
           "featureSets": {
             "$ref": "#/components/schemas/FeatureSets"
@@ -261,8 +216,12 @@
               "id": {
                 "$ref": "#/components/schemas/CardId"
               },
-              "lemmaId": {
-                "$ref": "#/components/schemas/LemmaId"
+              "lemmaIds": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/LemmaId"
+                }
               },
               "isNew": {
                 "type": "boolean"
@@ -270,15 +229,11 @@
               "dueAt": {
                 "$ref": "#/components/schemas/Timestamp"
               },
-              "entry": {
-                "anyOf": [
-                  {
-                    "$ref": "#/components/schemas/Entry"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
+              "entries": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Entry"
+                }
               },
               "kind": {
                 "type": "string",
@@ -295,10 +250,10 @@
             },
             "required": [
               "id",
-              "lemmaId",
+              "lemmaIds",
               "isNew",
               "dueAt",
-              "entry",
+              "entries",
               "kind",
               "data"
             ],
@@ -310,8 +265,12 @@
               "id": {
                 "$ref": "#/components/schemas/CardId"
               },
-              "lemmaId": {
-                "$ref": "#/components/schemas/LemmaId"
+              "lemmaIds": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/LemmaId"
+                }
               },
               "isNew": {
                 "type": "boolean"
@@ -319,15 +278,11 @@
               "dueAt": {
                 "$ref": "#/components/schemas/Timestamp"
               },
-              "entry": {
-                "anyOf": [
-                  {
-                    "$ref": "#/components/schemas/Entry"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
+              "entries": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Entry"
+                }
               },
               "kind": {
                 "type": "string",
@@ -394,10 +349,10 @@
             },
             "required": [
               "id",
-              "lemmaId",
+              "lemmaIds",
               "isNew",
               "dueAt",
-              "entry",
+              "entries",
               "kind",
               "data"
             ],
@@ -2346,14 +2301,18 @@
               "id": {
                 "$ref": "#/components/schemas/CardId"
               },
-              "lemmaId": {
-                "$ref": "#/components/schemas/LemmaId"
+              "lemmaIds": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/LemmaId"
+                }
               },
               "createdAt": {
                 "$ref": "#/components/schemas/Timestamp"
               },
               "state": {
-                "$ref": "#/components/schemas/CardState"
+                "$ref": "#/components/schemas/WordState"
               },
               "scheduleStatus": {
                 "type": "string",
@@ -2395,7 +2354,7 @@
             },
             "required": [
               "id",
-              "lemmaId",
+              "lemmaIds",
               "createdAt",
               "state",
               "scheduleStatus",
@@ -2413,14 +2372,18 @@
               "id": {
                 "$ref": "#/components/schemas/CardId"
               },
-              "lemmaId": {
-                "$ref": "#/components/schemas/LemmaId"
+              "lemmaIds": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/LemmaId"
+                }
               },
               "createdAt": {
                 "$ref": "#/components/schemas/Timestamp"
               },
               "state": {
-                "$ref": "#/components/schemas/CardState"
+                "$ref": "#/components/schemas/WordState"
               },
               "scheduleStatus": {
                 "type": "string",
@@ -2512,7 +2475,7 @@
             },
             "required": [
               "id",
-              "lemmaId",
+              "lemmaIds",
               "createdAt",
               "state",
               "scheduleStatus",
@@ -2641,18 +2604,18 @@
         ],
         "additionalProperties": false
       },
-      "CardChange": {
+      "WordChange": {
         "type": "object",
         "properties": {
           "state": {
-            "$ref": "#/components/schemas/CardState"
+            "$ref": "#/components/schemas/WordState"
           }
         },
         "required": [
           "state"
         ]
       },
-      "CardState": {
+      "WordState": {
         "type": "string",
         "enum": [
           "learning",
@@ -3465,7 +3428,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Due and new cards by group for each language with cards",
+            "description": "Due cards, and new cards that would come up today, for each language with words",
             "content": {
               "application/json": {
                 "schema": {
@@ -3518,7 +3481,7 @@
           "Cards"
         ],
         "summary": "Cards to review now",
-        "description": "Cards due now, then new cards up to what's left of today's allowances.",
+        "description": "Cards due now, then new cards: those whose words are all started, and those of as many new words as are left of today's allowance. A card is reviewed while one of its words is being learnt.",
         "security": [
           {
             "session": []
@@ -3576,17 +3539,6 @@
             },
             "required": true,
             "description": "An ISO 8601 UTC time, any precision"
-          },
-          {
-            "in": "query",
-            "name": "group",
-            "schema": {
-              "type": "string",
-              "enum": [
-                "words",
-                "forms"
-              ]
-            }
           }
         ]
       }
@@ -3730,7 +3682,7 @@
           "Cards"
         ],
         "summary": "A page of the user's cards",
-        "description": "A language's (lang) or a word's (lemmaId), newest first; or a text's cloze cards (documentId), in the order of the text. One of the three, and a cursor the same kind of list gave. What the user knows of a word is its cards' states.",
+        "description": "A language's (lang) or a word's (lemmaId), newest first; or a text's cloze cards (documentId), in the order of the text. One of the three, and a cursor the same kind of list gave. A card's state is its word's.",
         "security": [
           {
             "session": []
@@ -3836,7 +3788,7 @@
           "Cards"
         ],
         "summary": "Make a card",
-        "description": "A word's recognition or production card, one of each per word; or a cloze card, a sentence from a text the user sees with the word blanked out, one per blank. A new card is learning.",
+        "description": "A word's recognition or production card, one of each per word; or a cloze card, a sentence from a text the user sees with the word blanked out, one per blank. Adds the word, learning, if the user hadn't it.",
         "security": [
           {
             "session": []
@@ -3919,14 +3871,14 @@
         }
       }
     },
-    "/api/me/cards/{cardId}": {
+    "/api/me/words/{lemmaId}": {
       "patch": {
-        "operationId": "patchApiMeCardsByCardId",
+        "operationId": "patchApiMeWordsByLemmaId",
         "tags": [
           "Cards"
         ],
-        "summary": "Change a card's state",
-        "description": "known takes it out of reviews; learning puts it back where it was in its schedule.",
+        "summary": "Change a word's state",
+        "description": "A word is one the user has cards of. known takes its cards out of reviews; learning puts them back where each was in its schedule.",
         "security": [
           {
             "session": []
@@ -3960,7 +3912,7 @@
             }
           },
           "404": {
-            "description": "No such card",
+            "description": "The user has no cards of the word",
             "content": {
               "application/json": {
                 "schema": {
@@ -3973,11 +3925,12 @@
         "parameters": [
           {
             "in": "path",
-            "name": "cardId",
+            "name": "lemmaId",
             "schema": {
-              "$ref": "#/components/schemas/CardId"
+              "$ref": "#/components/schemas/LemmaId"
             },
-            "required": true
+            "required": true,
+            "description": "{lang}:{lemma}:{upos}, pl:pies:NOUN"
           }
         ],
         "requestBody": {
@@ -3985,12 +3938,14 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/CardChange"
+                "$ref": "#/components/schemas/WordChange"
               }
             }
           }
         }
-      },
+      }
+    },
+    "/api/me/cards/{cardId}": {
       "delete": {
         "operationId": "deleteApiMeCardsByCardId",
         "tags": [
@@ -4994,20 +4949,10 @@
                       "type": "integer",
                       "minimum": 0,
                       "maximum": 1000
-                    },
-                    "newFormsPerDay": {
-                      "type": "integer",
-                      "minimum": 0,
-                      "maximum": 1000
-                    },
-                    "formsWithWords": {
-                      "type": "boolean"
                     }
                   },
                   "required": [
-                    "newLemmasPerDay",
-                    "newFormsPerDay",
-                    "formsWithWords"
+                    "newLemmasPerDay"
                   ],
                   "additionalProperties": false
                 }
@@ -5076,20 +5021,10 @@
                     "type": "integer",
                     "minimum": 0,
                     "maximum": 1000
-                  },
-                  "newFormsPerDay": {
-                    "type": "integer",
-                    "minimum": 0,
-                    "maximum": 1000
-                  },
-                  "formsWithWords": {
-                    "type": "boolean"
                   }
                 },
                 "required": [
-                  "newLemmasPerDay",
-                  "newFormsPerDay",
-                  "formsWithWords"
+                  "newLemmasPerDay"
                 ]
               }
             }

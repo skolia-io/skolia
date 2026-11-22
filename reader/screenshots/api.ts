@@ -259,7 +259,7 @@ function clozeOf(sentence: number, index: number): Cloze {
 const cards: readonly ScheduledCard[] = [
   {
     id: CardId.parse("00000000-0000-4000-8000-000000000001"),
-    lemmaId: LemmaId.parse("pl:sklep:NOUN"),
+    lemmaIds: [LemmaId.parse("pl:sklep:NOUN")],
     kind: "recognition",
     isNew: false,
     dueAt: Timestamp.parse("2026-11-09T08:00:00.000Z"),
@@ -267,7 +267,7 @@ const cards: readonly ScheduledCard[] = [
   },
   {
     id: CardId.parse("00000000-0000-4000-8000-000000000002"),
-    lemmaId: LemmaId.parse("pl:wojna:NOUN"),
+    lemmaIds: [LemmaId.parse("pl:wojna:NOUN")],
     kind: "production",
     isNew: true,
     dueAt: Timestamp.parse("2026-11-09T08:00:00.000Z"),
@@ -276,7 +276,7 @@ const cards: readonly ScheduledCard[] = [
   // kolację, in "schodzą się na kolację": na takes the accusative for where to
   {
     id: CardId.parse("00000000-0000-4000-8000-000000000003"),
-    lemmaId: LemmaId.parse("pl:kolacja:NOUN"),
+    lemmaIds: [LemmaId.parse("pl:kolacja:NOUN")],
     kind: "cloze",
     isNew: true,
     dueAt: Timestamp.parse("2026-11-09T08:00:00.000Z"),
@@ -332,7 +332,7 @@ function deps(signedIn: boolean, annotations: readonly Annotation[]): Deps {
     documents
       .filter((d) => d.visibility === "public" || d.user === viewer)
       .map((d) => ({ ...d, status: statuses.find(([id]) => id === d.id)?.[1] ?? null }));
-  let settings: Settings = { newLemmasPerDay: 10, newFormsPerDay: 5, formsWithWords: true };
+  let settings: Settings = { newLemmasPerDay: 10 };
   let kept = listedCards;
   let readingLists: readonly ReadingList[] = [
     "To read",
@@ -371,11 +371,8 @@ function deps(signedIn: boolean, annotations: readonly Annotation[]): Deps {
       user: async () => (signedIn ? user : null),
     },
     users: {
-      due: async (_userId, lang: Lang, _now, _dayStart, _limit, group) => ({
-        cards: lang === "pl" ? cards.filter((c) => group === undefined || (c.kind === "cloze") === (group === "forms")) : [],
-        newLeft: { words: 4, forms: 3 },
-      }),
-      counts: async () => [{ lang: "pl", words: { due: 2, new: 4 }, forms: { due: 0, new: 2 } }],
+      due: async (_userId, lang: Lang) => ({ cards: lang === "pl" ? [...cards] : [], newLeft: 4 }),
+      counts: async () => [{ lang: "pl", due: 2, new: 6 }],
       review: async (_userId, request) => ({
         kind: "reviewed",
         cardId: request.cardId,
@@ -387,13 +384,13 @@ function deps(signedIn: boolean, annotations: readonly Annotation[]): Deps {
           "documentId" in listing
             ? []
             : "lemmaId" in listing
-              ? kept.filter((c) => c.lemmaId === listing.lemmaId)
+              ? kept.filter((c) => c.lemmaIds.includes(listing.lemmaId))
               : listing.lang === "pl"
                 ? kept
                 : [],
         next: null,
       }),
-      setCardState: async () => true,
+      setWordState: async () => true,
       deleteCard: async (_userId, cardId) => {
         const had = kept.some((c) => c.id === cardId);
         kept = kept.filter((c) => c.id !== cardId);

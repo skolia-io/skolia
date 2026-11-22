@@ -16,12 +16,10 @@ import {
   type ApiError,
   type Card,
   type CardCounts,
-  type CardGroup,
   type CardId,
   type CardKey,
   type CardMade,
   type Config,
-  type CardState,
   type DocumentId,
   type DocumentKey,
   type TagKey,
@@ -45,6 +43,7 @@ import {
   type Reviewed,
   type Settings,
   type User,
+  type WordState,
 } from "@skolia/shared/api";
 import { allPages, type Cursor } from "@skolia/shared/page";
 import { SCHEMA, type Blob, type Upos } from "@skolia/shared/schema";
@@ -221,10 +220,9 @@ export async function cardCounts(now = new Date()): Promise<CardCounts[] | null>
   return response.json();
 }
 
-/** A language's cards to review: one group's, or with no group both. */
-export async function dueCards(lang: Lang, group: CardGroup | null, now = new Date()): Promise<Due | null> {
-  const dayStart = dayStartOf(now);
-  const response = await api.me.cards.due.$get({ query: group ? { lang, dayStart, group } : { lang, dayStart } });
+/** A language's cards to review. */
+export async function dueCards(lang: Lang, now = new Date()): Promise<Due | null> {
+  const response = await api.me.cards.due.$get({ query: { lang, dayStart: dayStartOf(now) } });
   if (response.status === 401) return null;
   if (!response.ok) throw await failure(response);
   // Hono's JSON type makes the entries' optional fields `| undefined`, which
@@ -273,8 +271,9 @@ export async function listCards(lang: Lang, after?: Cursor<CardKey>): Promise<Pa
   return response.json();
 }
 
-export async function setCardState(cardId: CardId, state: CardState): Promise<void> {
-  const response = await api.me.cards[":cardId"].$patch({ param: { cardId }, json: { state } });
+/** known takes the word's cards out of reviews; learning puts them back. */
+export async function setWordState(lemmaId: LemmaId, state: WordState): Promise<void> {
+  const response = await api.me.words[":lemmaId"].$patch({ param: { lemmaId: lemmaParam(lemmaId) }, json: { state } });
   if (!response.ok) throw await failure(response);
 }
 
