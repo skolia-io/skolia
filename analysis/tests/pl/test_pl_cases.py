@@ -158,6 +158,19 @@ def test_subject_predicate_possessive_vocative_coordination() -> None:
     assert reason_of(listing, 1) == ("coordination", 0, None)
 
 
+def test_genitive_after_być_describes() -> None:
+    # Jakiego koloru są ściany?
+    jakiego = tok("Jakiego", "jaki", "DET", 1, "det")
+    jakiego["feats"] = {"Case": "Gen", "Number": "Sing", "Gender": "Masc", "PronType": "Int"}
+    tokens = [
+        jakiego,
+        noun("koloru", "kolor", None, "root", "Gen"),
+        tok("są", "być", "AUX", 1, "cop"),
+        noun("ściany", "ściana", 1, "nsubj", "Nom"),
+    ]
+    assert reasons(tokens)[:2] == [("Jakiego", "agreement", 1), ("koloru", "description", 2)]
+
+
 def reading(lemma: str, case: Case, upos: Upos = "NOUN") -> Reading:
     feats: Feats = {"Case": case, "Number": "Sing", "Gender": "Masc", "Animacy": "Nhum"}
     return {"lemma": lemma, "upos": upos, "xpos": f"x:{case.lower()}", "feats": feats}

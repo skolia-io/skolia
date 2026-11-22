@@ -267,6 +267,7 @@ const RULE: Record<CaseRule, string> = {
   partitive: "partitive",
   subject: "subject",
   predicate: "predicate",
+  description: "description",
   possessive: "possessive",
   "noun-complement": "complement",
   "verbal-noun": "verbal noun",

@@ -60,6 +60,8 @@ export function explainCase(tokens: Token[], index: number, depth = 0): CaseExpl
         return `It's the subject of ${word}, and subjects are nominative.`;
       case "predicate":
         return `After ${governor}, a noun that says what the subject is goes in the instrumental (jest lekarzem).`;
+      case "description":
+        return `After ${governor}, a genitive says what the subject is like (jest średniego wzrostu, jakiego koloru?).`;
       case "possessive":
         return `It belongs to ${word}: "of" is the genitive (dom brata).`;
       case "noun-complement":

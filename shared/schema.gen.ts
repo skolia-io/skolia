@@ -106,7 +106,7 @@ export interface Reading {
   feats: Feats;
 }
 
-export type CaseRule = "vocative" | "preposition" | "agreement" | "numeral" | "verb" | "negation" | "structural" | "partitive" | "subject" | "predicate" | "possessive" | "noun-complement" | "verbal-noun" | "coordination" | "instrumental";
+export type CaseRule = "vocative" | "preposition" | "agreement" | "numeral" | "verb" | "negation" | "structural" | "partitive" | "subject" | "predicate" | "description" | "possessive" | "noun-complement" | "verbal-noun" | "coordination" | "instrumental";
 
 export interface CaseReason {
   rule: CaseRule;

@@ -110,7 +110,7 @@ export const Reading: z.ZodType<types.Reading> = /* @__PURE__ */ (() => z.object
   feats: Feats,
 }).meta({ id: "Reading" }))();
 
-export const CaseRule: z.ZodType<types.CaseRule> = /* @__PURE__ */ (() => z.enum(["vocative", "preposition", "agreement", "numeral", "verb", "negation", "structural", "partitive", "subject", "predicate", "possessive", "noun-complement", "verbal-noun", "coordination", "instrumental"]).meta({ id: "CaseRule" }))();
+export const CaseRule: z.ZodType<types.CaseRule> = /* @__PURE__ */ (() => z.enum(["vocative", "preposition", "agreement", "numeral", "verb", "negation", "structural", "partitive", "subject", "predicate", "description", "possessive", "noun-complement", "verbal-noun", "coordination", "instrumental"]).meta({ id: "CaseRule" }))();
 
 export const CaseReason: z.ZodType<types.CaseReason> = /* @__PURE__ */ (() => z.object({
   rule: CaseRule,
