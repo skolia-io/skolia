@@ -1,6 +1,6 @@
-import type { User } from "@skolia/shared/api";
+import type { Identity } from "@skolia/shared/api";
 
 export interface Auth {
   handle(request: Request): Promise<Response>;
-  user(headers: Headers): Promise<User | null>;
+  user(headers: Headers): Promise<Identity | null>;
 }

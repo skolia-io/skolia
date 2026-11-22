@@ -17,7 +17,7 @@ import {
   type QueuePlace,
   type TagKey,
   type Tags,
-  type User,
+  type Identity,
 } from "@skolia/shared/api";
 import type { PageRequest } from "@skolia/shared/page";
 import { PART_ENCODING, docId, analysisKey, statusKey, textKey, versionsKey } from "@skolia/shared/keys";
@@ -35,6 +35,10 @@ import type {
   StoredDocument,
 } from "../ports/documents.ts";
 import type { IngestJobs, JobQueue } from "../ports/ingest.ts";
+import type { Roles } from "../ports/roles.ts";
+import type { UserRateLimits } from "../ports/users.ts";
+import type { RateLimit } from "../rate-limits.ts";
+import { overLimit } from "./rate-limits.ts";
 import { NO_CONTENT, fail, ok, type BlobResult, type Failed, type Json, type NoContent, type NotModified, type Ok } from "./result.ts";
 
 const logger = log("documents");
@@ -49,7 +53,7 @@ type DocumentEditDeps = DocumentDetailDeps & { documents: DocumentEntries & Docu
  * the stored status projection; opening one (get) queues it again if it needs it. */
 export async function list(
   deps: { documents: DocumentLookup },
-  viewer: User | null,
+  viewer: Identity | null,
   filter: DocumentFilter,
   page: PageRequest<DocumentKey>,
 ): Promise<Ok<Paginated<DocumentSummary, DocumentKey>> | Failed<401>> {
@@ -58,14 +62,14 @@ export async function list(
   return ok({ items: items.map((record) => listed(record, viewer)), next });
 }
 
-export function listed(record: StoredDocument, viewer: User | null): DocumentSummary {
+export function listed(record: StoredDocument, viewer: Identity | null): DocumentSummary {
   return summarize(record, record.status, viewer);
 }
 
 /** A page of the documents the user imported, public or private. */
 export async function mine(
   deps: { documents: DocumentLookup },
-  user: User,
+  user: Identity,
   page: PageRequest<DocumentKey>,
 ): Promise<Ok<Paginated<DocumentSummary, DocumentKey>> | Failed<401>> {
   return list(deps, user, { tags: {}, lang: undefined, title: undefined, mine: true }, page);
@@ -87,14 +91,17 @@ async function unknownTag(deps: { documents: DocumentTags }, tags: Tags): Promis
 
 /** 202 if the text is queued, 200 if it's already here and not failed (a failed import is
  * retried by importing the same text again). A text someone else imported gets the user's
- * own entry, with their title, visibility and licence. */
+ * own entry, with their title, visibility and licence. Each import counts against the
+ * user's importRate; 429 past it. */
 export async function importText(
-  deps: DocumentEditDeps,
-  user: User,
+  deps: DocumentEditDeps & { users: UserRateLimits; roles: Roles; importRate: RateLimit },
+  user: Identity,
   body: z.output<typeof schemas.ImportRequest>,
-): Promise<Json<DocumentSummary, 200> | Json<DocumentSummary, 202> | Failed<400>> {
+): Promise<Json<DocumentSummary, 200> | Json<DocumentSummary, 202> | Failed<400 | 429>> {
   const unknown = await unknownTag(deps, body.tags);
   if (unknown !== null) return unknown;
+  const limited = await overLimit(deps, user, "import", deps.importRate);
+  if (limited !== null) return limited;
   const fields: EntryFields = {
     title: body.title?.trim().slice(0, MAX_TITLE_LENGTH) || firstWords(body.text),
     visibility: body.visibility,
@@ -135,7 +142,7 @@ export async function importText(
 /** A user changes the title, licence, author, source, visibility or tags of their own entry. */
 export async function update(
   deps: DocumentEditDeps,
-  user: User,
+  user: Identity,
   id: string,
   body: z.output<typeof schemas.DocumentUpdate>,
 ): Promise<Ok<DocumentSummary> | Failed<400 | 403 | 404>> {
@@ -163,7 +170,7 @@ export async function update(
  * again needn't analyse it again. */
 export async function remove(
   deps: { documents: DocumentEntries & DocumentLookup },
-  user: User,
+  user: Identity,
   id: string,
 ): Promise<NoContent | Failed<403 | 404>> {
   const record = await findDocument(deps, id, user);
@@ -173,7 +180,7 @@ export async function remove(
   return NO_CONTENT;
 }
 
-export async function get(deps: DocumentDetailDeps, id: string, viewer: User | null): Promise<Ok<DocumentSummary> | Failed<404>> {
+export async function get(deps: DocumentDetailDeps, id: string, viewer: Identity | null): Promise<Ok<DocumentSummary> | Failed<404>> {
   const record = await findDocument(deps, id, viewer);
   if (!record) return noSuchDocument();
   const summary = await current(deps, record, versionsOf(deps.blobs), viewer);
@@ -197,7 +204,7 @@ export function placeIn(jobs: Pick<IngestJobs, "loading" | "running" | "waiting"
 export async function text(
   deps: { documents: DocumentLookup; blobs: BlobStore },
   id: string,
-  viewer: User | null,
+  viewer: Identity | null,
   ifNoneMatch: string | undefined,
 ): Promise<BlobResult | NotModified | Failed<404 | 500>> {
   const record = await findDocument(deps, id, viewer);
@@ -209,7 +216,7 @@ export async function text(
 export async function part(
   deps: { documents: DocumentLookup; blobs: BlobStore },
   id: string,
-  viewer: User | null,
+  viewer: Identity | null,
   name: string,
   ifNoneMatch: string | undefined,
 ): Promise<BlobResult | NotModified | Failed<404>> {
@@ -238,12 +245,16 @@ export function noSuchDocument(): Failed<404> {
 
 /** The entry the viewer sees: theirs, else a public one. A text private to others is
  * unknown to them. */
-export async function findDocument(deps: { documents: DocumentLookup }, id: string, viewer: User | null): Promise<StoredDocument | null> {
+export async function findDocument(
+  deps: { documents: DocumentLookup },
+  id: string,
+  viewer: Identity | null,
+): Promise<StoredDocument | null> {
   const parsed = schemas.DocumentId.safeParse(id);
   return parsed.success ? deps.documents.visible(parsed.data, viewer?.id ?? null) : null;
 }
 
-async function ownEntry(deps: { documents: DocumentLookup }, id: DocumentId, user: User): Promise<StoredDocument | null> {
+async function ownEntry(deps: { documents: DocumentLookup }, id: DocumentId, user: Identity): Promise<StoredDocument | null> {
   const entry = await deps.documents.visible(id, user.id);
   return entry?.user === user.id ? entry : null;
 }
@@ -254,7 +265,7 @@ async function current(
   deps: RequeueDeps & Clock,
   record: StoredDocument,
   versions: VersionsOf,
-  viewer: User | null,
+  viewer: Identity | null,
 ): Promise<DocumentSummary> {
   const status = await readStatus(deps.blobs, record.id);
   const now = deps.now();
@@ -355,7 +366,7 @@ export function parseVersions(raw: string): Versions | null {
 function summarize(
   { user, importerName, status: _status, ...record }: StoredDocument,
   status: Status | null,
-  viewer: User | null,
+  viewer: Identity | null,
 ): DocumentSummary {
   const summary: DocumentSummary = {
     ...record,

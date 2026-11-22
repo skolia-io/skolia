@@ -3,9 +3,8 @@ import { existsSync } from "node:fs";
 import { betterAuth } from "better-auth";
 import { testUtils } from "better-auth/plugins";
 import { createTestHarness, type TestHarness } from "wrangler";
-import { LANGS, type User } from "@skolia/shared/api";
-import { RoleName, UserId } from "@skolia/shared/schemas";
-import * as z from "zod";
+import { LANGS, type Identity } from "@skolia/shared/api";
+import { UserId } from "@skolia/shared/schemas";
 import type { IngestParams } from "@skolia/ingest/rpc";
 import { authOptions, toAuth, type AuthConfig } from "../auth.ts";
 import type { Auth } from "../ports/auth.ts";
@@ -15,6 +14,8 @@ import { clearLexicons, lexiconBinding, type LexiconBindings } from "@skolia/lex
 import { prepare } from "@skolia/util/d1";
 import type { User as UserObject } from "../worker/user.ts";
 import type { RecorderEnv } from "./ingest-recorder.ts";
+import { SYSTEM_USER } from "../e2e-keys.ts";
+import { CURATED_USER } from "../sync-curated-key.ts";
 
 export const ORIGIN = "http://localhost:5173";
 
@@ -45,7 +46,8 @@ export interface Local {
   /** The lexicon Worker's databases, which the API's LEXICON reads */
   lexicon: LexiconBindings;
   auth: Auth;
-  signUp(fields: { name: string; email: string }): Promise<User>;
+  /** A new user, bound to no roles. */
+  signUp(fields: { name: string; email: string }): Promise<Identity>;
   signIn(userId: string): Promise<Headers>;
   /** What the API has asked to start runs of ingest for (testing/app.ts setup) */
   readonly started: IngestParams[];
@@ -92,8 +94,7 @@ export async function startLocal(): Promise<Local> {
     async signUp(fields) {
       const saved = await test.saveUser(test.createUser(fields));
       const { id, name, email, image } = saved;
-      const { role } = z.object({ role: RoleName }).parse(saved);
-      return { id: UserId.parse(id), name, email, image: image ?? null, type: role };
+      return { id: UserId.parse(id), name, email, image: image ?? null };
     },
     signIn: (userId) => test.getAuthHeaders({ userId }),
     started,
@@ -111,8 +112,8 @@ export async function startLocal(): Promise<Local> {
       ];
       await env.DB.batch([
         ...tables.map((t) => prepare(env.DB, sql`DELETE FROM ${sql.id(t)}`)),
-        // The system users are the migrations'
-        prepare(env.DB, sql`DELETE FROM "user" WHERE role != 'system'`),
+        // The system users are the migrations', and keep their bindings; others' go with them
+        prepare(env.DB, sql`DELETE FROM "user" WHERE "id" NOT IN ${sql.tuple([SYSTEM_USER, CURATED_USER])}`),
       ]);
       await clearLexicons(lexicon);
       await prepare(env.INGEST_DB, sql`DELETE FROM ingest_job`).run();

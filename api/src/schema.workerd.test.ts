@@ -6,6 +6,7 @@ import { authOptions } from "./auth.ts";
 import { ALICE, local, useLocal } from "./testing/app.ts";
 import { authConfig } from "./testing/harness.ts";
 import { DOCUMENT_QUERIES } from "./worker/adapters/document-queries.ts";
+import { ROLE_QUERIES } from "./worker/adapters/roles.ts";
 import { INGEST_QUERIES } from "@skolia/ingest/history";
 
 useLocal();
@@ -30,7 +31,10 @@ test("every D1 table is STRICT, and timestamps must be toISOString()'s", async (
       "background_migration",
       "document",
       "document_status",
+      "permission",
       "role",
+      "role_binding",
+      "role_permission",
       "session",
       "tag",
       "user",
@@ -80,20 +84,51 @@ test("every D1 table is STRICT, and timestamps must be toISOString()'s", async (
   assert.notEqual(await env.DB.prepare("select 1 from document where id = 'a'").first(), null);
 });
 
-test("roles are seeded and new roles can be added without changing the schema", async () => {
+test("the system role is seeded and bound to the seeded users; new roles and bindings need no schema change", async () => {
   const db = local.env.DB;
-  assert.deepEqual((await db.prepare("SELECT name FROM role ORDER BY name").all()).results, [{ name: "standard" }, { name: "system" }]);
+  assert.deepEqual((await db.prepare("SELECT name FROM role ORDER BY name").all()).results, [{ name: "system" }]);
+  assert.deepEqual((await db.prepare("SELECT user_id, role FROM role_binding ORDER BY user_id").all()).results, [
+    { user_id: "curated", role: "system" },
+    { user_id: "system", role: "system" },
+  ]);
   const user = await local.signUp(ALICE);
-  assert.equal(user.type, "standard");
-  const assign = db.prepare(`UPDATE "user" SET role = 'future' WHERE id = ?`).bind(user.id);
-  await assert.rejects(assign.run(), /FOREIGN KEY constraint failed/);
+  const bind = (userId: string, role: string) =>
+    db.prepare("INSERT INTO role_binding (user_id, role) VALUES (?, ?)").bind(userId, role).run();
+  await assert.rejects(bind(user.id, "future"), /FOREIGN KEY constraint failed/);
+  await assert.rejects(bind("nobody", "system"), /FOREIGN KEY constraint failed/);
   await db.prepare("INSERT INTO role VALUES ('future')").run();
   try {
-    await assign.run();
-    assert.equal(await db.prepare(`SELECT role FROM "user" WHERE id = ?`).bind(user.id).first("role"), "future");
+    await bind(user.id, "future");
+    await bind(user.id, "system");
+    await assert.rejects(bind(user.id, "system"), /UNIQUE constraint failed/);
+    await assert.rejects(db.prepare("DELETE FROM role WHERE name = 'future'").run(), /FOREIGN KEY constraint failed/);
+    // Deleting a user takes their bindings
+    await db.prepare(`DELETE FROM "user" WHERE "id" = ?`).bind(user.id).run();
+    assert.deepEqual((await db.prepare("SELECT role FROM role_binding WHERE user_id = ?").bind(user.id).all()).results, []);
   } finally {
-    await db.prepare(`UPDATE "user" SET role = 'standard' WHERE id = ?`).bind(user.id).run();
+    await db.prepare("DELETE FROM role_binding WHERE role = 'future'").run();
     await db.prepare("DELETE FROM role WHERE name = 'future'").run();
+  }
+});
+
+test("permissions are seeded, granted to roles, and new ones can be added without changing the schema", async () => {
+  const db = local.env.DB;
+  assert.deepEqual((await db.prepare("SELECT name FROM permission ORDER BY name").all()).results, [{ name: "unlimited-rate" }]);
+  assert.deepEqual((await db.prepare("SELECT role, permission FROM role_permission ORDER BY role, permission").all()).results, [
+    { role: "system", permission: "unlimited-rate" },
+  ]);
+  const grant = (role: string, permission: string) =>
+    db.prepare("INSERT INTO role_permission (role, permission) VALUES (?, ?)").bind(role, permission).run();
+  await assert.rejects(grant("nobody", "unlimited-rate"), /FOREIGN KEY constraint failed/);
+  await assert.rejects(grant("system", "future"), /FOREIGN KEY constraint failed/);
+  await assert.rejects(grant("system", "unlimited-rate"), /UNIQUE constraint failed/);
+  await db.prepare("INSERT INTO permission (name, description) VALUES ('future', 'Something new')").run();
+  try {
+    await grant("system", "future");
+    await assert.rejects(db.prepare("DELETE FROM permission WHERE name = 'future'").run(), /FOREIGN KEY constraint failed/);
+  } finally {
+    await db.prepare("DELETE FROM role_permission WHERE permission = 'future'").run();
+    await db.prepare("DELETE FROM permission WHERE name = 'future'").run();
   }
 });
 
@@ -134,9 +169,9 @@ async function attributionId(licence: string): Promise<number> {
 }
 
 // A SCAN that names an index walks it in order, as list does over the public entries' partial index
-test("no document query scans a whole table or sorts its rows", async () => {
+test("no document or role query scans a whole table or sorts its rows", async () => {
   const plans = await Promise.all(
-    Object.entries(DOCUMENT_QUERIES).map(async ([name, sql]) => {
+    Object.entries({ ...DOCUMENT_QUERIES, ...ROLE_QUERIES }).map(async ([name, sql]) => {
       const { results } = await local.env.DB.prepare(`EXPLAIN QUERY PLAN ${sql}`)
         .bind(...Array.from({ length: parameters(sql) }, () => "x"))
         .all<{ detail: string }>();

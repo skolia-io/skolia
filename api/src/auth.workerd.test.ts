@@ -27,11 +27,11 @@ test("Google sign-in answers with Google's authorize URL, back to /api/auth/call
   assert.equal(url.searchParams.get("redirect_uri"), `${ORIGIN}/api/auth/callback/google`);
 });
 
-test("/api/me is the session's user, 401 without one", async () => {
+test("/api/me is the session's user, with no roles after signing up, 401 without one", async () => {
   const app = setup();
   assert.equal((await client(app).me.$get()).status, 401);
   const alice = await local.signUp(ALICE);
-  assert.deepEqual(await body("me", client(app, await local.signIn(alice.id)).me.$get()), alice);
+  assert.deepEqual(await body("me", client(app, await local.signIn(alice.id)).me.$get()), { ...alice, roles: [] });
 });
 
 test("after signing out the session's cookie signs nobody in", async () => {
@@ -93,7 +93,9 @@ test("sync-curated's key signs in the curated user, a system user; new end-to-en
     e2eKeysSql("test", { system: "ab".repeat(32), user: "12".repeat(32) }, new Date().toISOString()).map((q) => local.env.DB.prepare(q)),
   );
   const me = await body("me", client(app, new Headers({ [API_KEY_HEADER]: key })).me.$get());
-  assert.deepEqual([me.id, me.type], [CURATED_USER, "system"]);
+  assert.deepEqual([me.id, me.roles], [CURATED_USER, ["system"]]);
+  const e2eUser = await body("e2e user", client(app, new Headers({ [API_KEY_HEADER]: e2eUserKey("12".repeat(32), "pl") })).me.$get());
+  assert.deepEqual([e2eUser.id, e2eUser.roles], [e2eUserId("test", "pl"), []]);
 });
 
 test("signed-in users can't make API keys", async () => {

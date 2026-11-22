@@ -5,7 +5,7 @@ import {
   type IngestHistory,
   type IngestOverview,
   type PastIngestJob,
-  type User,
+  type Identity,
 } from "@skolia/shared/api";
 import type { DocumentLookup, StoredDocument } from "../ports/documents.ts";
 import type { JobQueue } from "../ports/ingest.ts";
@@ -18,7 +18,7 @@ export const RECENT_JOBS = 50;
  * for anyone: a text the viewer can't see is only its language, size and timings. */
 export async function overview(
   deps: { documents: DocumentLookup; queue: JobQueue; ingestHistory: IngestHistory },
-  viewer: User | null,
+  viewer: Identity | null,
 ): Promise<Ok<IngestOverview>> {
   const [live, stored] = await Promise.all([
     Promise.all(LANGS.map((lang) => deps.queue.jobs(lang))),

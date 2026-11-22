@@ -51,6 +51,12 @@ CREATE TRIGGER migration_log_no_delete BEFORE DELETE ON migration_log
 CREATE TRIGGER migration_log_no_update BEFORE UPDATE ON migration_log
           BEGIN SELECT RAISE(ABORT, 'migration_log is append-only'); END;
 
+CREATE TABLE rate_window (
+  action TEXT NOT NULL PRIMARY KEY,
+  started_at TEXT NOT NULL CHECK (started_at IS strftime('%Y-%m-%dT%H:%M:%fZ', started_at)),
+  count INTEGER NOT NULL CHECK (count >= 0)
+) STRICT, WITHOUT ROWID;
+
 CREATE TABLE reading_list (
   id INTEGER PRIMARY KEY AUTOINCREMENT CHECK (id > 0),
   name TEXT NOT NULL CHECK(length(name) BETWEEN 1 AND 100),

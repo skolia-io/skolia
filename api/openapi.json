@@ -109,12 +109,15 @@
               "null"
             ]
           },
-          "type": {
-            "type": "string",
-            "enum": [
-              "standard",
-              "system"
-            ]
+          "roles": {
+            "readOnly": true,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "system"
+              ]
+            }
           }
         },
         "required": [
@@ -122,7 +125,7 @@
           "name",
           "email",
           "image",
-          "type"
+          "roles"
         ],
         "additionalProperties": false
       },
@@ -3411,6 +3414,7 @@
           "Account"
         ],
         "summary": "The signed-in user",
+        "description": "With the roles they're bound to; someone who signed up has none.",
         "security": [
           {
             "session": []
@@ -5224,7 +5228,7 @@
           "Documents"
         ],
         "summary": "Import a text",
-        "description": "A text someone else imported gets the user's own entry, with their title, visibility and licence. A failed import is retried by importing the same text again.",
+        "description": "A text someone else imported gets the user's own entry, with their title, visibility and licence. A failed import is retried by importing the same text again. Each import counts against the user's limit of imports in a window of time, which skolia.io's own accounts aren't held to.",
         "security": [
           {
             "session": []
@@ -5276,6 +5280,25 @@
           },
           "413": {
             "description": "The text is too long",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "The user has imported as many texts as the window allows",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the limit's window ends",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {

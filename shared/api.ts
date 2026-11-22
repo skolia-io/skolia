@@ -469,12 +469,21 @@ export type CardCounts = Readonly<z.output<typeof schemas.CardCounts>>;
 /** A card after a review: when it's due next. */
 export type Reviewed = z.output<typeof schemas.Reviewed>;
 
-/** standard: someone who signed in. system: skolia.io's own accounts, the end-to-end
- * tests' importer and the curated texts'. */
-export const ROLE_NAMES = ["standard", "system"] as const;
+/** The roles a user can be bound to (D1's role_binding); someone who signs up has none.
+ * system: skolia.io's own accounts, the end-to-end tests' importer and the curated texts'. */
+export const ROLE_NAMES = ["system"] as const;
 export type RoleName = (typeof ROLE_NAMES)[number];
 
+/** What a role lets its users do, granted in D1's role_permission. unlimited-rate: no rate
+ * limits, such as on imports. */
+export const PERMISSION_NAMES = ["unlimited-rate"] as const;
+export type PermissionName = (typeof PERMISSION_NAMES)[number];
+
+/** The signed-in user, with their roles, as GET /api/me sends them. */
 export type User = z.output<typeof schemas.User>;
+
+/** Who's signed in, as each request knows them: their roles are read only where they're needed. */
+export type Identity = Omit<User, "roles">;
 
 export type Version = z.output<typeof schemas.Version>;
 

@@ -30,7 +30,8 @@ import * as schemas from "@skolia/shared/schemas";
 import { CardId } from "@skolia/shared/schemas";
 import { and, col, compile, desc, eq, exists, fn, inQuery, isNotNull, le, lit, ne, not, or, select, type Query } from "@skolia/util/query";
 import { sql, type Sql } from "@skolia/util/sql";
-import type { CardOutcome, DueCards, ReviewOutcome, StoredPosition } from "../ports/users.ts";
+import type { CardOutcome, DueCards, RateAction, RateOutcome, ReviewOutcome, StoredPosition } from "../ports/users.ts";
+import type { RateLimit } from "../rate-limits.ts";
 import { fromJson, fsrs, newCard, review, toJson } from "./scheduler.ts";
 import { MIGRATIONS } from "../user/migrations/index.ts";
 import { BLANK_DOCUMENT, BLANK_START, cardsQuery, readingListDocumentsQuery } from "../user/queries.ts";
@@ -394,6 +395,26 @@ export class User extends DurableObject<UserEnv> {
       rows.map((item) => ({ item, key: [item.createdAt, item.documentId] as const })),
       limit,
     );
+  }
+
+  /** Counts the action once more in its window, unless the window has its limit already. The
+   * first time, or once the window is over, a window starts now. */
+  take(action: RateAction, now: Timestamp, { limit, windowSeconds }: RateLimit): RateOutcome {
+    return this.ctx.storage.transactionSync((): RateOutcome => {
+      const row = this.#exec(sql`SELECT started_at, count FROM rate_window WHERE action = ${action}`).toArray()[0];
+      const nowMs = Date.parse(now);
+      const windowEndMs = row === undefined ? null : Date.parse(schemas.Timestamp.parse(row["started_at"])) + windowSeconds * 1000;
+      if (windowEndMs === null || nowMs >= windowEndMs) {
+        this.#exec(sql`INSERT INTO rate_window (action, started_at, count) VALUES (${action}, ${now}, 1)
+          ON CONFLICT (action) DO UPDATE SET started_at = excluded.started_at, count = excluded.count`);
+        return { kind: "taken" };
+      }
+      if (Number(row?.["count"]) >= limit) {
+        return { kind: "limited", retryAfterSeconds: Math.max(1, Math.ceil((windowEndMs - nowMs) / 1000)) };
+      }
+      this.#exec(sql`UPDATE rate_window SET count = count + 1 WHERE action = ${action}`);
+      return { kind: "taken" };
+    });
   }
 
   async #migrate(target: number): Promise<void> {
