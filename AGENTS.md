@@ -2,7 +2,7 @@
 
 - Open items and follow-ups are GitHub issues on the private repo skolia-io/tracking (`gh issue list -R skolia-io/tracking`, `gh issue create -R skolia-io/tracking -t … -b … -l …`). A PR that finishes one says so in its description, `Closes skolia-io/tracking#N` (or `Fixes`, `Resolves`), so merging it closes the issue. git-bug is no longer used.
 - A pull request's title is a conventional commit, `type(scope)?: description` (feat, fix, perf, refactor, docs, test, build, ci, chore, revert), since it becomes the squashed commit on main; pr-title.yml checks it. The description is a lowercase verb phrase saying what changes: `feat: show the word type on recognition cards`.
-- Start each piece of work in a new git worktree, `~/dev/skolia-<name>` beside this checkout (`git worktree add ../skolia-<name> -b <branch> origin/main`), never in this checkout.
+- Start each piece of work in a new git worktree, `~/dev/skolia-<name>` beside this checkout (`git worktree add ../skolia-<name> -b <branch> origin/main`), never in this checkout. Once its PR has merged (or been closed), remove the worktree and its local branch: `git worktree remove ../skolia-<name> && git branch -D <branch>`.
 - Keep staging as close to production as possible. Enable every production feature in staging too, with environment-specific resources and credentials.
 - main moves quickly. Fetch and branch from `origin/main`, and rebase before pushing more work onto an open PR.
 - After pushing to a PR, watch its CI (`gh pr checks <N> --watch`, in the background) until every job has finished, the preview's deploy and e2e included, and fix what fails. A PR isn't done until CI passes.
