@@ -44,6 +44,9 @@ AGREEING: frozenset[Deprel] = frozenset(
 )
 SUBJECT: frozenset[Deprel] = frozenset({"nsubj", "nsubj:pass"})
 POSSESSOR: frozenset[Deprel] = frozenset({"nmod", "nmod:poss"})
+# An adjective or question word on a genitive that describes: średniego wzrostu, jakiego
+# koloru. Not a possessive one (det:poss): jest mojego brata says whose, not what like
+DESCRIBING: frozenset[Deprel] = frozenset({"amod", "det"})
 # An infinitive depending on another verb (mogli odnaleźć): negation passes down to it
 INFINITIVE_COMPLEMENT: frozenset[Deprel] = frozenset({"xcomp", "csubj"})
 # Participles and verbal nouns keep their verb's valency
@@ -168,7 +171,7 @@ def _reason(  # noqa: C901, PLR0912
     copula = sentence.child(index, COPULA)
     if copula is not None and case == "Ins":
         return _with_governor({"rule": "predicate", "trigger": copula}, tokens[copula])
-    if copula is not None and case == "Gen":
+    if copula is not None and case == "Gen" and _described(sentence, index):
         return _with_governor({"rule": "description", "trigger": copula}, tokens[copula])
     nominal_head = head is not None and tokens[head]["upos"] in NOMINAL_HEADS
     if head is not None and nominal_head and deprel in POSSESSOR and case == "Gen":
@@ -185,6 +188,14 @@ def _reason(  # noqa: C901, PLR0912
     if head is not None and deprel == OBLIQUE and case == "Ins":
         return {"rule": "instrumental", "trigger": head}
     return None
+
+
+def _described(sentence: Sentence, index: int) -> bool:
+    return any(
+        sentence.tokens[c]["deprel"] in DESCRIBING
+        and sentence.tokens[c]["feats"].get("Poss") != "Yes"
+        for c in sentence.children[index]
+    )
 
 
 def _verb_reason(
