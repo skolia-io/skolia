@@ -159,8 +159,8 @@ plan env:
 
 # Apply D1 migrations, then PRAGMA optimize, which D1 recommends after a schema change: ANALYZE, with a
 # limit, where an index lacks statistics or a table has grown or shrunk tenfold. Its mask is OPTIMIZE's
-# (util/sqlite.ts), as the tests' (api/src/testing/harness.ts) and the API's daily cron's. The lexicon's
-# databases are each made whole from a build (just load-lexicon).
+# (util/sqlite.ts), as the tests' (api/src/testing/harness.ts) and the API's nightly cron's
+# (api/src/worker/crons.ts). The lexicon's databases are each made whole from a build (just load-lexicon).
 migrate env:
     infra/wrangler.sh {{ env }} d1 migrations apply DB --remote
     infra/wrangler.sh {{ env }} d1 execute DB --remote --yes --command "PRAGMA optimize=0x10012"

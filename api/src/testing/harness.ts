@@ -57,7 +57,7 @@ export interface Local {
   close(): Promise<void>;
 }
 
-/** What just migrate runs after a D1 database's migrations, and the API's cron daily, so that its query planner has statistics */
+/** What just migrate runs after a D1 database's migrations, and the API's nightly cron, so that its query planner has statistics */
 export async function optimize(db: D1Database): Promise<void> {
   await prepare(db, OPTIMIZE).run();
 }

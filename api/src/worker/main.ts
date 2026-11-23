@@ -9,6 +9,7 @@ import { NO_AUTH, createAuth } from "../auth.ts";
 import type { IngesterRpc, IngestParams } from "@skolia/ingest/rpc";
 import { log } from "@skolia/util/log";
 import { OPTIMIZE } from "@skolia/util/sqlite";
+import { isCron } from "./crons.ts";
 import { prepare } from "@skolia/util/d1";
 import type { Auth } from "../ports/auth.ts";
 import { RpcIngestHistory, IngestRuns } from "./adapters/ingest.ts";
@@ -80,14 +81,6 @@ function authFor(env: Env): Auth {
   return createAuth({ database: env.DB, baseURL: BASE_URL, secret: BETTER_AUTH_SECRET, google, oauthProxy });
 }
 
-/** Whether the minute's cron also runs OPTIMIZE on D1, once a day: SQLite advises a long-lived
- * connection, as D1's is, to run PRAGMA optimize periodically, "perhaps once per day", besides
- * after a schema change, as just migrate does. */
-function isOptimizeTime(scheduledTime: number): boolean {
-  const at = new Date(scheduledTime);
-  return at.getUTCHours() === 3 && at.getUTCMinutes() === 0;
-}
-
 async function optimize(db: D1Database): Promise<void> {
   const { meta } = await prepare(db, OPTIMIZE).run();
   logger.info("optimized D1", { rowsRead: meta.rows_read, rowsWritten: meta.rows_written });
@@ -95,8 +88,18 @@ async function optimize(db: D1Database): Promise<void> {
 
 export default {
   async scheduled(event, env) {
-    await runBackgroundMigrations({ db: env.DB.withSession("first-primary"), blobs: new R2Blobs(env.BLOBS) }, BACKGROUND_MIGRATIONS);
-    if (isOptimizeTime(event.scheduledTime)) await optimize(env.DB);
+    const { cron } = event;
+    if (!isCron(cron)) throw new Error(`no handler for cron ${JSON.stringify(cron)}`);
+    switch (cron) {
+      case "* * * * *":
+        await runBackgroundMigrations({ db: env.DB.withSession("first-primary"), blobs: new R2Blobs(env.BLOBS) }, BACKGROUND_MIGRATIONS);
+        return;
+      case "0 3 * * *":
+        await optimize(env.DB);
+        return;
+      default:
+        throw new Error(`no handler for cron ${JSON.stringify(cron satisfies never)}`);
+    }
   },
   fetch(request, env, ctx) {
     const url = new URL(request.url);

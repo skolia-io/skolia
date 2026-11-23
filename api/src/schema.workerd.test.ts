@@ -8,6 +8,8 @@ import { ALICE, local, useLocal } from "./testing/app.ts";
 import { authConfig, optimize } from "./testing/harness.ts";
 import { CURATED_USER } from "./sync-curated-key.ts";
 import { OPTIMIZE } from "@skolia/util/sqlite";
+import { experimental_readRawConfig } from "wrangler";
+import { CRONS } from "./worker/crons.ts";
 import { DOCUMENT_QUERIES } from "./worker/adapters/document-queries.ts";
 import { ROLE_QUERIES } from "./worker/adapters/roles.ts";
 import { INGEST_QUERIES } from "@skolia/ingest/history";
@@ -256,29 +258,56 @@ test("just migrate optimizes both D1 databases as the tests do", () => {
   }
 });
 
-test("the cron brings D1's planner statistics up to date at 03:00 UTC, and not at other minutes", async () => {
+test("wrangler.jsonc's cron triggers are CRONS, in order, in every environment", () => {
+  const { rawConfig } = experimental_readRawConfig({ config: new URL("../wrangler.jsonc", import.meta.url).pathname });
+  assert.deepEqual(rawConfig.triggers?.crons, [...CRONS]);
+  for (const [name, env] of Object.entries(rawConfig.env ?? {}))
+    assert.ok(typeof env === "object" && env !== null && !("triggers" in env), name);
+});
+
+/** The rows sqlite_stat1 has for user's primary key, and a way to add that many again, 20 times over */
+function userStatistics() {
   const { DB } = local.env;
-  const userRows = async () => {
+  const rows = async () => {
     const row = await DB.prepare("SELECT stat FROM sqlite_stat1 WHERE idx = 'sqlite_autoindex_user_1'").first<{ stat: string }>();
     return Number(row?.stat.split(" ")[0]);
   };
-  const addUsers = (from: number, n: number) =>
-    DB.prepare(
-      `WITH RECURSIVE n(i) AS (SELECT ?1 UNION ALL SELECT i + 1 FROM n WHERE i < ?1 + ?2 - 1)
+  const grow = async () => {
+    const n = (await rows()) * 20;
+    await DB.prepare(
+      `WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM n WHERE i < ?1 - 1)
        INSERT INTO "user" (id, name, email, "emailVerified", "createdAt", "updatedAt")
        SELECT printf('cron%d', i), 'u', printf('cron%d@example.com', i), 1, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z' FROM n`,
     )
-      .bind(from, n)
+      .bind(n)
       .run();
-  const worker = local.server.getWorker();
-  await worker.scheduled({ cron: "* * * * *", scheduledTime: new Date("2026-11-23T03:00:00Z") });
-  const before = await userRows();
-  await addUsers(0, before * 20);
-  await worker.scheduled({ cron: "* * * * *", scheduledTime: new Date("2026-11-23T03:01:00Z") });
-  assert.equal(await userRows(), before);
-  await worker.scheduled({ cron: "* * * * *", scheduledTime: new Date("2026-11-24T03:00:00Z") });
-  const users = await DB.prepare('SELECT count(*) AS n FROM "user"').first<{ n: number }>();
-  assert.equal(await userRows(), users?.n);
+  };
+  return { rows, grow };
+}
+
+const AT_THREE = new Date("2026-11-23T03:00:00Z");
+
+test("the minute's cron runs the background migrations, and leaves D1's planner statistics", async () => {
+  const stats = userStatistics();
+  const before = await stats.rows();
+  await stats.grow();
+  const result = await local.server.getWorker().scheduled({ cron: "* * * * *", scheduledTime: AT_THREE });
+  assert.equal(result.outcome, "ok");
+  assert.equal(await stats.rows(), before);
+});
+
+test("the nightly cron brings D1's planner statistics up to date", async () => {
+  const stats = userStatistics();
+  await stats.grow();
+  const result = await local.server.getWorker().scheduled({ cron: "0 3 * * *", scheduledTime: AT_THREE });
+  assert.equal(result.outcome, "ok");
+  const users = await local.env.DB.prepare('SELECT count(*) AS n FROM "user"').first<{ n: number }>();
+  assert.equal(await stats.rows(), users?.n);
+});
+
+test("a cron the Worker has no handler for fails", async () => {
+  const result = await local.server.getWorker().scheduled({ cron: "*/5 * * * *", scheduledTime: AT_THREE });
+  assert.equal(result.outcome, "exception");
 });
 
 test("the ingest history's queries seek its index", async () => {
