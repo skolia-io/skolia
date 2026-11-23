@@ -9,9 +9,9 @@ from __future__ import annotations
 import contextlib
 import importlib
 import sys
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from importlib.metadata import version
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Protocol, cast
 from unittest import mock
 
 from .. import ud
@@ -20,14 +20,21 @@ from ..parsed import ParsedSentence, ParsedToken, ParsedWord, align
 # Importing combo loads torch, so it waits until a ComboParser is built
 if TYPE_CHECKING:
     from combo import COMBO, Token  # pyright: ignore[reportMissingTypeStubs]
+    from torch import Tensor
     from transformers import PreTrainedModel
 
 
 ROOT_HEAD = 0
 UNSET = "_"
 
-# The lemmatizer crashes with larger batches (tensor size mismatch in combo 4.0.14)
-BATCH_SIZE = 1
+# Sentences per pass of the encoder, tagger and parser. The curated texts parse the same
+# at 1, 8 and 32
+BATCH_SIZE = 8
+
+
+class _LemmaHead(Protocol):
+    forward: Callable[..., Tensor]
+    beam_decode: Callable[..., Tensor]
 
 
 class ComboParser:
@@ -38,6 +45,11 @@ class ComboParser:
         # COMBO prints progress to stdout, which would corrupt the analyser's output
         with contextlib.redirect_stdout(sys.stderr), _without_base_weights():
             self._nlp: COMBO = COMBO.from_pretrained(model, device=device, batch_size=BATCH_SIZE)
+        # COMBO has no public way to its model
+        predictor = getattr(self._nlp, "_predictor")  # noqa: B009
+        if not predictor.use_lemma_beam_search:
+            raise ValueError(f"{model} lemmatizes greedily; ComboParser expects beam search")
+        _lemmatize_in_batches(cast("_LemmaHead", predictor.model.lemma_head))
 
     @property
     def name(self) -> str:
@@ -92,6 +104,30 @@ def _without_base_weights() -> Generator[None]:
         mock.patch.object(segmenter, "AutoModel", _EncoderFromConfig),
     ):
         yield
+
+
+def _lemmatize_in_batches(head: _LemmaHead) -> None:
+    """Make COMBO 4.0.14's lemmatizer work on a batch, and skip its unused greedy pass.
+
+    In a batch, the predictor beam-decodes each sentence's lemmas with the sentence's
+    characters but the batch's word representations, padded to its longest sentence, and
+    the shapes don't match. The padding is the rows after the sentence's words, so they're
+    cut off. Each word's lemma depends only on its own row and characters, so the lemmas
+    are the same as one sentence at a time.
+
+    With beam search the predictor checks only that the model's greedy lemma logits exist,
+    so the model's forward pass returns a placeholder instead of decoding every word.
+    """
+    beam_decode = head.beam_decode
+
+    def beam_decode_sentence(word_repr: Tensor, input_chars: Tensor, **kwargs: int) -> Tensor:
+        return beam_decode(word_repr[:, : input_chars.shape[1]], input_chars, **kwargs)
+
+    def greedy_placeholder(word_repr: Tensor, *_: Tensor | None) -> Tensor:
+        return word_repr.new_empty(0)
+
+    head.beam_decode = beam_decode_sentence
+    head.forward = greedy_placeholder
 
 
 def _group(words: list[Token]) -> list[tuple[str, list[Token]]]:
