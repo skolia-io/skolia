@@ -8,5 +8,5 @@ export const CRONS = ["* * * * *", "0 3 * * *"] as const;
 export type Cron = (typeof CRONS)[number];
 
 export function isCron(cron: string): cron is Cron {
-  return (CRONS as readonly string[]).includes(cron);
+  return CRONS.some((known) => known === cron);
 }
