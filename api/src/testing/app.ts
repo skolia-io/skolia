@@ -234,6 +234,11 @@ export function publish(v: string): Promise<void> {
 }
 
 /** The summary as the importer sees it, since a private document is only theirs to see. */
-export async function summaryOf(app: App, id: string, headers: HeadersInit = importer): Promise<DocumentSummary> {
-  return (await (await app.request(`/api/documents/${id}`, { headers })).json()) as DocumentSummary;
+export function summaryOf(app: App, id: string, headers: HeadersInit = importer): Promise<DocumentSummary> {
+  return body("summary", client(app, new Headers(headers)).documents[":id"].$get({ param: { id } }));
+}
+
+/** The summary after asking for the document to be queued again if it needs it. */
+export function refreshedOf(app: App, id: string, headers: HeadersInit = importer): Promise<DocumentSummary> {
+  return body("refreshed", client(app, new Headers(headers)).documents[":id"].refresh.$post({ param: { id } }));
 }

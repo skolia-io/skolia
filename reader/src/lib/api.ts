@@ -151,6 +151,13 @@ export async function getDocument(id: DocumentId): Promise<DocumentSummary> {
   return response.json();
 }
 
+/** The document, after the API queues it again if it needs it (a newer analyser, a lost run). */
+export async function refreshDocument(id: DocumentId): Promise<DocumentSummary> {
+  const response = await api.documents[":id"].refresh.$post({ param: { id } });
+  if (!response.ok) throw await failure(response);
+  return response.json();
+}
+
 /** What analysis is doing: each language's analyser and the jobs finished most recently. */
 export async function getIngest(): Promise<IngestOverview> {
   const response = await api.ingest.$get();
