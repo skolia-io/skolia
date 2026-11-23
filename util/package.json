@@ -5,6 +5,7 @@
   "exports": {
     "./checks": "./checks.ts",
     "./sql": "./sql.ts",
+    "./sqlite": "./sqlite.ts",
     "./query": "./query.ts",
     "./graph": "./graph.ts",
     "./semaphore": "./semaphore.ts",

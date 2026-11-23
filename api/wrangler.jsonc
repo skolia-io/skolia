@@ -13,8 +13,9 @@
   "preview_urls": false,
   // Workers Logs, traces and Issues; log events are src/log.ts's
   "observability": { "enabled": true, "traces": { "enabled": true }, "issues": { "enabled": true } },
-  // Deploys after all status publishers: backfills never race an old publisher.
-  "triggers": { "crons": ["* * * * *"] },
+  // Deploys after all status publishers: backfills never race an old publisher. Every minute, the
+  // background migrations; 03:00 UTC, PRAGMA optimize on D1 (src/worker/crons.ts).
+  "triggers": { "crons": ["* * * * *", "0 3 * * *"] },
   // Runs /api/* near D1 and R2 when that's faster than near the user; assets are still
   // served from the nearest location.
   "placement": { "mode": "smart" },
