@@ -151,6 +151,28 @@ test("case explanations: governor, two-case prepositions, agreement chains", () 
   assert.equal(explainCase(tokens, 0), null);
 });
 
+test("a possessive genitive answers whose fridge it is", () => {
+  const tokens = [
+    token(0, 7, "lodówka"),
+    token(8, 13, "moich"),
+    token(14, 22, "rodziców", {
+      head: 0,
+      deprel: "nmod",
+      feats: { Case: "Gen", Number: "Plur" },
+      case_reason: { rule: "possessive", trigger: 0 },
+    }),
+  ];
+  assert.deepEqual(explainCase(tokens, 2), {
+    text: `The genitive tells you whose lodówka it is (dom brata = "the brother's house").`,
+    trigger: 0,
+    parts: [
+      { text: "The genitive tells you whose ", trigger: false },
+      { text: "lodówka", trigger: true },
+      { text: ` it is (dom brata = "the brother's house").`, trigger: false },
+    ],
+  });
+});
+
 function schema(positions: Schema["positions"], extra: Partial<Schema> = {}): Schema {
   return {
     pos: "verb",
