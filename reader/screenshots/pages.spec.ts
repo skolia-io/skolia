@@ -189,16 +189,6 @@ test("cards, one deleted", async ({ page }) => {
   await expect(page).toHaveScreenshot("cards-deleted.png", { fullPage: true });
 });
 
-test("review, forms on their own", async ({ page }) => {
-  await open(page, "#/settings");
-  await page.getByLabel("Review forms with words").uncheck();
-  await page.getByRole("button", { name: "Save" }).click();
-  await expect(page.getByText("Saved")).toBeVisible();
-  await page.goto("/#/review/pl/forms");
-  await expect(page.getByText("(kolacja)")).toBeVisible();
-  await expect(page).toHaveScreenshot("review-forms.png", { fullPage: true });
-});
-
 test("review, languages", async ({ page }) => {
   await open(page, "#/review");
   await expect(page.getByText("6 new")).toBeVisible();

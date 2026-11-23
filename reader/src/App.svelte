@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createQuery } from "@tanstack/svelte-query";
-  import { isLang, type CardGroup, type DocumentId, type Lang } from "@skolia/shared/api";
+  import { isLang, type DocumentId, type Lang } from "@skolia/shared/api";
   import * as schemas from "@skolia/shared/schemas";
   import About from "./pages/About.svelte";
   import Cards from "./pages/Cards.svelte";
@@ -19,7 +19,7 @@
     | { page: "explore" }
     | { page: "list" }
     | { page: "upload" }
-    | { page: "review"; lang: Lang | null; group: CardGroup | null }
+    | { page: "review"; lang: Lang | null }
     | { page: "cards"; lang: Lang | null }
     | { page: "settings" }
     | { page: "about" }
@@ -30,10 +30,9 @@
     // After the path, a list's filters (lib/filters.ts), which the list reads
     if (/^#\/list(?:\?.*)?$/.test(hash)) return { page: "list" };
     if (hash === "#/upload") return { page: "upload" };
-    if (hash === "#/review") return { page: "review", lang: null, group: null };
-    const [, review, group] = /^#\/review\/([a-z]+)(?:\/(words|forms))?$/.exec(hash) ?? [];
-    if (review !== undefined && isLang(review))
-      return { page: "review", lang: review, group: group === "words" || group === "forms" ? group : null };
+    if (hash === "#/review") return { page: "review", lang: null };
+    const [, review] = /^#\/review\/([a-z]+)$/.exec(hash) ?? [];
+    if (review !== undefined && isLang(review)) return { page: "review", lang: review };
     if (hash === "#/cards") return { page: "cards", lang: null };
     const [, cards] = /^#\/cards\/([a-z]+)$/.exec(hash) ?? [];
     if (cards !== undefined && isLang(cards)) return { page: "cards", lang: cards };
@@ -96,7 +95,7 @@
   {:else if route.page === "review"}
     <!-- Anew, so the languages' counts are loaded again after a session -->
     {#key route.lang}
-      <Review user={user} lang={route.lang} group={route.group} />
+      <Review user={user} lang={route.lang} />
     {/key}
   {:else if route.page === "cards"}
     <Cards user={user} lang={route.lang} />

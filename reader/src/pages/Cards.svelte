@@ -1,6 +1,16 @@
 <script lang="ts">
   import { createQuery } from "@tanstack/svelte-query";
-  import { LANGS, LANGUAGE_INFO, blankParts, parseLemmaId, type Card, type Lang, type LemmaId, type User } from "@skolia/shared/api";
+  import {
+    LANGS,
+    LANGUAGE_INFO,
+    blankParts,
+    firstWord,
+    parseLemmaId,
+    type Card,
+    type Lang,
+    type LemmaId,
+    type User,
+  } from "@skolia/shared/api";
   import { signIn } from "../lib/api.ts";
   import { createCardList, createDeleteCard, type CardPage } from "../lib/cards.ts";
   import { countsQuery } from "../lib/queries.ts";
@@ -14,7 +24,7 @@
   const cardCounts = createQuery(() => ({ ...countsQuery, enabled: !!user && lang === null }));
   const busiest = $derived(
     cardCounts.data?.reduce<{ lang: Lang; n: number } | null>((best, c) => {
-      const n = c.words.due + c.words.new + c.forms.due + c.forms.new;
+      const n = c.due + c.new;
       return n > (best?.n ?? 0) ? { lang: c.lang, n } : best;
     }, null)?.lang ?? null,
   );
@@ -38,9 +48,9 @@
   function groupByLemma(cards: readonly { card: Card; page: CardPage }[]): readonly Group[] {
     const byLemma = new Map<LemmaId, { page: CardPage; cards: Card[] }>();
     for (const { card, page } of cards) {
-      const group = byLemma.get(card.lemmaId);
+      const group = byLemma.get(firstWord(card));
       if (group) group.cards.push(card);
-      else byLemma.set(card.lemmaId, { page, cards: [card] });
+      else byLemma.set(firstWord(card), { page, cards: [card] });
     }
     return [...byLemma].map(([lemmaId, { page, cards }]) => {
       const ofKind = (kind: Card["kind"]) => cards.filter((card) => card.kind === kind);

@@ -257,16 +257,23 @@ export type TagKey = z.output<typeof schemas.TagKey>;
 /** A word's cards, at most one of each. recognition: the lemma on the front, its glosses
  * on the back. production: the other way round. */
 export const WORD_CARD_KINDS = ["recognition", "production"] as const;
+export type WordCardKind = (typeof WORD_CARD_KINDS)[number];
+
+/** A card's first word, which it shows: every card has one. */
+export function firstWord(card: { readonly lemmaIds: readonly LemmaId[] }): LemmaId {
+  const [first] = card.lemmaIds;
+  if (first === undefined) throw new Error("a card without words");
+  return first;
+}
 
 /** cloze: a sentence from a text with a word blanked out, its lemma the hint. Made from the
  * reader, any number per lemma. */
 export const CARD_KINDS = [...WORD_CARD_KINDS, "cloze"] as const;
 export type CardKind = (typeof CARD_KINDS)[number];
 
-/** learning: the card is reviewed. known: the user knows what it asks, so it isn't. What
- * the user knows of a word is its cards': there is no other record of it. */
-export const CARD_STATES = ["learning", "known"] as const;
-export type CardState = (typeof CARD_STATES)[number];
+/** learning: the word's cards are reviewed. known: the user knows the word, so they aren't. */
+export const WORD_STATES = ["learning", "known"] as const;
+export type WordState = (typeof WORD_STATES)[number];
 
 /** Longest sentence a cloze card keeps, in characters. */
 export const MAX_CLOZE_SENTENCE = 2000;
@@ -283,13 +290,7 @@ export type Rating = (typeof RATINGS)[number];
 export const MATURE_DAYS = 21;
 
 export const DEFAULT_NEW_LEMMAS_PER_DAY = 20;
-export const DEFAULT_NEW_FORMS_PER_DAY = 20;
 export const MAX_NEW_PER_DAY = 1000;
-
-/** words: a word's recognition and production cards; forms: its cloze cards. Each has its
- * own daily allowance, and can be reviewed alone. */
-export const CARD_GROUPS = ["words", "forms"] as const;
-export type CardGroup = (typeof CARD_GROUPS)[number];
 
 /** Most ids one lexicon lookup takes. */
 export const MAX_LOOKUP = 100;
@@ -453,17 +454,11 @@ export type AnnotationKind = AnnotationContent["kind"];
 /** Longest text a text annotation holds. */
 export const MAX_ANNOTATION_TEXT = 2000;
 
-/** What's left of today's allowances: words in lemmas, forms in cards. */
-export type NewLeft = Readonly<z.output<typeof schemas.NewLeft>>;
-
-/** Cards due now, then new cards up to what's left of today's allowances. */
+/** Cards due now, then the new cards of as many new words as are left of today's allowance. */
 export type Due = z.output<typeof schemas.Due>;
 
-/** Cards due now, and what new would come up today: words' lemmas, as newLeft counts them,
- * and forms' cards. */
-export type Tally = Readonly<z.output<typeof schemas.Tally>>;
-
-/** A language's cards to review, by group. */
+/** A language's cards to review: due now, and new words that would come up today, as newLeft
+ * counts them. */
 export type CardCounts = Readonly<z.output<typeof schemas.CardCounts>>;
 
 /** A card after a review: when it's due next. */

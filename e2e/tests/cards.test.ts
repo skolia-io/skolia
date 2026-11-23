@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import { LANGS, type CardCounts, type CardKey, type Due, type Lang } from "@skolia/shared/api";
+import { LANGS, lemmaParam, type CardCounts, type CardKey, type Due, type Lang } from "@skolia/shared/api";
 import { allPages, type Cursor } from "@skolia/shared/page";
 import { e2eUserKey } from "@skolia/api/e2e-keys";
 import { body, expectStatus } from "@skolia/util/responses";
@@ -14,7 +14,7 @@ function dayStart(): string {
   return today.toISOString();
 }
 
-/** A new user's journey with one word: make its cards, review one, mark them known. */
+/** A new user's journey with one word: make its cards, review one, mark it known. */
 async function cards(key: string, lang: Lang): Promise<void> {
   const api = client(key);
   const word = WORDS[lang];
@@ -31,7 +31,6 @@ async function cards(key: string, lang: Lang): Promise<void> {
 
   const { newLemmasPerDay } = await body("settings", api.me.settings.$get());
   assert.ok(newLemmasPerDay >= 1, `${lang}: a new user's settings allow ${newLemmasPerDay} new words a day`);
-  const none = { due: 0, new: 0 };
   assert.equal(await counts(), undefined, `${lang}: a new user has cards`);
 
   for (const kind of ["recognition", "production"] as const) {
@@ -45,13 +44,17 @@ async function cards(key: string, lang: Lang): Promise<void> {
     ],
     `${lang}: ${word}'s cards`,
   );
-  assert.deepEqual(await counts(), { lang, words: { due: 0, new: 1 }, forms: none }, `${lang}: counts after adding a word`);
+  assert.deepEqual(await counts(), { lang, due: 0, new: 2 }, `${lang}: counts after adding a word`);
 
   const added = await due();
   assert.deepEqual(new Set(added.cards.map((c) => c.kind)), new Set(["recognition", "production"]), `${lang}: card kinds`);
   for (const card of added.cards) {
     assert.ok(card.isNew, `${lang}: an added word's card isn't new`);
-    assert.equal(card.entry?.lemma_id, word, `${lang}: a card without its lexicon entry`);
+    assert.deepEqual(
+      card.entries.map((e) => e.lemma_id),
+      [word],
+      `${lang}: a card without its lexicon entry`,
+    );
   }
   assert.ok(Object.keys(added.featureSets).length > 0, `${lang}: due cards without feature sets`);
 
@@ -67,15 +70,13 @@ async function cards(key: string, lang: Lang): Promise<void> {
     `${lang}: due after a review`,
   );
 
-  for (const { id: cardId } of await wordCards()) {
-    await expectStatus(
-      `marking a card of ${word} known`,
-      api.me.cards[":cardId"].$patch({ param: { cardId }, json: { state: "known" } }),
-      204,
-    );
-  }
+  await expectStatus(
+    `marking ${word} known`,
+    api.me.words[":lemmaId"].$patch({ param: { lemmaId: lemmaParam(word) }, json: { state: "known" } }),
+    204,
+  );
   assert.deepEqual((await due()).cards, [], `${lang}: a known word's cards are due`);
-  assert.deepEqual(await counts(), { lang, words: none, forms: none }, `${lang}: counts after marking a word known`);
+  assert.deepEqual(await counts(), { lang, due: 0, new: 0 }, `${lang}: counts after marking a word known`);
 }
 
 describe("card journeys", { concurrency: LANGS.length }, () => {

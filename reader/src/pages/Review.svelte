@@ -1,13 +1,12 @@
 <script lang="ts">
   import { tick } from "svelte";
   import {
-    CARD_GROUPS,
     LANGUAGE_INFO,
     blankParts,
+    firstWord,
     parseLemmaId,
     RATINGS,
     type CardCounts,
-    type CardGroup,
     type Cloze,
     type DueCard,
     type Lang,
@@ -15,7 +14,7 @@
     type User,
   } from "@skolia/shared/api";
   import { LANGUAGES } from "@skolia/shared/lang";
-  import type { Sense } from "@skolia/shared/schema";
+  import type { Entry, Sense } from "@skolia/shared/schema";
   import { formTables, lemmaTables, type Table } from "@skolia/shared/paradigm";
   import { featureWords, UPOS_LABEL } from "@skolia/shared/ud";
   import Button from "../components/Button.svelte";
@@ -25,26 +24,21 @@
   import { createQuery, useQueryClient } from "@tanstack/svelte-query";
   import { review, signIn } from "../lib/api.ts";
   import { createRemoveCloze } from "../lib/clozes.ts";
-  import { countsQuery, dueQuery, settingsQuery } from "../lib/queries.ts";
+  import { countsQuery, dueQuery } from "../lib/queries.ts";
   import { clue, keyTarget, shortcut } from "../lib/review.ts";
   import { createMarkKnown } from "../lib/words.ts";
 
-  /** lang and group are the URL's (#/review/pl/forms); without a language, the languages to
-   * choose from, and with one, only its cards. group only counts when the settings review forms
-   * on their own: without one, words, unless only forms have something. */
-  let { user, lang, group: wanted }: { user: User | null | undefined; lang: Lang | null; group: CardGroup | null } = $props();
+  /** lang is the URL's (#/review/pl); without one, the languages to choose from, and with one,
+   * only its cards. */
+  let { user, lang }: { user: User | null | undefined; lang: Lang | null } = $props();
 
   const GRADE_LABELS: Record<Rating, string> = { 1: "Again", 2: "Hard", 3: "Good", 4: "Easy" };
-  const GROUP_LABELS: Record<CardGroup, string> = { words: "Words", forms: "Forms" };
   const LANGUAGES_PAGE = "#/review";
   const SHOWN_SENSES = 3;
 
   const client = useQueryClient();
   const cardCounts = createQuery(() => ({ ...countsQuery, enabled: !!user }));
-  const settings = createQuery(() => ({ ...settingsQuery, enabled: !!user }));
   const counts = $derived(cardCounts.data ?? null);
-  /** Whether forms have their own session; null until the settings have come. */
-  const split = $derived(settings.data ? !settings.data.formsWithWords : null);
   /** The card whose answer is shown. */
   let revealedId = $state<string | null>(null);
   let busy = $state(false);
@@ -55,31 +49,18 @@
   const markWordKnown = createMarkKnown();
   const deleteCloze = createRemoveCloze();
 
-  /** New or due cards in one group, or with none in both. */
-  function sum(c: CardCounts, group: CardGroup | null, which: "new" | "due"): number {
-    const groups: readonly CardGroup[] = group ? [group] : CARD_GROUPS;
-    return groups.reduce((n, g) => n + c[g][which], 0);
-  }
-
-  /** Cards to review in one group, or with none in both. */
-  function toReview(c: CardCounts, group: CardGroup | null = null): number {
-    return sum(c, group, "new") + sum(c, group, "due");
+  function toReview(c: CardCounts): number {
+    return c.new + c.due;
   }
 
   const selected = $derived(lang);
-  const selectedCounts = $derived(counts?.find((c) => c.lang === selected) ?? null);
-  const group = $derived<CardGroup | null>(
-    split
-      ? (wanted ?? (selectedCounts && toReview(selectedCounts, "words") === 0 && toReview(selectedCounts, "forms") > 0 ? "forms" : "words"))
-      : null,
-  );
-  const session = $derived(dueQuery(selected, group));
-  const dueCards = createQuery(() => ({ ...session, enabled: !!user && split !== null }));
+  const session = $derived(dueQuery(selected));
+  const dueCards = createQuery(() => ({ ...session, enabled: !!user }));
   /** The session's cards not yet reviewed; null while they load. */
   const due = $derived(dueCards.data ?? null);
   const card = $derived(due?.cards[0]);
   const revealed = $derived(card !== undefined && card.id === revealedId);
-  const failure = $derived(error ?? (cardCounts.error ?? settings.error ?? dueCards.error)?.message ?? null);
+  const failure = $derived(error ?? (cardCounts.error ?? dueCards.error)?.message ?? null);
 
   function message(e: unknown): string {
     return e instanceof Error ? e.message : String(e);
@@ -113,15 +94,16 @@
     showButton?.focus();
   }
 
-  /** Known marks all the word's cards known, which takes them out of reviews, and skips them in this session. */
+  /** Known marks the card's words known, which takes out of reviews the cards whose words are
+   * all known, and skips them in this session. */
   async function markKnown(): Promise<void> {
     if (!card || busy) return;
-    const { lemmaId } = card;
+    const known = new Set(card.lemmaIds);
     busy = true;
     error = null;
     try {
-      await markWordKnown.mutateAsync(lemmaId);
-      drop((c) => c.lemmaId !== lemmaId);
+      await Promise.all([...known].map((lemmaId) => markWordKnown.mutateAsync(lemmaId)));
+      drop((c) => !c.lemmaIds.every((id) => known.has(id)));
     } catch (e: unknown) {
       error = message(e);
     } finally {
@@ -151,26 +133,32 @@
   }
 
   function langOf(c: DueCard): Lang {
-    return parseLemmaId(c.lemmaId).lang;
+    return parseLemmaId(firstWord(c)).lang;
+  }
+
+  /** The dictionary entry shown: the card's first word's. */
+  function entryOf(c: DueCard): Entry | null {
+    return c.entries[0] ?? null;
   }
 
   function sensesFor(c: DueCard): Sense[] {
-    return c.entry?.senses ?? [];
+    return entryOf(c)?.senses ?? [];
   }
 
   /** The grammar tells apart words a clue can't, like pisać and napisać ("to write"). */
   function hintOf(c: DueCard): string {
-    return [UPOS_LABEL[c.entry?.upos ?? "X"], ...featureWords(c.entry?.grammar ?? {})].join(" · ");
+    return [UPOS_LABEL[entryOf(c)?.upos ?? "X"], ...featureWords(entryOf(c)?.grammar ?? {})].join(" · ");
   }
 
   function tablesOf(c: DueCard): Table[] {
-    if (!c.entry || !due) return [];
+    const entry = entryOf(c);
+    if (!entry || !due) return [];
     const sets = due.featureSets;
     const language = LANGUAGES[langOf(c)];
     const featsOf = (id: number) => sets[String(id)];
     return c.kind === "cloze"
-      ? formTables(featsOf, c.entry, { text: blankOf(c.data), feats: c.data.feats }, language.paradigm, language.mergeLabels)
-      : lemmaTables(featsOf, c.entry, language.paradigm, language.mergeLabels);
+      ? formTables(featsOf, entry, { text: blankOf(c.data), feats: c.data.feats }, language.paradigm, language.mergeLabels)
+      : lemmaTables(featsOf, entry, language.paradigm, language.mergeLabels);
   }
 
   function blankOf(cloze: Cloze): string {
@@ -178,7 +166,7 @@
   }
 
   function lemmaOf(c: DueCard): string {
-    return c.entry?.lemma ?? parseLemmaId(c.lemmaId).lemma;
+    return entryOf(c)?.lemma ?? parseLemmaId(firstWord(c)).lemma;
   }
 
   function onkeydown(event: KeyboardEvent): void {
@@ -243,7 +231,7 @@
 
 {#snippet answer(c: DueCard)}
   {@const lang = langOf(c)}
-  {@const said = c.entry?.pronunciations ?? []}
+  {@const said = entryOf(c)?.pronunciations ?? []}
   {#if said.length > 0}
     <Pronunciations said={said} />
   {/if}
@@ -262,7 +250,7 @@
 {#snippet meanings(c: DueCard)}
   {@const senses = sensesFor(c).slice(0, SHOWN_SENSES)}
   {#if c.kind === "cloze"}
-    <p class="muted">{UPOS_LABEL[c.entry?.upos ?? "X"]}</p>
+    <p class="muted">{UPOS_LABEL[entryOf(c)?.upos ?? "X"]}</p>
   {/if}
   {#if senses.length > 0}
     <ul class="glosses">
@@ -279,9 +267,9 @@
   {/if}
 {/snippet}
 
-{#snippet tally(c: CardCounts, group: CardGroup | null)}
-  {@const fresh = sum(c, group, "new")}
-  {@const due = sum(c, group, "due")}
+{#snippet tally(c: CardCounts)}
+  {@const fresh = c.new}
+  {@const due = c.due}
   {#if fresh + due === 0}
     <span class="muted">Done for today</span>
   {:else}
@@ -304,22 +292,15 @@
       <Button variant="primary" onclick={() => void signIn()}>Sign in</Button>
     {:else if counts && counts.length === 0}
       <p class="muted">Nothing to review yet. Words you look up in the reader turn into cards here.</p>
-    {:else if counts && split !== null}
+    {:else if counts}
       <ul class="languages">
         {#each counts as c (c.lang)}
           {@const info = LANGUAGE_INFO[c.lang]}
           <li class={{ done: toReview(c) === 0 }}>
-            {#if split}
-              <p class="language" lang={c.lang}><span class="flag" aria-hidden="true">{info.flag}</span> {info.endonym}</p>
-              {#each CARD_GROUPS as g (g)}
-                <a class="group" href="#/review/{c.lang}/{g}"><span>{GROUP_LABELS[g]}</span> {@render tally(c, g)}</a>
-              {/each}
-            {:else}
-              <a class="whole" href="#/review/{c.lang}">
-                <span class="language" lang={c.lang}><span class="flag" aria-hidden="true">{info.flag}</span> {info.endonym}</span>
-                {@render tally(c, null)}
-              </a>
-            {/if}
+            <a class="whole" href="#/review/{c.lang}">
+              <span class="language" lang={c.lang}><span class="flag" aria-hidden="true">{info.flag}</span> {info.endonym}</span>
+              {@render tally(c)}
+            </a>
           </li>
         {/each}
       </ul>
@@ -331,9 +312,7 @@
 {:else}
   <main class="session">
     <h1 class="visually-hidden">
-      Review {LANGUAGE_INFO[selected].name}{#if group}
-        , {GROUP_LABELS[group].toLowerCase()}
-      {/if}
+      Review {LANGUAGE_INFO[selected].name}
     </h1>
     <div class="bar">
       <a class="leave" href={LANGUAGES_PAGE} aria-label="Stop reviewing" aria-keyshortcuts="Escape">
@@ -460,18 +439,6 @@
     flex-direction: column;
     gap: 0.35rem;
     padding: 1rem 1.1rem;
-  }
-
-  li > .language {
-    padding: 1rem 1.1rem 0.5rem;
-  }
-
-  .group {
-    display: flex;
-    justify-content: space-between;
-    gap: 0.5rem;
-    padding: 0.5rem 1.1rem;
-    border-top: 1px solid var(--line);
   }
 
   .tally {
