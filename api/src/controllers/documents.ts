@@ -1,5 +1,5 @@
 // Documents: importing a text, listing and opening them, and their text, analysis and
-// queueing a document again when ingest makes other versions or its job is lost.
+// queueing a document again, when asked, if ingest makes other versions or its job is lost.
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import * as z from "zod";
 import {
@@ -50,7 +50,7 @@ type DocumentDetailDeps = RequeueDeps & Clock & { documents: DocumentLookup };
 type DocumentEditDeps = DocumentDetailDeps & { documents: DocumentEntries & DocumentTags };
 
 /** A page of the entries the viewer can see that the filter keeps. Listing only reads
- * the stored status projection; opening one (get) queues it again if it needs it. */
+ * the stored status projection; refresh queues one again if it needs it. */
 export async function list(
   deps: { documents: DocumentLookup },
   viewer: Identity | null,
@@ -133,7 +133,7 @@ export async function importText(
   const record = await ownEntry(deps, id, user);
   if (!record) throw new Error(`document ${id} vanished after insert`);
   if (started !== null) return { status: 202, body: summarize(record, started, user) };
-  const summary = await current(deps, record, versions, user);
+  const summary = await refreshed(deps, record, versions, user);
   if (summary.state !== "failed") return ok(summary);
   const queued = await requeue(deps, record, versions, await readStatus(deps.blobs, id), deps.now(), "reimported");
   return { status: 202, body: summarize(record, queued, user) };
@@ -163,7 +163,7 @@ export async function update(
   const unknown = await unknownTag(deps, fields.tags);
   if (unknown !== null) return unknown;
   await deps.documents.update(record.id, user.id, fields);
-  return ok(await current(deps, { ...record, ...fields }, versionsOf(deps.blobs), user));
+  return ok(summarize({ ...record, ...fields }, await readStatus(deps.blobs, record.id), user));
 }
 
 /** A user deletes their entry. The text, its analyses stay, so importing it
@@ -180,17 +180,30 @@ export async function remove(
   return NO_CONTENT;
 }
 
+/** The entry as it stands; it isn't queued again here (refresh does that). */
 export async function get(deps: DocumentDetailDeps, id: string, viewer: Identity | null): Promise<Ok<DocumentSummary> | Failed<404>> {
   const record = await findDocument(deps, id, viewer);
   if (!record) return noSuchDocument();
-  const summary = await current(deps, record, versionsOf(deps.blobs), viewer);
+  return ok(await withQueue(deps, record, summarize(record, await readStatus(deps.blobs, record.id), viewer)));
+}
+
+/** The entry, after queueing it again if ingest now makes other versions or its run seems
+ * lost. Anyone who can see it may ask: it's queued only when it needs it. */
+export async function refresh(deps: DocumentDetailDeps, id: string, viewer: Identity | null): Promise<Ok<DocumentSummary> | Failed<404>> {
+  const record = await findDocument(deps, id, viewer);
+  if (!record) return noSuchDocument();
+  return ok(await withQueue(deps, record, await refreshed(deps, record, versionsOf(deps.blobs), viewer)));
+}
+
+/** The summary with where the viewer's own queued document is in its queue. */
+async function withQueue(deps: { queue: JobQueue }, record: StoredDocument, summary: DocumentSummary): Promise<DocumentSummary> {
   if (summary.mine && summary.state === "queued") {
     const jobs = await deps.queue.jobs(record.lang);
     summary.queue = placeIn(jobs, record.id);
     // The run writes no status while the container works on it: the container says
     if (jobs?.running.includes(record.id)) summary.state = "analysing";
   }
-  return ok(summary);
+  return summary;
 }
 
 /** No container running means one is about to start for this document. */
@@ -261,7 +274,7 @@ async function ownEntry(deps: { documents: DocumentLookup }, id: DocumentId, use
 
 /** The summary, after queueing the document again if ingest now produces other
  * versions, or if its run seems lost. */
-async function current(
+async function refreshed(
   deps: RequeueDeps & Clock,
   record: StoredDocument,
   versions: VersionsOf,

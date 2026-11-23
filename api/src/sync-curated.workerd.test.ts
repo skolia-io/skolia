@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { parseCurated, resolveCurated, sync, toCurated, type Change, type Curated } from "./sync-curated.ts";
 import { CURATED_USER } from "./sync-curated-key.ts";
-import { client, listed, local, setup, useLocal, type App } from "./testing/app.ts";
+import { client, listed, local, publish, readyAt, setup, useLocal, type App } from "./testing/app.ts";
 import { body } from "@skolia/util/responses";
 
 useLocal();
@@ -45,6 +45,21 @@ test("the sync imports, updates and deletes until the curated user's documents m
   assert.deepEqual(await sync(api, [tagged, edited], { check: true }), []);
   assert.deepEqual(kinds(await sync(api, [retitled, edited])), ["update"]);
   assert.deepEqual(await sync(api, [retitled, edited], { check: true }), []);
+});
+
+test("the sync queues a curated text again once ingest makes another analysis of it", async () => {
+  const app = setup();
+  const api = client(app, await local.signIn(CURATED_USER));
+  const text = await toCurated("pl/a.yaml", "pl", INWOKACJA);
+  await sync(api, [text]);
+  await readyAt(text.id, "1");
+  await publish("1");
+  await local.takeQueued();
+  assert.deepEqual(await sync(api, [text]), []);
+  assert.deepEqual(await local.takeQueued(), []);
+  await publish("2");
+  assert.deepEqual(await sync(api, [text]), []);
+  assert.deepEqual(await local.takeQueued(), [{ doc: text.id, lang: "pl" }]);
 });
 
 async function inline(text: string, annotations = ""): Promise<Curated> {

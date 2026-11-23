@@ -12,6 +12,7 @@ import {
   publish,
   putJson,
   readyAt,
+  refreshedOf,
   setup,
   summaryOf,
   useLocal,
@@ -83,7 +84,7 @@ test("the summary names the reading once there is one, and it's served by name",
   );
 });
 
-test("an outdated document is queued once when it's opened, not listed, and its old reading is kept meanwhile", async () => {
+test("an outdated document is queued once when it's refreshed, not listed or opened, and its old reading is kept meanwhile", async () => {
   const app = setup();
   await importText(app, TEXT, { visibility: "public", licence: "cc0" });
   const id = await docId("pl", TEXT);
@@ -96,11 +97,13 @@ test("an outdated document is queued once when it's opened, not listed, and its 
     list.items.map((d) => [d.state, d.reading?.analysis]),
     [["ready", "s2-a1"]],
   );
+  assert.equal((await summaryOf(app, id)).state, "ready");
   assert.deepEqual(await local.takeQueued(), []);
-  const opened = await summaryOf(app, id);
-  assert.deepEqual([opened.state, opened.reading?.analysis], ["queued", "s2-a1"]);
+  // Signed out: anyone who can see it may ask
+  const refreshed = await refreshedOf(app, id, {});
+  assert.deepEqual([refreshed.state, refreshed.reading?.analysis], ["queued", "s2-a1"]);
   assert.deepEqual(await local.takeQueued(), [{ doc: id, lang: "pl" }]);
-  assert.equal((await summaryOf(app, id)).state, "queued");
+  assert.equal((await refreshedOf(app, id)).state, "queued");
   assert.deepEqual(await local.takeQueued(), []);
 });
 
@@ -111,7 +114,7 @@ test("a legacy bundle version does not make its analysis outdated", async () => 
   await readyAt(id, "1");
   await putJson(versionsKey("pl"), { analyzer: "pl/1", lexicon: "old", analysis: "s2-a1", bundle: "old" });
   await local.takeQueued();
-  assert.equal((await summaryOf(app, id)).state, "ready");
+  assert.equal((await refreshedOf(app, id)).state, "ready");
   assert.deepEqual(await local.takeQueued(), []);
 });
 
@@ -121,10 +124,10 @@ test("a current document isn't queued, nor any before ingest publishes its versi
   const id = await docId("pl", TEXT);
   await readyAt(id, "2");
   await local.takeQueued();
-  await client(app).documents.$get({ query: {} });
+  assert.equal((await refreshedOf(app, id)).state, "ready");
   assert.deepEqual(await local.takeQueued(), []);
   await publish("2");
-  assert.equal((await summaryOf(app, id)).state, "ready");
+  assert.equal((await refreshedOf(app, id)).state, "ready");
   assert.deepEqual(await local.takeQueued(), []);
 });
 
@@ -133,10 +136,10 @@ test("a document queued for too long is queued again", async () => {
   await importText(app);
   const id = await docId("pl", TEXT);
   await local.takeQueued();
-  assert.equal((await summaryOf(app, id)).state, "queued");
+  assert.equal((await refreshedOf(app, id)).state, "queued");
   assert.deepEqual(await local.takeQueued(), []);
   await putJson(statusKey(id), { state: "queued", updated: "2026-11-03T23:00:00.000Z" });
-  assert.equal((await summaryOf(app, id)).state, "queued");
+  assert.equal((await refreshedOf(app, id)).state, "queued");
   assert.equal((await local.takeQueued()).length, 1);
 });
 
@@ -154,7 +157,7 @@ test("a queued document is analysing while its container runs it", async () => {
   assert.deepEqual(await local.takeQueued(), []);
 });
 
-test("listing a stuck document doesn't queue it again; opening it does", async () => {
+test("listing or opening a stuck document doesn't queue it again; refreshing it does", async () => {
   const app = setup();
   await importText(app);
   const id = await docId("pl", TEXT);
@@ -167,5 +170,7 @@ test("listing a stuck document doesn't queue it again; opening it does", async (
   );
   assert.deepEqual(await local.takeQueued(), []);
   assert.equal((await summaryOf(app, id)).state, "queued");
+  assert.deepEqual(await local.takeQueued(), []);
+  assert.equal((await refreshedOf(app, id)).state, "queued");
   assert.deepEqual(await local.takeQueued(), [{ doc: id, lang: "pl" }]);
 });

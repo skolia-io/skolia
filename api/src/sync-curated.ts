@@ -3,6 +3,7 @@
 // curated user's documents that aren't there any more. A document's id is its text's hash,
 // so an edited text is a new document and the old one is deleted. Each text's annotations are added, and those not in its file any more removed;
 // an annotation's id is a hash of what it says, so an edited one is removed and added again.
+// Then each text is refreshed, so one analysed by an older analyser is queued again.
 // With --check, only lists what it would do, and fails if that's anything.
 // curated/{lang}/{name}.yaml: one text, of a kind (curated-kinds.ts).
 // With --concurrency, makes that many changes at once (default CONCURRENCY). With --sample,
@@ -35,6 +36,7 @@ import { docId } from "@skolia/shared/keys";
 import { allPages, type Cursor } from "@skolia/shared/page";
 import * as schemas from "@skolia/shared/schemas";
 import { GraphBuilder, runGraph, type Graph } from "@skolia/util/graph";
+import { Semaphore } from "@skolia/util/semaphore";
 import type { AppType } from "./app.ts";
 import { API_KEY_HEADER } from "./auth.ts";
 import { CuratedSpec, resolve, type Resolved } from "./curated-kinds.ts";
@@ -274,7 +276,27 @@ export async function sync(api: Api, texts: readonly Curated[], { check = false,
     const made = await make(api, change, { init: { signal } });
     log.info("{change}", { ...describe(change), ...made, ms: since(start) });
   });
+  await refreshAll(api, texts, concurrency);
   return changes;
+}
+
+/** Asks for each text to be queued again if ingest now makes another analysis of it. */
+async function refreshAll(api: Api, texts: readonly Curated[], concurrency: number): Promise<void> {
+  const start = performance.now();
+  const semaphore = new Semaphore(concurrency);
+  const states = await Promise.all(
+    texts.map(async ({ id, path }) => {
+      using _permit = await semaphore.acquire();
+      const response = await api.documents[":id"].refresh.$post({ param: { id } });
+      if (!response.ok) throw new Error(`refresh ${path} (${id}): ${response.status} ${await response.text()}`);
+      return (await response.json()).state;
+    }),
+  );
+  log.info("refreshed {texts} texts", {
+    texts: texts.length,
+    queued: states.filter((state) => state === "queued").length,
+    ms: since(start),
+  });
 }
 
 /** Every page of the signed-in user's annotations on their document. */

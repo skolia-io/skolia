@@ -5427,7 +5427,7 @@
           "Documents"
         ],
         "summary": "A document",
-        "description": "The viewer's own entry for it, else a public one. Opening it queues it again if it needs it.",
+        "description": "The viewer's own entry for it, else a public one, as it stands. POST …/refresh queues it again if it needs it.",
         "security": [
           {},
           {
@@ -5638,6 +5638,57 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ]
+      }
+    },
+    "/api/documents/{id}/refresh": {
+      "post": {
+        "operationId": "postApiDocumentsByIdRefresh",
+        "tags": [
+          "Documents"
+        ],
+        "summary": "Queue a document again if it needs it",
+        "description": "If ingest now makes another analysis than the document's, or its run seems lost, it's queued again, keeping its last reading meanwhile. Otherwise nothing changes. A reader asks when it opens a text.",
+        "security": [
+          {},
+          {
+            "session": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The entry, with where it is in the queue",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentSummary"
                 }
               }
             }

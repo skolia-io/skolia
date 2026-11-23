@@ -376,9 +376,23 @@ export function createApp(deps: Deps) {
     )
     .get(
       "/api/documents/:id",
-      anyone(TAGS.documents, "A document", "The viewer's own entry for it, else a public one. Opening it queues it again if it needs it."),
+      anyone(
+        TAGS.documents,
+        "A document",
+        "The viewer's own entry for it, else a public one, as it stands. POST …/refresh queues it again if it needs it.",
+      ),
       responds({ 200: json(schemas.DocumentSummary, "The entry, with where it is in the queue"), 404: error("No such document") }),
       async (c) => send(c, await documents.get(deps, c.req.param("id"), await deps.auth.user(c.req.raw.headers))),
+    )
+    .post(
+      "/api/documents/:id/refresh",
+      anyone(
+        TAGS.documents,
+        "Queue a document again if it needs it",
+        "If ingest now makes another analysis than the document's, or its run seems lost, it's queued again, keeping its last reading meanwhile. Otherwise nothing changes. A reader asks when it opens a text.",
+      ),
+      responds({ 200: json(schemas.DocumentSummary, "The entry, with where it is in the queue"), 404: error("No such document") }),
+      async (c) => send(c, await documents.refresh(deps, c.req.param("id"), await deps.auth.user(c.req.raw.headers))),
     )
     .patch(
       "/api/documents/:id",

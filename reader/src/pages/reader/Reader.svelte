@@ -2,7 +2,7 @@
   import type { DocumentId, DocumentSummary, ReadingNames } from "@skolia/shared/api";
   import { LICENCE_INFO } from "@skolia/shared/api";
   import type { Token } from "@skolia/shared/schema";
-  import { getDocument, getText, loadReading, type Reading } from "../../lib/api.ts";
+  import { getDocument, getText, loadReading, refreshDocument, type Reading } from "../../lib/api.ts";
   import { layout, tokenKey, type Layout, type Piece } from "@skolia/shared/doc";
   import { afterPoll, notice as noticeFor, queueText, retryAfter } from "../../lib/reading.ts";
   import Button from "../../components/Button.svelte";
@@ -168,9 +168,12 @@
     let timer: ReturnType<typeof setTimeout> | undefined;
     let tried: ReadingNames | null = null;
     let failures = 0;
+    // Until one refresh has gone through: it queues the text again if it needs it, then polls only look
+    let refreshed = false;
     async function poll(): Promise<void> {
       try {
-        const current = await getDocument(id);
+        const current = refreshed ? await getDocument(id) : await refreshDocument(id);
+        refreshed = true;
         if (cancelled) return;
         summary = current;
         const step = afterPoll(current, tried);
