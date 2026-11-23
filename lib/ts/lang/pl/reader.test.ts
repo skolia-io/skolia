@@ -163,12 +163,12 @@ test("a possessive genitive answers whose fridge it is", () => {
     }),
   ];
   assert.deepEqual(explainCase(tokens, 2), {
-    text: "The genitive tells you whose lodówka it is.",
+    text: `The genitive tells you whose lodówka it is (dom brata = "the brother's house").`,
     trigger: 0,
     parts: [
       { text: "The genitive tells you whose ", trigger: false },
       { text: "lodówka", trigger: true },
-      { text: " it is.", trigger: false },
+      { text: ` it is (dom brata = "the brother's house").`, trigger: false },
     ],
   });
 });

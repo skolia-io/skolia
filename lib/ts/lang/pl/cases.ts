@@ -63,7 +63,7 @@ export function explainCase(tokens: Token[], index: number, depth = 0): CaseExpl
       case "description":
         return `With an adjective, a genitive says what something is like, after ${governor} or after a noun (jest średniego wzrostu, ściany jasnego koloru).`;
       case "possessive":
-        return `The genitive tells you whose ${word} it is.`;
+        return `The genitive tells you whose ${word} it is (dom brata = "the brother's house").`;
       case "noun-complement":
         return `It completes the noun ${word}, and a noun's complement is genitive.`;
       case "verbal-noun":
