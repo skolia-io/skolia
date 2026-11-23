@@ -12,6 +12,7 @@ import { sql } from "@skolia/util/sql";
 import type { LexiconRpc } from "@skolia/lexicon/rpc";
 import { clearLexicons, lexiconBinding, type LexiconBindings } from "@skolia/lexicon/testing";
 import { prepare } from "@skolia/util/d1";
+import { OPTIMIZE } from "@skolia/util/sqlite";
 import type { User as UserObject } from "../worker/user.ts";
 import type { RecorderEnv } from "./ingest-recorder.ts";
 import { SYSTEM_USER } from "../e2e-keys.ts";
@@ -56,6 +57,11 @@ export interface Local {
   close(): Promise<void>;
 }
 
+/** What just migrate runs after a D1 database's migrations, and the API's cron daily, so that its query planner has statistics */
+export async function optimize(db: D1Database): Promise<void> {
+  await prepare(db, OPTIMIZE).run();
+}
+
 export async function startLocal(): Promise<Local> {
   assert.ok(existsSync(`${DIST}main.js`), "api/dist/main.js is missing: just build first");
   const server = createTestHarness({
@@ -77,6 +83,8 @@ export async function startLocal(): Promise<Local> {
   await ingest.applyD1Migrations("INGEST_DB");
   const { INGEST_DB, DOCUMENT_STATUS } = await ingest.getEnv();
   const env = { ...(await worker.getEnv()), INGEST_DB, DOCUMENT_STATUS };
+  // As just migrate does after the migrations
+  for (const db of [env.DB, INGEST_DB]) await optimize(db);
   const options = authOptions(authConfig(env.DB));
   const instance = betterAuth({ ...options, plugins: [...options.plugins, testUtils()] });
   const { test } = await instance.$context;

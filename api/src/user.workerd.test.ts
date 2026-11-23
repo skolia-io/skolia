@@ -8,6 +8,7 @@ import { startLocal, type Local } from "./testing/harness.ts";
 import { MIGRATIONS } from "./user/migrations/index.ts";
 import { checksum } from "./user/migrator.ts";
 import * as queries from "./user/queries.ts";
+import type { Optimized } from "./worker/user.ts";
 import { BLANK_DOCUMENT, BLANK_START, cardsQuery, readingListDocumentsQuery } from "./user/queries.ts";
 
 let local: Local;
@@ -224,9 +225,70 @@ test("reading lists migrate each status into a list without touching the resume 
   assert.equal((await storage.exec("SELECT document_id FROM reading_list")).length, 3);
 });
 
+const counted = (n: number) => `WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM n WHERE i < ${n - 1})`;
+
+const MANY_WORDS = `
+WITH RECURSIVE n (i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM n WHERE i < 4999)
+INSERT INTO word (lemma_id, added_at, state)
+  SELECT printf('pl:w%05d:NOUN', i), strftime('%Y-%m-%dT%H:%M:%fZ', '2026-01-01', '+' || i || ' seconds'), 'learning' FROM n;
+INSERT INTO card (id, lang, kind, created_at, fsrs, data)
+  SELECT word.lemma_id || ' ' || kind.name, 'pl', kind.name, word.added_at,
+    json_object('dueAt', word.added_at, 'scheduleStatus', 'new', 'scheduledDays', 0),
+    CASE kind.name WHEN 'cloze' THEN json_object('documentId', word.lemma_id, 'blankStart', 0) ELSE '{}' END
+  FROM word, (SELECT 'recognition' AS name UNION ALL SELECT 'production' UNION ALL SELECT 'cloze') AS kind;
+INSERT INTO card_word (card_id, lemma_id, kind, created_at)
+  SELECT id, substr(id, 1, instr(id, ' ') - 1), kind, created_at FROM card;
+UPDATE word SET started_at = '2026-01-02T00:00:00.000Z' WHERE lemma_id < 'pl:w00100';
+UPDATE word SET state = 'known' WHERE lemma_id >= 'pl:w04900';
+`;
+
+/** MANY_WORDS, with 15,000 reviews of its recognition cards and 3,000 texts on reading lists */
+const SEED = [
+  MANY_WORDS,
+  `${counted(15_000)} INSERT INTO review (id, card_id, rating, reviewed_at)
+   SELECT printf('r%d', i), printf('pl:w%05d:NOUN recognition', i / 3), 3, strftime('%Y-%m-%dT%H:%M:%fZ', '2026-02-01', printf('+%d minutes', i)) FROM n`,
+  `${counted(3000)} INSERT INTO reading_list_document (list_id, document_id, lang, created_at)
+   SELECT 1 + i % 3, printf('%064d', i), CASE i % 3 WHEN 0 THEN 'en' WHEN 1 THEN 'fr' ELSE 'pl' END, strftime('%Y-%m-%dT%H:%M:%fZ', '2026-01-01', printf('+%d minutes', i)) FROM n`,
+];
+
+let planner: Promise<{ storage: Awaited<ReturnType<typeof storageOf>>; optimized: Optimized }> | undefined;
+
+/** An object with SEED's rows, then the planner's statistics, as it would have them once it
+ * starts again (User.optimize()), for the tests of its queries' plans. */
+function plannerObject() {
+  return (planner ??= (async () => {
+    const user = local.env.USER.getByName("planner");
+    await user.settings();
+    const storage = await storageOf("planner");
+    for (const statement of SEED) await storage.exec(statement);
+    return { storage, optimized: await user.optimize() };
+  })());
+}
+
+test("optimize gives each table of an object with a learner's cards statistics, for a few rows read", async () => {
+  const { storage, optimized } = await plannerObject();
+  const stats = await storage.exec<{ tbl: string; idx: string; stat: string }>("SELECT tbl, idx, stat FROM sqlite_stat1");
+  for (const table of ["word", "card", "card_word", "review", "reading_list_document"]) {
+    assert.ok(
+      stats.some((row) => row.tbl === table),
+      table,
+    );
+  }
+  // Durable Objects bill a statement's rows read, and count those of the ANALYZE that PRAGMA
+  // optimize runs as none of its own: a full ANALYZE of these reads 314,415.
+  assert.ok(optimized.rowsRead < 100, JSON.stringify(optimized));
+  // ANALYZE stopped at its limit, about 2,000 rows of each index, short of card_listed's 15,000,
+  // all of one language
+  const listed = stats
+    .find((row) => row.idx === "card_listed")
+    ?.stat.split(" ")
+    .map(Number);
+  assert.equal(listed?.[0], 15_000);
+  assert.ok(listed[1]! < 15_000, String(listed));
+});
+
 test("reading list pages seek an index, with language and cursor, without sorting", async () => {
-  await local.env.USER.getByName("reading-lists-plan").settings();
-  const storage = await storageOf("reading-lists-plan");
+  const { storage } = await plannerObject();
   for (const lang of [undefined, "pl"] as const) {
     for (const after of [undefined, schemas.ReadingKey.parse([AT, "0".repeat(64)])]) {
       const query = readingListDocumentsQuery(schemas.ReadingListId.parse(1), lang, { after, limit: 3 }).sql;
@@ -247,8 +309,7 @@ test("reading lists are capped, and deleting one releases its slot", async () =>
 });
 
 test("a page of cards seeks to its key in an index, in a language, a word or a text, and sorts nothing", async () => {
-  await local.env.USER.getByName("ivan").settings();
-  const storage = await storageOf("ivan");
+  const { storage } = await plannerObject();
   const newest = schemas.NewestCardKey.parse(["2026-11-07T00:00:00.000Z", "00000000-0000-4000-8000-000000000000"]);
   const listings = [false, true].flatMap((after) => [
     { index: "card USING INDEX card_listed", listing: { lang: "pl" as const, after: after ? newest : undefined, limit: 3 } },
@@ -277,8 +338,7 @@ test("a page of cards seeks to its key in an index, in a language, a word or a t
 });
 
 test("makeCard finds a text's cloze card at the blank by seeking card_blank", async () => {
-  await local.env.USER.getByName("ivan").settings();
-  const storage = await storageOf("ivan");
+  const { storage } = await plannerObject();
   const query = sql`SELECT id FROM card WHERE kind = 'cloze' AND ${BLANK_DOCUMENT} = ${"0".repeat(64)} AND ${BLANK_START} = ${6}`;
   const plan = (await storage.exec<{ detail: string }>(`EXPLAIN QUERY PLAN ${query.text}`, ...query.params)).map((row) => row.detail);
   assert.equal(plan.length, 1, plan.join("; "));
@@ -387,25 +447,9 @@ test("a card's counts of its words not started and being learnt match its words,
 
 /** 5,000 words, each with a recognition, a production and a cloze card; the first 100 started,
  * the last 100 known. */
-const MANY_WORDS = `
-WITH RECURSIVE n (i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM n WHERE i < 4999)
-INSERT INTO word (lemma_id, added_at, state)
-  SELECT printf('pl:w%05d:NOUN', i), strftime('%Y-%m-%dT%H:%M:%fZ', '2026-01-01', '+' || i || ' seconds'), 'learning' FROM n;
-INSERT INTO card (id, lang, kind, created_at, fsrs, data)
-  SELECT word.lemma_id || ' ' || kind.name, 'pl', kind.name, word.added_at,
-    json_object('dueAt', word.added_at, 'scheduleStatus', 'new', 'scheduledDays', 0),
-    CASE kind.name WHEN 'cloze' THEN json_object('documentId', word.lemma_id, 'blankStart', 0) ELSE '{}' END
-  FROM word, (SELECT 'recognition' AS name UNION ALL SELECT 'production' UNION ALL SELECT 'cloze') AS kind;
-INSERT INTO card_word (card_id, lemma_id, kind, created_at)
-  SELECT id, substr(id, 1, instr(id, ' ') - 1), kind, created_at FROM card;
-UPDATE word SET started_at = '2026-01-02T00:00:00.000Z' WHERE lemma_id < 'pl:w00100';
-UPDATE word SET state = 'known' WHERE lemma_id >= 'pl:w04900';
-`;
 
-test("choosing what to review seeks indexes, with 5,000 words", async () => {
-  await local.env.USER.getByName("many").settings();
-  const storage = await storageOf("many");
-  await storage.exec(MANY_WORDS);
+test("choosing what to review seeks indexes, with 5,000 words and their statistics", async () => {
+  const { storage } = await plannerObject();
   const now = schemas.Timestamp.parse("2026-11-07T00:00:00.000Z");
   const lemmaId = schemas.LemmaId.parse("pl:w00200:NOUN");
   const checks = [

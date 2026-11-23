@@ -28,6 +28,7 @@ import * as schemas from "@skolia/shared/schemas";
 import { CardId } from "@skolia/shared/schemas";
 import { compile, insertInto, type Query } from "@skolia/util/query";
 import { sql, type Sql } from "@skolia/util/sql";
+import { OPTIMIZE } from "@skolia/util/sqlite";
 import type { CardOutcome, DueCards, RateAction, RateOutcome, ReviewOutcome, StoredPosition } from "../ports/users.ts";
 import type { RateLimit } from "../rate-limits.ts";
 import { fromJson, fsrs, newCard, review, toJson } from "./scheduler.ts";
@@ -107,6 +108,12 @@ function listed(row: Record<string, SqlStorageValue>): Card {
   });
 }
 
+/** What optimize() read and wrote, as Durable Objects bill them */
+export type Optimized = {
+  readonly rowsRead: number;
+  readonly rowsWritten: number;
+};
+
 export interface UserEnv {
   /** "true" on previews and locally. For this object's migrations (user/migrations) only, not D1's: an edited
    * last migration is reverted with the down it was applied with, and applied again. */
@@ -126,6 +133,15 @@ export class User extends DurableObject<UserEnv> {
 
   migrate(version: number): Promise<void> {
     return this.ctx.blockConcurrencyWhile(() => this.#migrate(version));
+  }
+
+  /** Brings the query planner's statistics up to date (OPTIMIZE). The object runs it when it
+   * starts, after migrating, and after any migrate(): it lives while it's in use and is evicted
+   * once idle, so each start is a new connection. */
+  optimize(): Optimized {
+    const cursor = this.#exec(OPTIMIZE);
+    cursor.toArray();
+    return { rowsRead: cursor.rowsRead, rowsWritten: cursor.rowsWritten };
   }
 
   async migrationStatus(): Promise<MigrationStatus> {
@@ -361,6 +377,7 @@ export class User extends DurableObject<UserEnv> {
         );
       });
     }
+    this.optimize();
   }
 
   /** The applied migrations that stay, and the step that reverts an edited last one where that's allowed */

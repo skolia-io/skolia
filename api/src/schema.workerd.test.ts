@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { type TableColumn, tableColumns, timestampNames } from "@skolia/util/checks";
 import { getMigrations } from "better-auth/db/migration";
 import { authOptions } from "./auth.ts";
 import { ALICE, local, useLocal } from "./testing/app.ts";
-import { authConfig } from "./testing/harness.ts";
+import { authConfig, optimize } from "./testing/harness.ts";
+import { CURATED_USER } from "./sync-curated-key.ts";
+import { OPTIMIZE } from "@skolia/util/sqlite";
 import { DOCUMENT_QUERIES } from "./worker/adapters/document-queries.ts";
 import { ROLE_QUERIES } from "./worker/adapters/roles.ts";
 import { INGEST_QUERIES } from "@skolia/ingest/history";
@@ -168,8 +171,61 @@ async function attributionId(licence: string): Promise<number> {
   return row.id;
 }
 
-// A SCAN that names an index walks it in order, as list does over the public entries' partial index
+const USERS = 1000;
+const CREDITS = 100;
+/** Past the ids the other tests' credits take, which stay after a test */
+const FIRST_CREDIT = 100_000;
+/** Rows spread the way production's are, so that PRAGMA optimize gives the planner statistics
+ * to choose by: users, each with a few texts of their own, some public, a curated library of
+ * public texts with their tags and annotations, and credits for them. With a table of a
+ * few rows, the planner would rather scan it than seek its index. */
+async function seedDocuments(): Promise<void> {
+  const { DB } = local.env;
+  const user = await local.signUp(ALICE);
+  const counted = (n: number) => `WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM n WHERE i < ${n - 1})`;
+  await DB.batch([
+    DB.prepare(
+      `${counted(USERS)} INSERT INTO "user" (id, name, email, "emailVerified", "createdAt", "updatedAt")
+       SELECT printf('u%d', i), 'u', printf('u%d@example.com', i), 1, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z' FROM n`,
+    ),
+    DB.prepare(
+      `${counted(CREDITS)} INSERT OR IGNORE INTO attribution (id, licence, author) SELECT ${FIRST_CREDIT} + i, 'cc-by-4.0', printf('author %d', i) FROM n`,
+    ),
+    DB.prepare(
+      `${counted(4000)} INSERT INTO document (id, lang, words)
+       SELECT printf('%064d', i), CASE i % 3 WHEN 0 THEN 'en' WHEN 1 THEN 'fr' ELSE 'pl' END, 100 + i FROM n`,
+    ),
+    DB.prepare(
+      `${counted(4000)} INSERT INTO user_document (user_id, document_id, title, imported_at, visibility, attribution_id)
+       SELECT CASE WHEN i < 1000 THEN ?1 WHEN i < 2000 THEN ?2 ELSE printf('u%d', i % ?3) END, printf('%064d', i), 't',
+         strftime('%Y-%m-%dT%H:%M:%fZ', '2026-01-01', printf('+%d minutes', i)), CASE WHEN i < 1000 OR i % 4 = 0 THEN 'public' ELSE 'private' END,
+         ?4 + i % ?5
+       FROM n`,
+    ).bind(CURATED_USER, user.id, USERS, FIRST_CREDIT, CREDITS),
+    DB.prepare(
+      `INSERT INTO user_document_tag (user_id, document_id, kind, value)
+       SELECT user_id, document_id, 'level', CASE substr(document_id, -1) WHEN '0' THEN 'A1' ELSE 'B1' END FROM user_document WHERE user_id = ?`,
+    ).bind(CURATED_USER),
+    DB.prepare(
+      `${counted(4000)} INSERT INTO user_document_annotation (user_id, document_id, id, start, "end", kind, data, attribution_id, added_at)
+       SELECT ?, printf('%064d', i / 20), printf('a%d', i), i % 20 * 10, i % 20 * 10 + 5, 'note', '{}', ?, '2026-01-01T00:00:00.000Z'
+       FROM n`,
+    ).bind(CURATED_USER, FIRST_CREDIT),
+  ]);
+  await optimize(DB);
+  const analyzed = await DB.prepare("SELECT DISTINCT tbl FROM sqlite_stat1").all<{ tbl: string }>();
+  for (const table of ["user", "attribution", "document", "user_document", "user_document_tag", "user_document_annotation"]) {
+    assert.ok(
+      analyzed.results.some((row) => row.tbl === table),
+      table,
+    );
+  }
+}
+
+// A SCAN that names an index walks it in order, as list does over the public entries' partial index.
+// With statistics, as PRAGMA optimize gives production's.
 test("no document or role query scans a whole table or sorts its rows", async () => {
+  await seedDocuments();
   const plans = await Promise.all(
     Object.entries({ ...DOCUMENT_QUERIES, ...ROLE_QUERIES }).map(async ([name, sql]) => {
       const { results } = await local.env.DB.prepare(`EXPLAIN QUERY PLAN ${sql}`)
@@ -178,15 +234,63 @@ test("no document or role query scans a whole table or sorts its rows", async ()
       return { name, plan: results.map((r) => r.detail) };
     }),
   );
-  // A list's page walks its indexes in the list's order; visible sorts one text's entries
-  const paged = (name: string) => name.startsWith("list") || name.startsWith("tags");
+  // A list's page walks its indexes in the list's order; visible sorts one text's entries. A page
+  // of tags may sort: tag holds the few rows migrations add, and with statistics SQLite sorts them
+  // rather than look each one up from its (kind, position) index.
+  const paged = (name: string) => name.startsWith("list");
   const wrong = plans.filter(({ name, plan }) =>
     plan.some((d) => /^SCAN \S+$/u.test(d) || (paged(name) && /USE TEMP B-TREE FOR .*ORDER BY/u.test(d))),
   );
   assert.deepEqual(wrong, [], wrong.map(({ name, plan }) => `${name}: ${plan.join("; ")}`).join("\n"));
 });
 
+test("just migrate optimizes both D1 databases as the tests do", () => {
+  const justfile = readFileSync(new URL("../../justfile", import.meta.url).pathname, "utf8");
+  const start = justfile.indexOf("\nmigrate env:");
+  const migrate = justfile.slice(start, justfile.indexOf("\n\n", start)).split("\n");
+  for (const db of ["DB", "INGEST_DB"]) {
+    assert.ok(
+      migrate.some((line) => line.includes(`d1 execute ${db} `) && line.includes(`--command "${OPTIMIZE.text}"`)),
+      db,
+    );
+  }
+});
+
+test("the cron brings D1's planner statistics up to date at 03:00 UTC, and not at other minutes", async () => {
+  const { DB } = local.env;
+  const userRows = async () => {
+    const row = await DB.prepare("SELECT stat FROM sqlite_stat1 WHERE idx = 'sqlite_autoindex_user_1'").first<{ stat: string }>();
+    return Number(row?.stat.split(" ")[0]);
+  };
+  const addUsers = (from: number, n: number) =>
+    DB.prepare(
+      `WITH RECURSIVE n(i) AS (SELECT ?1 UNION ALL SELECT i + 1 FROM n WHERE i < ?1 + ?2 - 1)
+       INSERT INTO "user" (id, name, email, "emailVerified", "createdAt", "updatedAt")
+       SELECT printf('cron%d', i), 'u', printf('cron%d@example.com', i), 1, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z' FROM n`,
+    )
+      .bind(from, n)
+      .run();
+  const worker = local.server.getWorker();
+  await worker.scheduled({ cron: "* * * * *", scheduledTime: new Date("2026-11-23T03:00:00Z") });
+  const before = await userRows();
+  await addUsers(0, before * 20);
+  await worker.scheduled({ cron: "* * * * *", scheduledTime: new Date("2026-11-23T03:01:00Z") });
+  assert.equal(await userRows(), before);
+  await worker.scheduled({ cron: "* * * * *", scheduledTime: new Date("2026-11-24T03:00:00Z") });
+  const users = await DB.prepare('SELECT count(*) AS n FROM "user"').first<{ n: number }>();
+  assert.equal(await userRows(), users?.n);
+});
+
 test("the ingest history's queries seek its index", async () => {
+  await local.env.INGEST_DB.prepare(
+    `WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM n WHERE i < 4999)
+     INSERT INTO ingest_job (id, document_id, lang, image, accepted_at, started_at, finished_at, outcome, stages)
+     SELECT printf('j%d', i), printf('%064d', i / 2), 'pl', 'i', t, t, t, 'ready', '[]'
+     FROM (SELECT i, strftime('%Y-%m-%dT%H:%M:%fZ', '2026-01-01', printf('+%d minutes', i)) AS t FROM n)`,
+  ).run();
+  await optimize(local.env.INGEST_DB);
+  const analyzed = await local.env.INGEST_DB.prepare("SELECT 1 FROM sqlite_stat1 WHERE tbl = 'ingest_job'").first();
+  assert.notEqual(analyzed, null);
   const plans = await Promise.all(
     Object.entries(INGEST_QUERIES).map(async ([name, sql]) => {
       const { results } = await local.env.INGEST_DB.prepare(`EXPLAIN QUERY PLAN ${sql}`)
@@ -300,6 +404,7 @@ test("an annotation is a range of an entry's text, with JSON data and an attribu
 });
 
 test("a list narrowed by tags seeks each value from the cursor, and merges them", async () => {
+  await seedDocuments();
   const sql = DOCUMENT_QUERIES.listTagged;
   const params = parameters(sql);
   const { results } = await local.env.DB.prepare(`EXPLAIN QUERY PLAN ${sql}`)
