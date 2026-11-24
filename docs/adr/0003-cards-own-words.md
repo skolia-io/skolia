@@ -1,6 +1,6 @@
 # 3. Cards own words
 
-2026-11-16. Accepted. Replaces the words API of 0001 and the word statuses in 0002.
+2026-11-16. Accepted. Replaces the words API of 0001 and the word statuses in 0002. Superseded by [0004](0004-cards-belong-to-words.md).
 
 ## Context
 
