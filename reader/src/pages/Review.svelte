@@ -14,6 +14,7 @@
     type User,
   } from "@skolia/shared/api";
   import { LANGUAGES } from "@skolia/shared/lang";
+  import { formatCaseReason } from "../lib/case-explanations.ts";
   import type { Entry, Sense } from "@skolia/shared/schema";
   import { formTables, lemmaTables, type Table } from "@skolia/shared/paradigm";
   import { featureWords, UPOS_LABEL } from "@skolia/shared/ud";
@@ -223,8 +224,8 @@
   {#if grammar.length > 0}
     <p class="muted">{grammar.join(" · ")}</p>
   {/if}
-  {#if cloze.why}
-    <p class="why">{cloze.why}</p>
+  {#if cloze.caseReason}
+    <p class="why">{formatCaseReason(cloze.caseReason)}</p>
   {/if}
   <p class="source"><a href="#/doc/{cloze.documentId}">Open the text</a></p>
 {/snippet}

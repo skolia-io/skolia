@@ -2,14 +2,6 @@
 import type { Entry, Token } from "@skolia/shared/schema";
 import type { Layout, MergeLabels } from "../paradigm.ts";
 
-export interface CaseExplanation {
-  text: string;
-  /** Index in the sentence of the word that causes the case, to mark in the text. */
-  trigger: number | null;
-  /** Where the text names the trigger, so the sheet can mark it the way the text does. */
-  parts: { text: string; trigger: boolean }[];
-}
-
 /** A way the word combines with others: "szukać kogoś/czegoś [gen.]". */
 export interface Use {
   /** The headword as the pattern starts: "bać się". */
@@ -30,8 +22,6 @@ export interface Language {
   /** Nouns, adjectives and pronouns all take cases (Polish), so the sentence view shows
    * each word's case; English and French mark case only on a few pronouns. */
   cases: boolean;
-  /** Why the token at index has its case, for languages whose analysis says. */
-  explainCase(tokens: Token[], index: number): CaseExplanation | null;
   /** How the word combines with others, those the sentence uses first. */
   uses(entry: Entry, tokens: Token[], index: number): Use[];
   /** A label for a token that's only part of a word (the Polish person ending -em), shown

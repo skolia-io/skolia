@@ -134,7 +134,7 @@ export function isEnding(tokens: readonly Token[], index: number): boolean {
 }
 
 /** The case links explaining the selected word: its own, and the case of the word it
- * agrees with or is listed with, as the sheet's "Why …?" follows one step (lang/pl/cases.ts). */
+ * agrees with or is listed with, as the reader's "Why …?" follows one step. */
 export function caseChain(sentence: Sentence, selected: ReadonlySet<number>): readonly Link[] {
   const own = sentence.cases.filter((link) => selected.has(link.to.index));
   const followed = own.flatMap((link) =>

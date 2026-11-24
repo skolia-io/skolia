@@ -4,7 +4,6 @@ import type { Blob, Entry, Feats, Schema, Token } from "@skolia/shared/schema";
 import { layout } from "../../doc.ts";
 import { rankSenses } from "../../lexicon.ts";
 import { lemmaTables, formTables } from "../../paradigm.ts";
-import { explainCase } from "./cases.ts";
 import { argumentsOf, describePhrase, frames } from "./frames.ts";
 import { polish } from "./index.ts";
 
@@ -115,62 +114,6 @@ test("a card's declension marks the lemma, from feature sets looked up by id", (
     row.cells.flatMap((cell) => cell.filter((f) => f.current).map((f) => `${row.label} ${f.text}`)),
   );
   assert.deepEqual(current, ["nom. pies"]);
-});
-
-test("case explanations: governor, two-case prepositions, agreement chains", () => {
-  // Szukam starego psa w domu
-  const tokens: Token[] = [
-    token(0, 6, "Szukam", { lemma: "szukać", upos: "VERB" }),
-    token(7, 14, "starego", { upos: "ADJ", head: 2, deprel: "amod", feats: GEN_SG, case_reason: { rule: "agreement", trigger: 2 } }),
-    token(15, 18, "psa", { head: 0, deprel: "obj", feats: GEN_SG, case_reason: { rule: "verb", trigger: 0, governor: "szukać" } }),
-    token(19, 20, "w", { upos: "ADP", head: 4, deprel: "case" }),
-    token(21, 25, "domu", {
-      head: 0,
-      deprel: "obl",
-      feats: { Case: "Loc" },
-      case_reason: { rule: "preposition", trigger: 3, governor: "w" },
-    }),
-  ];
-  assert.deepEqual(explainCase(tokens, 2), {
-    text: "szukać governs the genitive for its object.",
-    trigger: 0,
-    parts: [
-      { text: "szukać", trigger: true },
-      { text: " governs the genitive for its object.", trigger: false },
-    ],
-  });
-  assert.equal(explainCase(tokens, 1)?.text, "It agrees with psa. psa: szukać governs the genitive for its object.");
-  assert.deepEqual(
-    explainCase(tokens, 1)
-      ?.parts.filter((p) => p.trigger)
-      .map((p) => p.text),
-    ["psa"],
-  );
-  assert.deepEqual(explainCase(tokens, 4)?.parts[0], { text: "w", trigger: true });
-  assert.equal(explainCase(tokens, 4)?.text, "w + locative means where (w domu).");
-  assert.equal(explainCase(tokens, 0), null);
-});
-
-test("a possessive genitive answers whose fridge it is", () => {
-  const tokens = [
-    token(0, 7, "lodówka"),
-    token(8, 13, "moich"),
-    token(14, 22, "rodziców", {
-      head: 0,
-      deprel: "nmod",
-      feats: { Case: "Gen", Number: "Plur" },
-      case_reason: { rule: "possessive", trigger: 0 },
-    }),
-  ];
-  assert.deepEqual(explainCase(tokens, 2), {
-    text: `The genitive tells you whose lodówka it is (dom brata = "the brother's house").`,
-    trigger: 0,
-    parts: [
-      { text: "The genitive tells you whose ", trigger: false },
-      { text: "lodówka", trigger: true },
-      { text: ` it is (dom brata = "the brother's house").`, trigger: false },
-    ],
-  });
 });
 
 function schema(positions: Schema["positions"], extra: Partial<Schema> = {}): Schema {

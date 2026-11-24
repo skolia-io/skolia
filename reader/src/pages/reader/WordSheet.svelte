@@ -12,7 +12,8 @@
   import { LemmaId as LemmaIdSchema } from "@skolia/shared/schemas";
   import { createForgetCards, createLearnWord, createWordCards, wordState } from "../../lib/words.ts";
   import { createAddCloze, createClozes } from "../../lib/clozes.ts";
-  import { MAX_CLOZE_SENTENCE, MAX_CLOZE_WHY, blankOut } from "@skolia/shared/api";
+  import { MAX_CLOZE_SENTENCE, blankOut } from "@skolia/shared/api";
+  import { caseReasonFor, explainCase } from "../../lib/case-explanations.ts";
   import type { ReaderMode } from "../../lib/mode.ts";
   import { formTables } from "@skolia/shared/paradigm";
   import { CASE_NAME, featureWords, roleLabel, UPOS_LABEL } from "@skolia/shared/ud";
@@ -201,7 +202,7 @@
         ...wordAudio(w.token.text, entry, forms[i]?.data),
         partOfWord,
         role: role && head ? { role, head } : null,
-        caseWhy: language.explainCase(tokens, w.index),
+        caseReason: caseReasonFor(tokens, w.index),
         senses: entry ? rankSenses(entry.senses, w.token.feats) : [],
         uses: uses.filter((u) => !u.idiom),
         idioms: uses.filter((u) => u.idiom),
@@ -291,15 +292,14 @@
   function clozeOf(w: (typeof words)[number]) {
     if (!learnable(w) || w.ref.token.mwt !== undefined) return null;
     const isLemma = sameWord(w.entry?.lemma ?? w.ref.token.lemma ?? w.ref.token.text, w.ref.token.text);
-    if (isLemma && (w.caseWhy === null || w.ref.token.feats.Case === "Nom")) return null;
+    if (isLemma && (w.caseReason === null || w.ref.token.feats.Case === "Nom")) return null;
     const found = sentenceText(w.ref.sentence);
     if (!found || found.text.length > MAX_CLOZE_SENTENCE) return null;
-    const why = w.caseWhy && w.caseWhy.text.length <= MAX_CLOZE_WHY ? w.caseWhy.text : null;
     return {
       lemmaId: w.lemmaId,
       documentId,
       ...blankOut(found, w.ref.token),
-      why,
+      caseReason: w.caseReason,
     };
   }
 
@@ -542,12 +542,13 @@
           >
         </p>
       {/if}
-      {#if word.caseWhy && token.feats.Case}
-        {@const trigger = word.caseWhy.trigger}
+      {#if word.caseReason}
+        {@const explanation = explainCase(word.caseReason, token.case_reason?.trigger ?? null)}
+        {@const trigger = explanation.trigger}
         <p class="why">
-          <span class="why-label">Why {CASE_NAME[token.feats.Case]}?</span>
+          <span class="why-label">Why {CASE_NAME[word.caseReason.case]}?</span>
           <span lang={lang}
-            >{#each word.caseWhy.parts as part, j (j)}
+            >{#each explanation.parts as part, j (j)}
               {#if part.trigger && trigger !== null}
                 <button
                   type="button"

@@ -1,5 +1,4 @@
 import type { Language } from "../types.ts";
-import { explainCase } from "./cases.ts";
 import { argumentsOf, frames } from "./frames.ts";
 import { layout, mergeLabels } from "./paradigm.ts";
 
@@ -10,7 +9,6 @@ export const polish: Language = {
   paradigm: layout,
   mergeLabels,
   cases: true,
-  explainCase: (tokens, index) => explainCase(tokens, index),
   uses: (entry, tokens, index) =>
     frames(entry.frames, argumentsOf(tokens, index)).map((frame) => ({
       head: frame.reflexive ? `${entry.lemma} się` : entry.lemma,
