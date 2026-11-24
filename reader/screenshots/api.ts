@@ -325,6 +325,9 @@ function listed(
   };
 }
 
+/** papieża, in the first sentence: a word known, its cards since deleted. */
+const KNOWN_WORD = LemmaId.parse("pl:papież:NOUN");
+
 /** The API's ports, in memory, for one test. Writes the pages make are accepted and
  * forgotten, except settings. */
 function deps(signedIn: boolean, annotations: readonly Annotation[]): Deps {
@@ -390,6 +393,15 @@ function deps(signedIn: boolean, annotations: readonly Annotation[]): Deps {
                 : [],
         next: null,
       }),
+      words: async (_userId, lemmaIds) =>
+        lemmaIds.flatMap((lemmaId) => {
+          const mine = kept.filter((c) => c.lemmaIds.includes(lemmaId));
+          if (lemmaId === KNOWN_WORD) return [{ lemmaId, state: "known" as const, cards: mine.length }];
+          if (mine.length === 0) return [];
+          return [
+            { lemmaId, state: mine.some((c) => c.state === "learning") ? ("learning" as const) : ("known" as const), cards: mine.length },
+          ];
+        }),
       setWordState: async () => true,
       deleteCard: async (_userId, cardId) => {
         const had = kept.some((c) => c.id === cardId);

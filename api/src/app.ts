@@ -7,7 +7,16 @@ import type { Context, TypedResponse } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import type { JSONParsed } from "hono/utils/types";
 import * as z from "zod";
-import { ANNOTATION_BATCH, MAX_TEXT_LENGTH, type ApiError, type Config, type Identity, type User, type Version } from "@skolia/shared/api";
+import {
+  ANNOTATION_BATCH,
+  MAX_LOOKUP,
+  MAX_TEXT_LENGTH,
+  type ApiError,
+  type Config,
+  type Identity,
+  type User,
+  type Version,
+} from "@skolia/shared/api";
 import * as schemas from "@skolia/shared/schemas";
 import * as annotations from "./controllers/annotations.ts";
 import * as cards from "./controllers/cards.ts";
@@ -193,16 +202,27 @@ export function createApp(deps: Deps) {
       }),
       (c) => signedIn(c, (user) => cards.makeCard(deps, user, c.req.valid("json"))),
     )
+    .get(
+      "/api/me/words",
+      mine(
+        TAGS.cards,
+        "Some of the user's words",
+        "Those of the words (lemmaId, once or more) the user has, with their states and how many cards each has. A word is the user's once they've made a card of it, and stays, with its state, once its cards are deleted.",
+      ),
+      validator("query", schemas.WordsQuery, badRequest(`lemmaId, once or more, at most ${MAX_LOOKUP} times`)),
+      responds({ 200: json(z.object({ words: z.array(schemas.Word) }), "The words the user has, in no set order"), 401: NOT_SIGNED_IN }),
+      (c) => signedIn(c, (user) => cards.words(deps, user, c.req.valid("query").lemmaId)),
+    )
     .patch(
       "/api/me/words/:lemmaId",
       mine(
         TAGS.cards,
         "Change a word's state",
-        "A word is one the user has cards of. known takes its cards out of reviews; learning puts them back where each was in its schedule.",
+        "A word is the user's once they've made a card of it, and stays once its cards are deleted. known takes its cards out of reviews; learning puts them back where each was in its schedule.",
       ),
       validator("param", z.object({ lemmaId: schemas.LemmaId }), badRequest()),
       validator("json", schemas.WordChange, badRequest()),
-      responds({ 204: NO_BODY, 401: NOT_SIGNED_IN, 404: error("The user has no cards of the word") }),
+      responds({ 204: NO_BODY, 401: NOT_SIGNED_IN, 404: error("The user hasn't the word") }),
       (c) => signedIn(c, (user) => cards.setWordState(deps, user, c.req.valid("param").lemmaId, c.req.valid("json").state)),
     )
     .delete(

@@ -457,6 +457,7 @@ test("choosing what to review seeks indexes, with 5,000 words and their statisti
     { query: queries.dueCountQuery("pl", now), seeks: ["card USING INDEX card_due"], sorts: false },
     { query: queries.startedSinceQuery("pl", now), seeks: ["word USING INDEX word_started"], sorts: false },
     { query: queries.wordCardQuery(lemmaId, "recognition"), seeks: ["card_word USING COVERING INDEX card_word_kind"], sorts: false },
+    { query: queries.wordsQuery([lemmaId, schemas.LemmaId.parse("pl:w04999:NOUN")]), seeks: ["word USING PRIMARY KEY"], sorts: false },
     {
       query: queries.startQuery(schemas.CardId.parse(crypto.randomUUID()), now),
       seeks: ["words USING COVERING INDEX card_word_card"],

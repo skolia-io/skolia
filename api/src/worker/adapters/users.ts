@@ -16,6 +16,7 @@ import type {
   ReviewRequest,
   Settings,
   LemmaId,
+  Word,
   WordState,
 } from "@skolia/shared/api";
 import type { PageRequest } from "@skolia/shared/page";
@@ -48,6 +49,10 @@ export class DurableObjectUsers implements UserData {
 
   async cards(userId: UserId, listing: CardListing): Promise<Paginated<Card, CardKey>> {
     return this.users.getByName(userId).cards(listing);
+  }
+
+  async words(userId: UserId, lemmaIds: readonly LemmaId[]): Promise<readonly Word[]> {
+    return this.users.getByName(userId).words(lemmaIds);
   }
 
   async setWordState(userId: UserId, lemmaId: LemmaId, state: WordState): Promise<boolean> {

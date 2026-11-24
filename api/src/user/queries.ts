@@ -2,7 +2,7 @@
 
 import type { CardId, CardListing, LemmaId, ReadingKey, ReadingListId, Lang, Timestamp, WordCardKind } from "@skolia/shared/api";
 import type { PageRequest } from "@skolia/shared/page";
-import { col, desc, eq, gt, lit, lt, row, select, type Query } from "@skolia/util/query";
+import { col, desc, eq, gt, inList, lit, lt, row, select, type Query } from "@skolia/util/query";
 import { sql, type Sql } from "@skolia/util/sql";
 
 export function readingListDocumentsQuery(id: ReadingListId, lang: Lang | undefined, { after, limit }: PageRequest<ReadingKey>): Query {
@@ -62,6 +62,10 @@ export function cardsQuery(listing: CardListing): Query {
     .orderBy(desc("card.created_at"), desc("card.id"))
     .limit(limit + 1);
 }
+
+/** Those of the words the user has (word's key). */
+export const wordsQuery = (lemmaIds: readonly LemmaId[]): Sql =>
+  sql`SELECT lemma_id AS "lemmaId", state, cards FROM word WHERE ${inList("lemma_id", lemmaIds)}`;
 
 /** The word's card of a word kind (card_word_kind). */
 export const wordCardQuery = (lemmaId: LemmaId, kind: WordCardKind): Sql =>

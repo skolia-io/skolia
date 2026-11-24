@@ -22,6 +22,7 @@ import {
   type Settings,
   type Timestamp,
   type Identity,
+  type Word,
   type WordState,
 } from "@skolia/shared/api";
 import type { Entry } from "@skolia/shared/schema";
@@ -104,6 +105,15 @@ export async function makeCard(
 
 export async function cards(deps: { users: UserCards }, user: Identity, listing: CardListing): Promise<Ok<Paginated<Card, CardKey>>> {
   return ok(await deps.users.cards(user.id, listing));
+}
+
+/** Those of the words the user has: a word stays, with its state, once its cards are deleted. */
+export async function words(
+  deps: { users: UserCards },
+  user: Identity,
+  lemmaIds: readonly LemmaId[],
+): Promise<Ok<{ words: readonly Word[] }>> {
+  return ok({ words: await deps.users.words(user.id, lemmaIds) });
 }
 
 /** known takes the word's cards out of reviews; learning puts them back where they were. */

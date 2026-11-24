@@ -329,6 +329,13 @@ test("word sheet, a form that is its lemma", async ({ page }) => {
   await expect(page).toHaveScreenshot("word-sheet-lemma-form.png");
 });
 
+// papieża: known, with no cards left, so learnt again only when asked
+test("word sheet, a known word", async ({ page }) => {
+  await open(page, `#/doc/${LALKA}?w=0.16`);
+  await expect(page.getByRole("button", { name: "You know papież. Learn it again" })).toBeVisible();
+  await expect(page).toHaveScreenshot("word-sheet-known.png");
+});
+
 test("word sheet, scrolled", async ({ page, isMobile }) => {
   await open(page, WORD);
   // On a phone the handle gives the sheet the screen; on a desktop it's hidden

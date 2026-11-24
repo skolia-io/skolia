@@ -2726,6 +2726,28 @@
         ],
         "additionalProperties": false
       },
+      "Word": {
+        "type": "object",
+        "properties": {
+          "lemmaId": {
+            "$ref": "#/components/schemas/LemmaId"
+          },
+          "state": {
+            "$ref": "#/components/schemas/WordState"
+          },
+          "cards": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "lemmaId",
+          "state",
+          "cards"
+        ],
+        "additionalProperties": false
+      },
       "WordChange": {
         "type": "object",
         "properties": {
@@ -3993,6 +4015,90 @@
         }
       }
     },
+    "/api/me/words": {
+      "get": {
+        "operationId": "getApiMeWords",
+        "tags": [
+          "Cards"
+        ],
+        "summary": "Some of the user's words",
+        "description": "Those of the words (lemmaId, once or more) the user has, with their states and how many cards each has. A word is the user's once they've made a card of it, and stays, with its state, once its cards are deleted.",
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The words the user has, in no set order",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "words": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Word"
+                      }
+                    }
+                  },
+                  "required": [
+                    "words"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request doesn't fit its schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "query",
+            "name": "lemmaId",
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/LemmaId"
+                },
+                {
+                  "minItems": 1,
+                  "maxItems": 100,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/LemmaId"
+                  }
+                }
+              ]
+            },
+            "required": true
+          }
+        ]
+      }
+    },
     "/api/me/words/{lemmaId}": {
       "patch": {
         "operationId": "patchApiMeWordsByLemmaId",
@@ -4000,7 +4106,7 @@
           "Cards"
         ],
         "summary": "Change a word's state",
-        "description": "A word is one the user has cards of. known takes its cards out of reviews; learning puts them back where each was in its schedule.",
+        "description": "A word is the user's once they've made a card of it, and stays once its cards are deleted. known takes its cards out of reviews; learning puts them back where each was in its schedule.",
         "security": [
           {
             "session": []
@@ -4034,7 +4140,7 @@
             }
           },
           "404": {
-            "description": "The user has no cards of the word",
+            "description": "The user hasn't the word",
             "content": {
               "application/json": {
                 "schema": {
