@@ -1,8 +1,8 @@
 // Print the frame patterns the word sheet would show, for some lemmas from a lexicon response.
-// usage: node lib/ts/scripts/show-frames.ts ENTRIES.json pl:szukać:VERB pl:mieć:VERB ...
+// usage: node reader/scripts/show-frames.ts ENTRIES.json pl:szukać:VERB pl:mieć:VERB ...
 import { readFileSync } from "node:fs";
 import type { Entry } from "@skolia/shared/schema";
-import { frames } from "../lang/pl/frames.ts";
+import { frames } from "../src/lib/valency.ts";
 
 const [path, ...ids] = process.argv.slice(2);
 if (!path) throw new Error("usage: show-frames.ts ENTRIES.json LEMMA_ID...");
@@ -18,6 +18,6 @@ for (const id of ids) {
   for (const frame of shown) {
     const tags = frame.tags.length ? `  (${frame.tags.join(", ")})` : "";
     const head = `${entry.lemma}${frame.reflexive ? " się" : ""}`;
-    console.log(`  ${frame.idiom ? "idiom " : "      "}${head} ${frame.pattern}${tags}`);
+    console.log(`  ${frame.idiom ? "idiom " : "      "}${head} ${frame.pattern.map((part) => part.text).join("")}${tags}`);
   }
 }

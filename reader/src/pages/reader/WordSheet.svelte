@@ -4,6 +4,7 @@
   import { entryQuery, formAudioQuery, prefetchEntry, tokenLemma } from "../../lib/lexicon.ts";
   import type { AnnotationId, DocumentId, Lang } from "@skolia/shared/api";
   import type { Entry, Recording, Token } from "@skolia/shared/schema";
+  import { polishUses } from "../../lib/valency.ts";
   import { LANGUAGES } from "@skolia/shared/lang";
   import type { Piece } from "@skolia/shared/doc";
   import type { LemmaId } from "@skolia/shared/api";
@@ -67,6 +68,10 @@
   const sentence = $derived(piece.words[0]?.sentence ?? 0);
   const selectedTokens = $derived(new Set(piece.words.map((w) => w.index)));
   const language = $derived(LANGUAGES[lang]);
+
+  function frameUses(entry: Entry, tokens: Token[], index: number) {
+    return lang === "pl" ? polishUses(entry, tokens, index) : [];
+  }
 
   const SHOWN_SENSES = 3;
 
@@ -141,13 +146,6 @@
   const SHOWN_USES = 5;
 
   /** "kogoś/czegoś [gen.]" -> the words, and the bracketed labels to style apart. */
-  function patternParts(pattern: string): { text: string; label: boolean }[] {
-    return pattern
-      .split(/(\[[^\]]+\])/u)
-      .filter((part) => part !== "")
-      .map((part) => ({ text: part, label: part.startsWith("[") }));
-  }
-
   const client = useQueryClient();
   const tokens = $derived(piece.words.filter((w) => w.token.upos !== "PUNCT"));
   const ids = $derived([...new Set(tokens.flatMap(({ token }) => tokenLemma(token) ?? []))]);
@@ -191,7 +189,7 @@
       const head = w.token.head === null ? null : headText(w.sentence, w.token.head);
       const tokens = sentenceTokens(w.sentence);
       const wholeWordEntry = partOfWord === null ? entry : undefined;
-      const uses = wholeWordEntry ? language.uses(wholeWordEntry, tokens, w.index) : [];
+      const uses = wholeWordEntry ? frameUses(wholeWordEntry, tokens, w.index) : [];
       const parsedId = LemmaIdSchema.safeParse(entry?.lemma_id ?? (lookup?.isSuccess ? w.token.lemma_id : undefined));
       return {
         ref: w,
@@ -618,7 +616,7 @@
                     <span class="here-label" lang="en">in this sentence</span>
                   {/if}
                   <span class="frame-head">{frame.head}</span>
-                  {#each patternParts(frame.pattern) as part, j (j)}
+                  {#each frame.pattern as part, j (j)}
                     {#if part.label}
                       <span class="case-label">{part.text}</span>
                     {:else}
@@ -649,7 +647,7 @@
                     <span class="here-label" lang="en">in this sentence</span>
                   {/if}
                   <span class="frame-head">{frame.head}</span>
-                  {#each patternParts(frame.pattern) as part, j (j)}
+                  {#each frame.pattern as part, j (j)}
                     {#if part.label}
                       <span class="case-label">{part.text}</span>
                     {:else}

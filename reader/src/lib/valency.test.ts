@@ -1,7 +1,27 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { CaseSpec, Lex, Phrase, Position, Schema } from "@skolia/shared/schema";
-import { describe, describePhrase, frames } from "./frames.ts";
+import type { Token, CaseSpec, Lex, Phrase, Position, Schema } from "@skolia/shared/schema";
+import { argumentsOf, describe as renderFrame, describePhrase as renderPhrase, frames as renderFrames } from "./valency.ts";
+
+const describe = (schema: Schema) => flatten(renderFrame(schema));
+const describePhrase = (phrase: Parameters<typeof renderPhrase>[0]) =>
+  renderPhrase(phrase)
+    .map((p) => p.text)
+    .join("");
+const frames = (...args: Parameters<typeof renderFrames>) => renderFrames(...args).map(flatten);
+function flatten(frame: ReturnType<typeof renderFrame>) {
+  return { ...frame, pattern: frame.pattern.map((p) => p.text).join("") };
+}
+
+test("brackets in a fixed phrase are not grammar labels", () => {
+  assert.deepEqual(renderPhrase({ kind: "fixed", text: "w [nawiasie]", phrase: { kind: "np", case: "loc" } }), [
+    { text: "„w [nawiasie]”", label: false },
+  ]);
+  assert.deepEqual(renderPhrase({ kind: "np", case: "gen" }), [
+    { text: "kogoś/czegoś ", label: false },
+    { text: "[gen.]", label: true },
+  ]);
+});
 
 const SPECS: readonly CaseSpec[] = ["nom", "gen", "dat", "acc", "inst", "loc", "str", "part", "agr", "pred", "postp"];
 
@@ -314,6 +334,128 @@ test("merged frames keep the fewest tags and rank by fit, idiom and tags", () =>
       [false, "kogoś/czegoś [gen.]", ["wrong"], false],
       [true, "kogoś/czegoś [gen.]", ["doubtful"], false],
       [false, "oko/ucho [gen.]", ["colloquial"], true],
+    ],
+  );
+});
+
+function token(start: number, end: number, text: string, extra: Partial<Token> = {}): Token {
+  return {
+    start,
+    end,
+    text,
+    lemma: text,
+    lemma_id: `pl:${text}:NOUN`,
+    upos: "NOUN",
+    xpos: null,
+    feats: {},
+    head: null,
+    deprel: "root",
+    ...extra,
+  };
+}
+
+function readerSchema(positions: Schema["positions"], extra: Partial<Schema> = {}): Schema {
+  return {
+    pos: "verb",
+    lemma: "szukać",
+    reflexive: false,
+    certainty: "certain",
+    negation: "any",
+    predicative: false,
+    aspect: "imperf",
+    positions,
+    ...extra,
+  };
+}
+
+const READER_SUBJECT = { labels: ["subj" as const], phrases: [{ kind: "np" as const, case: "str" as const }] };
+
+test("frame phrases read like dictionary patterns", () => {
+  assert.equal(describePhrase({ kind: "np", case: "gen" }), "kogoś/czegoś [gen.]");
+  assert.equal(describePhrase({ kind: "np", case: "str" }), "kogoś/coś [acc.; gen. with nie]");
+  assert.equal(describePhrase({ kind: "prepnp", prep: "na", case: "acc" }), "na kogoś/coś [acc.]");
+  assert.equal(describePhrase({ kind: "prepadjp", prep: "ku", case: "dat" }), "ku jakiemuś [dat.]");
+  assert.equal(describePhrase({ kind: "cp", complementizer: "że", words: [] }), "że …");
+  assert.equal(describePhrase({ kind: "ncp", case: "gen", complementizer: "że", words: [] }), "tego, że … [gen.]");
+});
+
+test("frames drop the plain subject, merge duplicates, and put idioms last", () => {
+  const object = { labels: [], phrases: [{ kind: "np" as const, case: "gen" as const }] };
+  const idiom = {
+    labels: [],
+    phrases: [
+      {
+        kind: "lex" as const,
+        phrase: { kind: "np" as const, case: "gen" as const },
+        form: { shape: "nominal" as const, number: "sg" as const },
+        lemmas: { kind: "one" as const, lemma: "guz" },
+        modification: { kind: "natr" as const, positions: [] },
+      },
+    ],
+  };
+  const shown = frames([
+    readerSchema([READER_SUBJECT, idiom]),
+    readerSchema([READER_SUBJECT, object], { certainty: "colloquial" }),
+    readerSchema([READER_SUBJECT, object]),
+    readerSchema([{ labels: ["subj"], phrases: [{ kind: "E" }] }, object], { negation: "neg" }),
+  ]);
+  assert.deepEqual(
+    shown.map((f) => [f.pattern, f.tags, f.idiom]),
+    [
+      ["kogoś/czegoś [gen.]", [], false],
+      ["(impersonal) + kogoś/czegoś [gen.]", ["with nie"], false],
+      ["guz [gen.]", [], true],
+    ],
+  );
+});
+
+test("an idiom fits only when its fixed word is in the sentence", () => {
+  // mieć na oku: na + loc. with the fixed word oko
+  const naOku: Schema["positions"][number] = {
+    labels: [],
+    phrases: [
+      {
+        kind: "lex",
+        phrase: { kind: "prepnp", prep: "na", case: "loc" },
+        form: { shape: "nominal", number: "sg" },
+        lemmas: { kind: "one", lemma: "oko" },
+        modification: { kind: "natr", positions: [] },
+      },
+    ],
+  };
+  const idiom = readerSchema([READER_SUBJECT, naOku], { lemma: "mieć" });
+  const withOko = frames([idiom], [{ prep: "na", case: "Loc", lemma: "oko" }]);
+  const withStole = frames([idiom], [{ prep: "na", case: "Loc", lemma: "stół" }]);
+  assert.equal(withOko[0]?.here, true);
+  assert.equal(withStole[0]?.here, false);
+});
+
+test("the frame the sentence uses comes first, and clause alternatives are grouped", () => {
+  // Wiele osób czeka na autobus: czeka's complement is na + accusative
+  const sentence: Token[] = [
+    token(0, 5, "czeka", { lemma: "czekać", upos: "VERB" }),
+    token(6, 8, "na", { lemma: "na", upos: "ADP", head: 2, deprel: "case" }),
+    token(9, 16, "autobus", { lemma: "autobus", head: 0, deprel: "obl:arg", feats: { Case: "Acc" } }),
+  ];
+  const args = argumentsOf(sentence, 0);
+  assert.deepEqual(args, [{ prep: "na", case: "Acc", lemma: "autobus" }]);
+  const genitive = { labels: [], phrases: [{ kind: "np" as const, case: "gen" as const }] };
+  const naOrClause: Schema["positions"][number] = {
+    labels: [],
+    phrases: [
+      { kind: "prepnp", prep: "na", case: "acc" },
+      { kind: "cp", complementizer: "że", words: [] },
+      { kind: "cp", complementizer: "żeby", words: [] },
+      { kind: "prepncp", prep: "na", case: "acc", complementizer: "że", words: [] },
+      { kind: "prepncp", prep: "na", case: "acc", complementizer: "żeby", words: [] },
+    ],
+  };
+  const shown = frames([readerSchema([READER_SUBJECT, genitive]), readerSchema([READER_SUBJECT, naOrClause])], args);
+  assert.deepEqual(
+    shown.map((f) => [f.pattern, f.here]),
+    [
+      ["na kogoś/coś [acc.] / że/żeby … / na to, że/żeby …", true],
+      ["kogoś/czegoś [gen.]", false],
     ],
   );
 });

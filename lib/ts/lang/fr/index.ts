@@ -5,7 +5,6 @@ export const french: Language = {
   paradigm: layout,
   cases: false,
   // The analysis gives no case reasons and the lexicon no frames for French
-  uses: () => [],
   partOfWord: () => null,
   // A noun's gender is on the grammar line; its senses are selected by it (livre)
 };

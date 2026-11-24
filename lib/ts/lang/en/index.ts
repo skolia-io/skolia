@@ -5,6 +5,5 @@ export const english: Language = {
   paradigm: layout,
   cases: false,
   // The analysis gives no case reasons and the lexicon no frames for English
-  uses: () => [],
   partOfWord: () => null,
 };
