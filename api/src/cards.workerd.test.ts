@@ -394,6 +394,31 @@ test("deleting a word's answered card keeps the word started, and its place in t
   ]);
 });
 
+test("making a card for a known word learns it again, whether the card is new or one it had", async () => {
+  const app = setup();
+  const headers = await signedIn();
+  const states = async (lemmaId: LemmaId) => (await wordCards(app, headers, lemmaId)).map((c) => c.state);
+  await learn(app, headers, "pl:pies:NOUN");
+  await markWord(app, headers, "pl:pies:NOUN", "known");
+  // The word sheet's tick deletes the word's cards, and its + makes them again
+  for (const card of await wordCards(app, headers, "pl:pies:NOUN")) assert.equal((await deleteCard(app, headers, card.id)).status, 204);
+  await learn(app, headers, "pl:pies:NOUN");
+  assert.deepEqual(await states("pl:pies:NOUN"), ["learning", "learning"]);
+  assert.deepEqual(wordsAndKinds((await due(app, headers, "pl")).cards), [
+    ["pl:pies:NOUN", "production"],
+    ["pl:pies:NOUN", "recognition"],
+  ]);
+  await markWord(app, headers, "pl:pies:NOUN", "known");
+  await body("a card it had", makeCard(app, headers, "pl:pies:NOUN", "recognition"), 200);
+  assert.deepEqual(await states("pl:pies:NOUN"), ["learning", "learning"]);
+  assert.equal((await due(app, headers, "pl")).cards.length, 2);
+  // A word being learnt stays so
+  await learn(app, headers, "pl:kot:NOUN");
+  await body("a card it had", makeCard(app, headers, "pl:kot:NOUN", "production"), 200);
+  assert.deepEqual(await states("pl:kot:NOUN"), ["learning", "learning"]);
+  assert.equal((await due(app, headers, "pl")).cards.length, 4);
+});
+
 test("each language is reviewed on its own, with its own daily allowance of new words", async () => {
   const app = setup();
   const headers = await signedIn();

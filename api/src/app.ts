@@ -181,7 +181,7 @@ export function createApp(deps: Deps) {
       mine(
         TAGS.cards,
         "Make a card",
-        "A word's recognition or production card, one of each per word; or a cloze card, a sentence from a text the user sees with the word blanked out, one per blank. Adds the word, learning, if the user hadn't it.",
+        "A word's recognition or production card, one of each per word; or a cloze card, a sentence from a text the user sees with the word blanked out, one per blank. Adds the word, learning, if the user hadn't it, and puts it back to learning if they knew it, whether the card is new or one they had.",
       ),
       validator("json", schemas.NewCard, badRequest()),
       responds({

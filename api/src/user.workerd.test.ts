@@ -462,6 +462,11 @@ test("choosing what to review seeks indexes, with 5,000 words and their statisti
       seeks: ["words USING COVERING INDEX card_word_card"],
       sorts: false,
     },
+    {
+      query: queries.relearnQuery(schemas.CardId.parse(crypto.randomUUID())),
+      seeks: ["words USING COVERING INDEX card_word_card"],
+      sorts: false,
+    },
     // The new cards sort only what they've chosen: at most limit ready, and the picked words' cards
     ...[queries.freshQuery("pl", 20, 200), queries.freshCountQuery("pl", 20)].map((query) => ({
       query,

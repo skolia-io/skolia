@@ -119,3 +119,9 @@ export const startedSinceQuery = (lang: Lang, since: Timestamp): Sql =>
 export const startQuery = (cardId: CardId, now: Timestamp): Sql =>
   sql`UPDATE word SET started_at = ${now}
     WHERE word.started_at IS NULL AND word.lemma_id IN (SELECT words.lemma_id FROM card_word AS words WHERE words.card_id = ${cardId})`;
+
+/** Sets the card's known words back to learning (card_word_card, then word's key), which puts
+ * their cards in reviews (word_state_counted). */
+export const relearnQuery = (cardId: CardId): Sql =>
+  sql`UPDATE word SET state = 'learning'
+    WHERE word.state != 'learning' AND word.lemma_id IN (SELECT words.lemma_id FROM card_word AS words WHERE words.card_id = ${cardId})`;

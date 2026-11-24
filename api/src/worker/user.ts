@@ -42,6 +42,7 @@ import {
   freshCountQuery,
   freshQuery,
   readingListDocumentsQuery,
+  relearnQuery,
   startQuery,
   startedSinceQuery,
   wordCardQuery,
@@ -158,14 +159,19 @@ export class User extends DurableObject<UserEnv> {
   }
 
   /** A new card, or the one there was (existingCard). Past MAX_CARDS, a new card is refused.
-   * The card belongs to its word, added now, learning, if the user hadn't it. */
+   * The card belongs to its word, added now, learning, if the user hadn't it. Either way the
+   * card's words are learnt again if they were known, so it comes up in reviews (relearnQuery). */
   async makeCard(card: NewCard, now: Timestamp): Promise<CardOutcome> {
     const s = await fsrs();
     const id = CardId.parse(crypto.randomUUID());
     const fresh = toJson(newCard(s, id, new Date(now)));
     return this.ctx.storage.transactionSync((): CardOutcome => {
       const had = this.#exec(existingCard(card)).toArray()[0];
-      if (had !== undefined) return { kind: "had", cardId: CardId.parse(had["id"]) };
+      if (had !== undefined) {
+        const cardId = CardId.parse(had["id"]);
+        this.#exec(relearnQuery(cardId));
+        return { kind: "had", cardId };
+      }
       if (Number(this.#exec(sql`SELECT n FROM row_count WHERE name = 'card'`).one()["n"]) >= MAX_CARDS) return { kind: "full" };
       this.#exec(insertInto("word").values({ lemma_id: card.lemmaId, added_at: now, state: "learning" }).onConflict(["lemma_id"]));
       this.#exec(
@@ -179,6 +185,7 @@ export class User extends DurableObject<UserEnv> {
         }),
       );
       this.#exec(insertInto("card_word").values({ card_id: id, lemma_id: card.lemmaId, kind: card.kind, created_at: now }));
+      this.#exec(relearnQuery(id));
       return { kind: "made", cardId: id };
     });
   }
