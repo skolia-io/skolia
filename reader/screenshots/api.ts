@@ -26,7 +26,7 @@ import {
   type User,
   type UserId as UserIdType,
 } from "@skolia/shared/api";
-import { LANGUAGES } from "@skolia/shared/lang";
+import { caseReasonFor } from "../src/lib/case-explanations.ts";
 import { analysisKey, statusKey, textKey } from "@skolia/shared/keys";
 import type { Blob, Entry, Feats, Pronunciation, Recording, Status } from "@skolia/shared/schema";
 import { AnnotationId, CardId, DocumentId, LemmaId, ReadingListId, Timestamp, UserId } from "@skolia/shared/schemas";
@@ -252,7 +252,7 @@ function clozeOf(sentence: number, index: number): Cloze {
   return {
     documentId: LALKA,
     ...blankOut({ start: found.start, text: text.slice(found.start, found.end) }, token),
-    why: LANGUAGES.pl.explainCase(found.tokens, index)?.text ?? null,
+    caseReason: caseReasonFor(found.tokens, index),
   };
 }
 

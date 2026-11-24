@@ -12,7 +12,6 @@ import {
   MAX_ANNOTATION_TEXT,
   MAX_AUTHOR_LENGTH,
   MAX_CLOZE_SENTENCE,
-  MAX_CLOZE_WHY,
   MAX_LEMMA_LENGTH,
   MAX_NEW_PER_DAY,
   MAX_SOURCE_LENGTH,
@@ -116,6 +115,17 @@ export const ReadingListDocumentsQuery = pageQuery(ReadingKey, READING_PAGE).ext
 export const CountsQuery = z.object({ dayStart: IsoTime });
 export const DueQuery = z.object({ lang: Lang, dayStart: IsoTime });
 
+// A self-contained snapshot: review need not fetch the original sentence analysis.
+const CaseFact = z.object({
+  case: gen.Case,
+  rule: gen.CaseRule,
+  word: z.string().min(1).max(MAX_CLOZE_SENTENCE).optional(),
+  governor: z.string().min(1).max(MAX_CLOZE_SENTENCE).optional(),
+});
+export const ClozeCaseReason = CaseFact.extend({
+  related: CaseFact.optional(),
+}).meta({ id: "ClozeCaseReason" });
+
 export const Cloze = z.object({
   documentId: DocumentId,
   sentence: z.string().min(1).max(MAX_CLOZE_SENTENCE),
@@ -123,7 +133,8 @@ export const Cloze = z.object({
   blankStart: TextOffset,
   blankEnd: TextOffset,
   feats: z.record(z.string(), z.string()),
-  why: z.string().max(MAX_CLOZE_WHY).nullable(),
+  // Older cards stored prose under `why`. Keep their cards but don't send stale prose.
+  caseReason: ClozeCaseReason.nullable().default(null),
 });
 
 /** A new cloze card's data: the blank, like the sentence, is offsets in the text, and must

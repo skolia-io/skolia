@@ -278,7 +278,6 @@ export type WordState = (typeof WORD_STATES)[number];
 /** Longest sentence a cloze card keeps, in characters. */
 export const MAX_CLOZE_SENTENCE = 2000;
 /** Longest explanation of the blanked word's form a cloze card keeps. */
-export const MAX_CLOZE_WHY = 500;
 /** Most cards a user has, of every kind: far past what reading makes, to bound what one user stores. */
 export const MAX_CARDS = 100_000;
 
@@ -364,9 +363,10 @@ export type ScheduledCard = z.output<typeof schemas.ScheduledCard>;
 /** A cloze card's sentence, copied from its text so the card outlives the text and its
  * analysis. sentenceStart, blankStart and blankEnd are offsets in the text in UTF-16 code
  * units, JavaScript string indices (blankParts cuts the sentence at the blank). feats: the
- * blanked word's, and why: the reader's explanation of its case, both from the analysis
+ * blanked word's, and caseReason: structured facts from the analysis
  * when the card was made. */
 export type Cloze = z.output<typeof schemas.Cloze>;
+export type ClozeCaseReason = z.output<typeof schemas.ClozeCaseReason>;
 export type NewCloze = z.output<typeof schemas.NewCloze>;
 /** What the reader sends: the same, before the API's validation brands its ids. */
 export type NewClozeInput = z.input<typeof schemas.NewCloze>;

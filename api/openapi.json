@@ -323,11 +323,11 @@
                       "type": "string"
                     }
                   },
-                  "why": {
+                  "caseReason": {
+                    "default": null,
                     "anyOf": [
                       {
-                        "type": "string",
-                        "maxLength": 500
+                        "$ref": "#/components/schemas/ClozeCaseReasonOutput"
                       },
                       {
                         "type": "null"
@@ -342,7 +342,7 @@
                   "blankStart",
                   "blankEnd",
                   "feats",
-                  "why"
+                  "caseReason"
                 ],
                 "additionalProperties": false
               }
@@ -606,18 +606,6 @@
         "enum": [
           "Imp",
           "Perf"
-        ]
-      },
-      "Case": {
-        "type": "string",
-        "enum": [
-          "Nom",
-          "Gen",
-          "Dat",
-          "Acc",
-          "Ins",
-          "Loc",
-          "Voc"
         ]
       },
       "ConjType": {
@@ -2269,6 +2257,58 @@
         ],
         "additionalProperties": false
       },
+      "ClozeCaseReasonOutput": {
+        "type": "object",
+        "properties": {
+          "case": {
+            "$ref": "#/components/schemas/Case"
+          },
+          "rule": {
+            "$ref": "#/components/schemas/CaseRule"
+          },
+          "word": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "governor": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "related": {
+            "type": "object",
+            "properties": {
+              "case": {
+                "$ref": "#/components/schemas/Case"
+              },
+              "rule": {
+                "$ref": "#/components/schemas/CaseRule"
+              },
+              "word": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2000
+              },
+              "governor": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2000
+              }
+            },
+            "required": [
+              "case",
+              "rule"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "case",
+          "rule"
+        ],
+        "additionalProperties": false
+      },
       "FeatureSets": {
         "type": "object",
         "propertyNames": {
@@ -2449,11 +2489,11 @@
                       "type": "string"
                     }
                   },
-                  "why": {
+                  "caseReason": {
+                    "default": null,
                     "anyOf": [
                       {
-                        "type": "string",
-                        "maxLength": 500
+                        "$ref": "#/components/schemas/ClozeCaseReasonOutput"
                       },
                       {
                         "type": "null"
@@ -2468,7 +2508,7 @@
                   "blankStart",
                   "blankEnd",
                   "feats",
-                  "why"
+                  "caseReason"
                 ],
                 "additionalProperties": false
               }
@@ -2561,11 +2601,11 @@
                       "type": "string"
                     }
                   },
-                  "why": {
+                  "caseReason": {
+                    "default": null,
                     "anyOf": [
                       {
-                        "type": "string",
-                        "maxLength": 500
+                        "$ref": "#/components/schemas/ClozeCaseReason"
                       },
                       {
                         "type": "null"
@@ -2579,8 +2619,7 @@
                   "sentenceStart",
                   "blankStart",
                   "blankEnd",
-                  "feats",
-                  "why"
+                  "feats"
                 ]
               }
             },
@@ -2590,6 +2629,89 @@
               "data"
             ]
           }
+        ]
+      },
+      "ClozeCaseReason": {
+        "type": "object",
+        "properties": {
+          "case": {
+            "$ref": "#/components/schemas/Case"
+          },
+          "rule": {
+            "$ref": "#/components/schemas/CaseRule"
+          },
+          "word": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "governor": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "related": {
+            "type": "object",
+            "properties": {
+              "case": {
+                "$ref": "#/components/schemas/Case"
+              },
+              "rule": {
+                "$ref": "#/components/schemas/CaseRule"
+              },
+              "word": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2000
+              },
+              "governor": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2000
+              }
+            },
+            "required": [
+              "case",
+              "rule"
+            ]
+          }
+        },
+        "required": [
+          "case",
+          "rule"
+        ]
+      },
+      "Case": {
+        "type": "string",
+        "enum": [
+          "Nom",
+          "Gen",
+          "Dat",
+          "Acc",
+          "Ins",
+          "Loc",
+          "Voc"
+        ]
+      },
+      "CaseRule": {
+        "type": "string",
+        "enum": [
+          "vocative",
+          "preposition",
+          "agreement",
+          "numeral",
+          "verb",
+          "negation",
+          "structural",
+          "partitive",
+          "subject",
+          "predicate",
+          "description",
+          "possessive",
+          "noun-complement",
+          "verbal-noun",
+          "coordination",
+          "instrumental"
         ]
       },
       "CardMade": {

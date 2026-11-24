@@ -375,7 +375,7 @@ test("row_count's triggers keep the count of cards of every kind however one goe
     blankStart: 6,
     blankEnd: 9,
     feats: { Case: "Acc" },
-    why: null,
+    caseReason: null,
   };
   const cloze = { kind: "cloze" as const, lemmaId: "pl:pies:NOUN" as const, data };
   const other = { ...cloze, data: { ...data, blankStart: 0, blankEnd: 5 } };

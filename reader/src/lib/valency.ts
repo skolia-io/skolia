@@ -10,6 +10,7 @@ import type {
   Certainty,
   Complementizer,
   Deprel,
+  Entry,
   Lex,
   LemmaChoice,
   Negation,
@@ -20,9 +21,17 @@ import type {
   WhWord,
 } from "@skolia/shared/schema";
 
+type Part = { readonly text: string; readonly label: boolean };
+type Pattern = readonly Part[];
+const text = (value: string): Pattern => [{ text: value, label: false }];
+const label = (value: string): Pattern => [{ text: `[${value}]`, label: true }];
+const labelled = (value: string, name: string): Pattern => [...(value ? text(`${value} `) : []), ...label(name)];
+const join = (patterns: readonly Pattern[], separator: string): Pattern =>
+  patterns.flatMap((pattern, index) => (index === 0 ? pattern : [...text(separator), ...pattern]));
+
 export type Frame = {
   /** The pattern without the headword: "kogoś/czegoś [gen.] w kimś/czymś [loc.]". */
-  readonly pattern: string;
+  readonly pattern: Pattern;
   /** colloquial, archaic, vulgar, doubtful; "with nie" when only negated. */
   readonly tags: string[];
   /** Contains fixed words: an idiom (dać radę, mieć na oku). */
@@ -35,7 +44,7 @@ export type Frame = {
 /** How each case spec reads in a pattern, and which cases of the sentence fill it. */
 type CaseForms = {
   /** A noun phrase: the pronoun plus the case label. */
-  readonly nominal: string;
+  readonly nominal: Pattern;
   /** The indefinite pronoun after a preposition: na kogoś/coś, w kimś/czymś. */
   readonly pronoun: string;
   /** "Some kind of", standing for an adjective: za jakiegoś, ku jakiemuś. */
@@ -48,7 +57,7 @@ type CaseForms = {
 
 /** A case proper: who/what, someone/something in it, filled by that case alone. */
 function inflected(pronoun: string, label: string, adjective: string, it: string, actual: Case): CaseForms {
-  return { nominal: `${pronoun} [${label}]`, pronoun, adjective, label, it, fits: [actual] };
+  return { nominal: labelled(pronoun, label), pronoun, adjective, label, it, fits: [actual] };
 }
 
 const CASES: Readonly<Record<CaseSpec, CaseForms>> = {
@@ -60,7 +69,7 @@ const CASES: Readonly<Record<CaseSpec, CaseForms>> = {
   loc: inflected("kimś/czymś", "loc.", "jakimś", "tym", "Loc"),
   // accusative object, genitive when negated
   str: {
-    nominal: "kogoś/coś [acc.; gen. with nie]",
+    nominal: labelled("kogoś/coś", "acc.; gen. with nie"),
     pronoun: "kogoś/coś",
     adjective: "jakiegoś",
     label: "acc.",
@@ -68,31 +77,31 @@ const CASES: Readonly<Record<CaseSpec, CaseForms>> = {
     fits: ["Acc", "Gen"],
   },
   part: {
-    nominal: "czegoś/coś [gen. some / acc. all]",
+    nominal: labelled("czegoś/coś", "gen. some / acc. all"),
     pronoun: "…",
     adjective: "jakiś",
     label: "gen./acc.",
     it: "to",
     fits: ["Gen", "Acc"],
   },
-  agr: { nominal: "[same case]", pronoun: "…", adjective: "jakiś", label: "same case", it: "to", fits: [] },
-  pred: { nominal: "kimś/czymś [nom./ins.]", pronoun: "…", adjective: "jakiś", label: "nom./ins.", it: "to", fits: [] },
-  postp: { nominal: "[po-form]", pronoun: "…", adjective: "jakiś", label: "po-form", it: "to", fits: [] },
+  agr: { nominal: labelled("", "same case"), pronoun: "…", adjective: "jakiś", label: "same case", it: "to", fits: [] },
+  pred: { nominal: labelled("kimś/czymś", "nom./ins."), pronoun: "…", adjective: "jakiś", label: "nom./ins.", it: "to", fits: [] },
+  postp: { nominal: labelled("", "po-form"), pronoun: "…", adjective: "jakiś", label: "po-form", it: "to", fits: [] },
 };
 
-const ADVERBIAL: Readonly<Record<AdverbialCategory, string>> = {
-  locat: "gdzieś [where]",
-  adl: "dokądś [where to]",
-  abl: "skądś [where from]",
-  perl: "którędyś [which way]",
-  temp: "kiedyś [when]",
-  dur: "jakiś czas [how long]",
-  mod: "jakoś [how]",
-  caus: "z jakiegoś powodu [why]",
-  dest: "po coś [what for]",
-  instr: "czymś [with what]",
-  misc: "jakoś [adverb]",
-  pron: "tak [adverb]",
+const ADVERBIAL: Readonly<Record<AdverbialCategory, Pattern>> = {
+  locat: labelled("gdzieś", "where"),
+  adl: labelled("dokądś", "where to"),
+  abl: labelled("skądś", "where from"),
+  perl: labelled("którędyś", "which way"),
+  temp: labelled("kiedyś", "when"),
+  dur: labelled("jakiś czas", "how long"),
+  mod: labelled("jakoś", "how"),
+  caus: labelled("z jakiegoś powodu", "why"),
+  dest: labelled("po coś", "what for"),
+  instr: labelled("czymś", "with what"),
+  misc: labelled("jakoś", "adverb"),
+  pron: labelled("tak", "adverb"),
 };
 const CERTAINTY_TAG: Readonly<Record<Certainty, string | null>> = {
   certain: null,
@@ -110,15 +119,15 @@ const NEGATION_TAG: Readonly<Record<Negation, string | null>> = {
 
 /** Complementizers that aren't the word a clause starts with: the word, and the clause as
  * a pattern on its own. */
-const CLAUSE_START: Readonly<Partial<Record<Complementizer, { readonly word: string; readonly pattern: string }>>> = {
-  int: { word: "czy", pattern: "czy/co/kto … [question]" },
-  rel: { word: "który", pattern: "który/gdzie … [relative]" },
-  żeby2: { word: "żeby", pattern: "żeby …" },
+const CLAUSE_START: Readonly<Partial<Record<Complementizer, { readonly word: string; readonly pattern: Pattern }>>> = {
+  int: { word: "czy", pattern: labelled("czy/co/kto …", "question") },
+  rel: { word: "który", pattern: labelled("który/gdzie …", "relative") },
+  żeby2: { word: "żeby", pattern: text("żeby …") },
 };
 
-function clause(complementizer: Complementizer, words: readonly WhWord[]): string {
-  if (words.length > 0) return `${words.join("/")} …`;
-  return CLAUSE_START[complementizer]?.pattern ?? `${complementizer} …`;
+function clause(complementizer: Complementizer, words: readonly WhWord[]): Pattern {
+  if (words.length > 0) return text(`${words.join("/")} …`);
+  return CLAUSE_START[complementizer]?.pattern ?? text(`${complementizer} …`);
 }
 
 /** The word a clause starts with: że, żeby, czy (indirect question), który (relative). */
@@ -139,12 +148,12 @@ type Kind = Phrase["kind"];
 type PhraseOf<K extends Kind> = Phrase & { readonly kind: K };
 type ByKind<R> = { readonly [K in Kind]: (phrase: PhraseOf<K>) => R };
 
-const cased = (word: string) => (phrase: { readonly case: CaseSpec }) => `${word} [${CASES[phrase.case].label}]`;
+const cased = (word: string) => (phrase: { readonly case: CaseSpec }) => labelled(word, CASES[phrase.case].label);
 const prepCased = (word: string) => (phrase: { readonly prep: string; readonly case: CaseSpec }) =>
-  `${phrase.prep} ${word} [${CASES[phrase.case].label}]`;
+  labelled(`${phrase.prep} ${word}`, CASES[phrase.case].label);
 
 /** A fixed word of an idiom in its phrase, with its preposition and case: "na oko [loc.]". */
-const FIXED_WORD: Readonly<Partial<{ readonly [K in Kind]: (word: string) => (phrase: PhraseOf<K>) => string }>> = {
+const FIXED_WORD: Readonly<Partial<{ readonly [K in Kind]: (word: string) => (phrase: PhraseOf<K>) => Pattern }>> = {
   np: cased,
   adjp: cased,
   nump: cased,
@@ -155,22 +164,22 @@ const FIXED_WORD: Readonly<Partial<{ readonly [K in Kind]: (word: string) => (ph
   prepppasp: prepCased,
 };
 
-function fixedWordIn<K extends Kind>(kind: K, phrase: PhraseOf<K>, word: string): string {
-  return FIXED_WORD[kind]?.(word)(phrase) ?? word;
+function fixedWordIn<K extends Kind>(kind: K, phrase: PhraseOf<K>, word: string): Pattern {
+  return FIXED_WORD[kind]?.(word)(phrase) ?? text(word);
 }
 
-function fixedWord(lex: Lex): string {
+function fixedWord(lex: Lex): Pattern {
   const phrase = lex.phrase.kind === "xp" ? (lex.phrase.realisations[0] ?? lex.phrase) : lex.phrase;
   return fixedWordIn(phrase.kind, phrase, lemmas(lex.lemmas));
 }
 
 const nominal = (phrase: { readonly case: CaseSpec }) => CASES[phrase.case].nominal;
 const adjective = (phrase: { readonly case: CaseSpec }) =>
-  phrase.case === "agr" ? "jakiś [adjective]" : `jakiś [adjective, ${CASES[phrase.case].label}]`;
+  labelled("jakiś", phrase.case === "agr" ? "adjective" : `adjective, ${CASES[phrase.case].label}`);
 const prepositional = (phrase: { readonly prep: string; readonly case: CaseSpec }) => prepCased(CASES[phrase.case].pronoun)(phrase);
 const adverbial = (phrase: { readonly category: AdverbialCategory }) => ADVERBIAL[phrase.category];
 
-const DESCRIPTION: ByKind<string> = {
+const DESCRIPTION: ByKind<Pattern> = {
   np: nominal,
   nump: nominal,
   adjp: adjective,
@@ -181,33 +190,38 @@ const DESCRIPTION: ByKind<string> = {
   prepgerp: prepositional,
   prepppasp: prepositional,
   prepadjp: (phrase) =>
-    phrase.case === "postp" ? `${phrase.prep} jakiemuś [adverb: po polsku]` : prepCased(CASES[phrase.case].adjective)(phrase),
-  comprepnp: (phrase) => `${phrase.prep} …`,
+    phrase.case === "postp" ? labelled(`${phrase.prep} jakiemuś`, "adverb: po polsku") : prepCased(CASES[phrase.case].adjective)(phrase),
+  comprepnp: (phrase) => text(`${phrase.prep} …`),
   cp: (phrase) => clause(phrase.complementizer, phrase.words),
-  ncp: (phrase) => `${CASES[phrase.case].it}, ${clause(phrase.complementizer, phrase.words)} [${CASES[phrase.case].label}]`,
-  prepncp: (phrase) => `${phrase.prep} ${CASES[phrase.case].it}, ${clause(phrase.complementizer, phrase.words)}`,
-  infp: () => "robić coś [infinitive]",
+  ncp: (phrase) => [
+    ...text(`${CASES[phrase.case].it}, `),
+    ...clause(phrase.complementizer, phrase.words),
+    ...text(" "),
+    ...label(CASES[phrase.case].label),
+  ],
+  prepncp: (phrase) => [...text(`${phrase.prep} ${CASES[phrase.case].it}, `), ...clause(phrase.complementizer, phrase.words)],
+  infp: () => labelled("robić coś", "infinitive"),
   xp: adverbial,
   advp: adverbial,
-  compar: (phrase) => `${phrase.comparator} …`,
-  fixed: (phrase) => `„${phrase.text}”`,
+  compar: (phrase) => text(`${phrase.comparator} …`),
+  fixed: (phrase) => text(`„${phrase.text}”`),
   lex: fixedWord,
-  lexcompar: (phrase) => phrase.parts.map(fixedWord).join(" "),
-  possp: () => "czyjś [possessive]",
-  refl: () => "się",
-  recip: () => "się [each other]",
-  or: () => "„…” [direct speech]",
-  nonch: () => "coś/nic",
-  E: () => "[no subject]",
-  distrp: () => "po … [each]",
-  qub: () => "[particle]",
+  lexcompar: (phrase) => join(phrase.parts.map(fixedWord), " "),
+  possp: () => labelled("czyjś", "possessive"),
+  refl: () => text("się"),
+  recip: () => labelled("się", "each other"),
+  or: () => labelled("„…”", "direct speech"),
+  nonch: () => text("coś/nic"),
+  E: () => labelled("", "no subject"),
+  distrp: () => labelled("po …", "each"),
+  qub: () => labelled("", "particle"),
 };
 
-function describeKind<K extends Kind>(kind: K, phrase: PhraseOf<K>): string {
+function describeKind<K extends Kind>(kind: K, phrase: PhraseOf<K>): Pattern {
   return DESCRIPTION[kind](phrase);
 }
 
-export function describePhrase(phrase: Phrase): string {
+export function describePhrase(phrase: Phrase): Pattern {
   return describeKind(phrase.kind, phrase);
 }
 
@@ -245,20 +259,22 @@ function groupByHead(phrases: readonly PronounClause[]): ReadonlyMap<string, rea
 
 /** A slot's alternatives, with clauses grouped: "na kogoś/coś [acc.] / że/żeby … / na to,
  * że/żeby …" rather than one entry per complementizer. */
-function describeAlternatives(phrases: readonly Phrase[]): string {
+function describeAlternatives(phrases: readonly Phrase[]): Pattern {
   const others = phrases.filter((p) => !isClause(p) && !isPronounClause(p)).map(describePhrase);
   const clauseWords = phrases.filter(isClause).map((p) => clauseWord(p.complementizer, p.words));
-  const clauses = clauseWords.length > 0 ? [`${unique(clauseWords).join("/")} …`] : [];
-  const pronounClauses = [...groupByHead(phrases.filter(isPronounClause))].map(([head, words]) => `${head}, ${unique(words).join("/")} …`);
-  return [...others, ...clauses, ...pronounClauses].join(" / ");
+  const clauses = clauseWords.length > 0 ? [text(`${unique(clauseWords).join("/")} …`)] : [];
+  const pronounClauses = [...groupByHead(phrases.filter(isPronounClause))].map(([head, words]) =>
+    text(`${head}, ${unique(words).join("/")} …`),
+  );
+  return join([...others, ...clauses, ...pronounClauses], " / ");
 }
 
-function describePosition(position: Position): string {
+function describePosition(position: Position): Pattern {
   if (position.labels.includes("subj") && position.phrases.every((p) => p.kind === "E")) {
-    return "(impersonal)";
+    return text("(impersonal)");
   }
   const options = describeAlternatives(position.phrases);
-  return position.labels.includes("subj") ? `(subject: ${options})` : options;
+  return position.labels.includes("subj") ? [...text("(subject: "), ...options, ...text(")")] : options;
 }
 
 // --- Which frame the sentence uses --------------------------------------------------
@@ -335,10 +351,7 @@ function schemaFits(schema: Schema, args: readonly Argument[]): boolean {
 
 export function describe(schema: Schema): Frame {
   return {
-    pattern: schema.positions
-      .filter((p) => !isPlainSubject(p))
-      .map(describePosition)
-      .join(" + "),
+    pattern: join(schema.positions.filter((p) => !isPlainSubject(p)).map(describePosition), " + "),
     tags: [CERTAINTY_TAG[schema.certainty], NEGATION_TAG[schema.negation]].filter((tag) => tag !== null),
     idiom: schema.positions.some((p) => p.phrases.some(isFixedPhrase)),
     reflexive: schema.reflexive,
@@ -368,10 +381,17 @@ export function frames(schemata: Schema[], args: Argument[] = []): Frame[] {
   const byPattern = schemata
     .map((schema) => ({ ...describe(schema), here: fitting.includes(schema) && unfilled(schema) === tightest }))
     .reduce((patterns, frame) => {
-      const key = `${frame.reflexive ? "się " : ""}${frame.pattern}`;
+      const key = JSON.stringify([frame.reflexive, frame.pattern]);
       const existing = patterns.get(key);
       return patterns.set(key, existing ? merge(existing, frame) : frame);
     }, new Map<string, Frame>());
   const rank = (f: Frame) => (f.here ? 0 : 4) + (f.idiom ? 2 : 0) + (f.tags.length > 0 ? 1 : 0);
   return [...byPattern.values()].sort((a, b) => rank(a) - rank(b));
+}
+
+export function polishUses(entry: Entry, tokens: Token[], index: number) {
+  return frames(entry.frames, argumentsOf(tokens, index)).map((frame) => ({
+    ...frame,
+    head: frame.reflexive ? `${entry.lemma} się` : entry.lemma,
+  }));
 }

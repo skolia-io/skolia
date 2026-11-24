@@ -73,7 +73,7 @@ function sentenceAt(n: number) {
 
 /** A cloze card's data for psa in the sentence n hundred characters into the text. */
 function clozeAt(documentId: DocumentId, n: number): NewClozeInput {
-  return { ...sentenceAt(n), documentId, blankStart: n * 100 + 6, blankEnd: n * 100 + 9, feats: { Case: "Acc" }, why: null };
+  return { ...sentenceAt(n), documentId, blankStart: n * 100 + 6, blankEnd: n * 100 + 9, feats: { Case: "Acc" }, caseReason: null };
 }
 
 function postCloze(app: App, headers: Headers, lemmaId: LemmaId, data: NewClozeInput) {

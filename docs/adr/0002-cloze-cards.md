@@ -2,6 +2,8 @@
 
 2026-11-10. Accepted.
 
+Follow-up: new cloze cards store `caseReason` (the case, rule, trigger word, governor and, when relevant, one related rule), not the rendered `why` string. The reader and review page format those facts in the frontend. Older cards still work but have no structured explanation.
+
 ## Context
 
 A word's cards (0001) teach the lemma: *praca* means "work". They don't teach the form a sentence needs, which is most of what's hard in Polish: *szukam **pracy***, *idę do **pracy***, *myślę o **pracy***. Readers meet those forms in their texts, and the analysis already says why each has its case (`case_reason`, explained by `explainCase`).

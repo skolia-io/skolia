@@ -52,7 +52,7 @@ const PRACY: ClozeCard = {
     blankStart: 47,
     blankEnd: 52,
     feats: { Case: "Gen", Number: "Sing" },
-    why: "szukać governs the genitive for its object.",
+    caseReason: { case: "Gen", rule: "verb", word: "Szukam", governor: "szukać" },
   },
 };
 const MAM: ClozeCard = { ...PRACY, data: { ...PRACY.data, sentence: "Mam pracę.", sentenceStart: 90, blankStart: 94, blankEnd: 99 } };
@@ -129,7 +129,7 @@ test("a cloze card keeps its sentence and blank, is due with its lemma's entry, 
   await loadLexicon("pl", "lex/1", [glossed("pl:praca:NOUN", "work, job")]);
   const json = await pracy(app, headers);
   const { cardId } = await body("made", make(app, headers, json), 201);
-  assert.deepEqual(await body("made again", make(app, headers, changed(json, { why: null })), 200), { cardId });
+  assert.deepEqual(await body("made again", make(app, headers, changed(json, { caseReason: null })), 200), { cardId });
   // The same word in the text, with its sentence split elsewhere, as a redone analysis might
   assert.deepEqual(
     await body("split elsewhere", make(app, headers, changed(json, { sentence: "pracy od roku.", sentenceStart: 47 })), 200),
@@ -149,6 +149,11 @@ test("a cloze card keeps its sentence and blank, is due with its lemma's entry, 
   assert.deepEqual(await listed(app, headers, documentId), { items: [{ cardId, start: 47 }], next: null });
   assert.deepEqual(await listed(app, headers, schemas.DocumentId.parse("b".repeat(64))), { items: [], next: null });
   assert.equal((await review(app, headers, cardId, 3)).status, 200);
+});
+
+test("legacy cloze data keeps the card without serving old explanation prose", () => {
+  const { caseReason: _, ...data } = PRACY.data;
+  assert.deepEqual(schemas.Cloze.parse({ ...data, why: "Old explanation." }), { ...data, caseReason: null });
 });
 
 test("a lemma can have many cloze cards; known, they leave reviews, and learning brings them back", async () => {
@@ -219,13 +224,14 @@ test("cloze cards need a session, and a blank that's a word inside its sentence"
     changed(PRACY, { blankStart: 46, blankEnd: 47 }),
     changed(PRACY, { sentence: "" }),
     changed(PRACY, { sentence: "x".repeat(2001) }),
-    changed(PRACY, { why: "x".repeat(501) }),
+    changed(PRACY, { caseReason: { case: "Gen", rule: "verb", word: "x".repeat(2001) } }),
     changed(PRACY, { documentId: "abc" }),
     { ...PRACY, lemmaId: "zz:praca:NOUN" as LemmaId },
   ];
   for (const json of refused) assert.equal((await make(app, headers, json)).status, 400, JSON.stringify(json));
   const post = (json: unknown) => raw(app, "POST", "/api/me/cards", headers, json);
   assert.equal((await post({ kind: "cloze", lemmaId: PRACY.lemmaId, data: { ...PRACY.data, feats: { Case: 1 } } })).status, 400);
+  assert.equal((await post({ kind: "cloze", lemmaId: PRACY.lemmaId, data: { ...PRACY.data, caseReason: "explanation" } })).status, 400);
   assert.equal((await post({ ...PRACY })).status, 400);
   assert.equal((await post({ kind: "cloze", lemmaId: PRACY.lemmaId, ...PRACY.data })).status, 400);
   assert.equal((await post({ kind: "recognition", ...PRACY })).status, 400);
