@@ -12,7 +12,7 @@ Words are rows again, and a card belongs to one or more of them. Counts kept on 
 
 - A word is learning or known. The state is the word's, not the card's: `PATCH /api/me/words/:lemmaId { state }` (`WordChange`) sets it, and returns 404 if the user has no such word. `PATCH /api/me/cards/:cardId` is gone.
 - A card is learning, so reviewed, while one of its words is, and leaves Review only when all its words are known. Known hides cards of every kind, cloze cards included. Review's Known marks every word of the card known.
-- Making a card adds its word, learning, if the user hadn't it. Making a card for a known word sets the word back to learning (skolia-io/tracking#93).
+- Making a card adds its word, learning, if the user hadn't it, and doesn't change the state of a word they have. A known word stays known, with or without cards, until the user sets it learning again on purpose (skolia-io/tracking#93): opening a known word, or tapping it in learning mode, mustn't undo the mark.
 - Answering a card starts every word of the card not yet started, at the server's time, in the same transaction as the review. Deleting a card doesn't un-start its words.
 - The daily allowance, `newLemmasPerDay`, counts words started today, per language. A new card comes up once all its words are started, or once its unstarted words are all among today's picked words: the first N words being learnt and not yet started, by when they were added, where N is what's left of the allowance. So a card made for a word already started comes at once, without using the allowance.
 - New cards come in the order they were made: `created_at`, then kind, recognition before production before cloze, then id.
@@ -40,4 +40,4 @@ card_word(card_id, lemma_id, kind, created_at)
 
 - An old reader breaks: `Card.lemmaId` and `ScheduledCard.lemmaId` are `lemmaIds`, `DueCard.entry` is `entries` (those of its words that the lexicon has), `Due.newLeft` is a number rather than `{ words, forms }`, `CardCounts` is `{ lang, due, new }` rather than `{ lang, words, forms }`, `GET /api/me/cards/due` has no `group`, `Settings` is `{ newLemmasPerDay }`, and `PATCH /api/me/cards/:cardId` is gone.
 - Marking a word known is one request per word, not one per card.
-- A word whose cards are all deleted keeps its row and stays started, so its cards made again come at once. The reader still works out a word's state from its cards (`wordState` in reader/src/lib/words.ts), so it shows such a word as new.
+- A word whose cards are all deleted keeps its row and stays started, so its cards made again come at once.
