@@ -7,6 +7,7 @@ import type { AppType } from "@skolia/api/app";
 import type { AppType as LexiconApp, EntriesBody, FormAudio } from "@skolia/lexicon/app";
 import {
   ANNOTATION_PAGE,
+  MAX_LOOKUP,
   type Annotation,
   CARD_PAGE,
   TAG_PAGE,
@@ -43,6 +44,7 @@ import {
   type Reviewed,
   type Settings,
   type User,
+  type Word,
   type WordState,
 } from "@skolia/shared/api";
 import { allPages, type Cursor } from "@skolia/shared/page";
@@ -276,6 +278,22 @@ export async function listCards(lang: Lang, after?: Cursor<CardKey>): Promise<Pa
   const response = await api.me.cards.$get({ query: { lang, after } });
   if (!response.ok) throw await failure(response);
   return response.json();
+}
+
+/** Those of the words the user has, with their states, or null when signed out. */
+export async function listWords(lemmaIds: readonly LemmaId[]): Promise<readonly Word[] | null> {
+  const chunks = Array.from({ length: Math.ceil(lemmaIds.length / MAX_LOOKUP) }, (_, i) =>
+    lemmaIds.slice(i * MAX_LOOKUP, (i + 1) * MAX_LOOKUP),
+  );
+  const found = await Promise.all(
+    chunks.map(async (chunk) => {
+      const response = await api.me.words.$get({ query: { lemmaId: [...chunk] } });
+      if (response.status === 401) return null;
+      if (!response.ok) throw await failure(response);
+      return (await response.json()).words;
+    }),
+  );
+  return found.some((words) => words === null) ? null : found.flatMap((words) => words ?? []);
 }
 
 /** known takes the word's cards out of reviews; learning puts them back. */

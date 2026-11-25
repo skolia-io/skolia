@@ -8,6 +8,7 @@ import {
   type CardId as CardIdType,
   type LemmaId,
   type Card,
+  type Word,
   type WordState,
   type CardKey,
   type CardListing,
@@ -45,6 +46,7 @@ import {
   startQuery,
   startedSinceQuery,
   wordCardQuery,
+  wordsQuery,
 } from "../user/queries.ts";
 import {
   LogEntry,
@@ -181,6 +183,13 @@ export class User extends DurableObject<UserEnv> {
       this.#exec(insertInto("card_word").values({ card_id: id, lemma_id: card.lemmaId, kind: card.kind, created_at: now }));
       return { kind: "made", cardId: id };
     });
+  }
+
+  /** Those of the words the user has, with their states and how many cards each has. */
+  words(lemmaIds: readonly LemmaId[]): Word[] {
+    return this.#exec(wordsQuery(lemmaIds))
+      .toArray()
+      .map((row) => schemas.Word.parse(row));
   }
 
   /** Learning puts the word's cards in reviews, where each is in its schedule; known takes

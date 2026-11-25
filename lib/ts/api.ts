@@ -275,6 +275,9 @@ export type CardKind = (typeof CARD_KINDS)[number];
 export const WORD_STATES = ["learning", "known"] as const;
 export type WordState = (typeof WORD_STATES)[number];
 
+/** A word the user has, with its state and how many cards it has. */
+export type Word = z.output<typeof schemas.Word>;
+
 /** Longest sentence a cloze card keeps, in characters. */
 export const MAX_CLOZE_SENTENCE = 2000;
 /** Longest explanation of the blanked word's form a cloze card keeps. */

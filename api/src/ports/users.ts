@@ -18,6 +18,7 @@ import type {
   ScheduledCard,
   Settings,
   LemmaId,
+  Word,
   WordState,
 } from "@skolia/shared/api";
 import type { PageRequest } from "@skolia/shared/page";
@@ -50,7 +51,9 @@ export interface UserCards {
   makeCard(userId: UserId, card: NewCard, now: Timestamp): Promise<CardOutcome>;
   /** A page of a language's or a word's cards, newest first, or of a text's, by where their blanks start. */
   cards(userId: UserId, listing: CardListing): Promise<Paginated<Card, CardKey>>;
-  /** False if the user has no card of the word. */
+  /** Those of the words the user has, with their states, in no set order. */
+  words(userId: UserId, lemmaIds: readonly LemmaId[]): Promise<readonly Word[]>;
+  /** False if the user hasn't the word. */
   setWordState(userId: UserId, lemmaId: LemmaId, state: WordState): Promise<boolean>;
   /** Deletes the card and its reviews. False if the user has no such card. */
   deleteCard(userId: UserId, cardId: CardId): Promise<boolean>;

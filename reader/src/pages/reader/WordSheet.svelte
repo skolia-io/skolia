@@ -11,7 +11,8 @@
   import { mainPronunciations, rankSenses, relationLabel } from "@skolia/shared/lexicon";
   import type { FormAudio } from "@skolia/lexicon/app";
   import { LemmaId as LemmaIdSchema } from "@skolia/shared/schemas";
-  import { createForgetCards, createLearnWord, createWordCards, wordState } from "../../lib/words.ts";
+  import { createForgetCards, createLearnAgain, createLearnWord, createUserWords } from "../../lib/words.ts";
+  import { wordState } from "../../lib/word-state.ts";
   import { createAddCloze, createClozes } from "../../lib/clozes.ts";
   import { MAX_CLOZE_SENTENCE, blankOut } from "@skolia/shared/api";
   import { caseReasonFor, explainCase } from "../../lib/case-explanations.ts";
@@ -231,9 +232,10 @@
     return w.lemmaId !== null && w.partOfWord === null && !UNLEARNABLE.has(w.ref.token.upos);
   }
 
-  const known = createWordCards(() => words.flatMap((w) => (learnable(w) ? [w.lemmaId] : [])));
+  const known = createUserWords(() => words.flatMap((w) => (learnable(w) ? [w.lemmaId] : [])));
   const clozes = createClozes(() => documentId);
   const learnWord = createLearnWord();
+  const learnAgain = createLearnAgain();
   const forgetCards = createForgetCards();
   const addCloze = createAddCloze();
 
@@ -249,8 +251,8 @@
   const triedClozes = new Set<number>();
 
   /** In learning mode a word you tap goes into your cards if it has none, and so does its
-   * form in this sentence; Known while reviewing marks its cards known. In reading mode the
-   * word's + adds them. */
+   * form in this sentence, unless it's known; Known while reviewing marks it known. In
+   * reading mode the word's + adds them. */
   $effect(() => {
     if (!known.data || mode !== "learning") return;
     const fresh = words.flatMap((w): Addition[] => {
@@ -285,7 +287,7 @@
 
   /** A cloze card practises a form: offered for a word that isn't its lemma (pracy, not
    * praca), or that is but has a reason for a case other than the nominative (widzę dom),
-   * in a sentence short enough to keep, unless the word's cards are all known, or it's part
+   * in a sentence short enough to keep, unless the word is known, or it's part
    * of a fused word (du is de + le), whose parts share its span. */
   function clozeOf(w: (typeof words)[number]) {
     if (!learnable(w) || w.ref.token.mwt !== undefined) return null;
@@ -326,7 +328,7 @@
    * if any has been reviewed. */
   async function removeFromCards(w: (typeof words)[number]): Promise<void> {
     if (!learnable(w)) return;
-    const cards = known.data?.get(w.lemmaId) ?? [];
+    const cards = known.data?.get(w.lemmaId)?.cards ?? [];
     if (cards.some((c) => c.lastReviewedAt !== null) && !confirm(`Delete the ${cards.length} cards of this word and their reviews?`))
       return;
     const { start } = w.ref.token;
@@ -337,6 +339,22 @@
       await forgetCards.mutateAsync(cards);
     } catch (e: unknown) {
       statusError = { lemmaId: w.lemmaId, message: `Couldn't take it out of your cards: ${e instanceof Error ? e.message : String(e)}` };
+    }
+    adding = null;
+  }
+
+  /** Puts a known word back in reviews, with its cards, or new ones if it has none. */
+  async function learnKnownAgain(w: (typeof words)[number]): Promise<void> {
+    if (!learnable(w)) return;
+    const word = known.data?.get(w.lemmaId);
+    if (word === undefined) return;
+    adding = w.ref.token.start;
+    statusError = null;
+    clozeError = null;
+    try {
+      await learnAgain.mutateAsync({ lemmaId: w.lemmaId, word });
+    } catch (e: unknown) {
+      statusError = { lemmaId: w.lemmaId, message: `Couldn't put it back in your cards: ${e instanceof Error ? e.message : String(e)}` };
     }
     adding = null;
   }
@@ -497,6 +515,16 @@
               disabled={adding === token.start}
               onclick={() => void removeFromCards(word)}
               ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5l3.5 3.5L13 4.5" /></svg></button
+            >
+          {:else if wordState(known.data.get(word.lemmaId)) === "known"}
+            <button
+              type="button"
+              class="card-action done"
+              aria-label="You know {lemma}. Learn it again"
+              title="You know {lemma}. Click to learn it again"
+              disabled={adding === token.start}
+              onclick={() => void learnKnownAgain(word)}
+              ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8a4.5 4.5 0 1 0 1.3-3.2M4.5 2v3h3" /></svg></button
             >
           {/if}
         {/if}

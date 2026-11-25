@@ -13,6 +13,7 @@ import {
   MAX_AUTHOR_LENGTH,
   MAX_CLOZE_SENTENCE,
   MAX_LEMMA_LENGTH,
+  MAX_LOOKUP,
   MAX_NEW_PER_DAY,
   MAX_SOURCE_LENGTH,
   MAX_TEXT_LENGTH,
@@ -178,6 +179,14 @@ export const WordState = z.enum(WORD_STATES).meta({ id: "WordState" });
 
 /** What changes in a word: its state. */
 export const WordChange = z.object({ state: WordState }).meta({ id: "WordChange" });
+
+/** A word the user has: its state, and how many cards it has, none once they're all deleted. */
+export const Word = z.object({ lemmaId: LemmaId, state: WordState, cards: z.number().int().min(0) }).meta({ id: "Word" });
+
+/** Some of the user's words: lemmaId, once or more, at most MAX_LOOKUP times. */
+export const WordsQuery = z.object({
+  lemmaId: z.union([LemmaId.transform((id) => [id]), z.array(LemmaId).min(1).max(MAX_LOOKUP)]),
+});
 
 export const ScheduleStatus = z.enum(SCHEDULE_STATUSES);
 

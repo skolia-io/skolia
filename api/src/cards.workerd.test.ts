@@ -4,6 +4,7 @@ import {
   CARD_PAGE,
   MATURE_DAYS,
   MAX_CARDS,
+  MAX_LOOKUP,
   MAX_NEW_PER_DAY,
   lemmaParam,
   type Card,
@@ -116,6 +117,16 @@ async function markWord(app: App, headers: Headers, lemmaId: LemmaId, state: Wor
   assert.equal((await setState(app, headers, lemmaId, state)).status, 204);
 }
 
+function words(app: App, headers: Headers | undefined, lemmaIds: readonly LemmaId[]) {
+  return client(app, headers).me.words.$get({ query: { lemmaId: [...lemmaIds] } });
+}
+
+/** The user's words of these, by lemma id. */
+async function wordsOf(app: App, headers: Headers, lemmaIds: readonly LemmaId[]) {
+  const { words: found } = await body("words", words(app, headers, lemmaIds));
+  return [...found].sort((a, b) => a.lemmaId.localeCompare(b.lemmaId));
+}
+
 function deleteCard(app: App, headers: Headers | undefined, cardId: string) {
   return client(app, headers).me.cards[":cardId"].$delete({ param: { cardId } });
 }
@@ -201,6 +212,51 @@ test("a known card isn't reviewed, and learning puts it back where it was in its
   );
   await markWord(app, headers, "pl:pies:NOUN", "learning");
   assert.deepEqual(await pies(), before);
+});
+
+test("a word keeps its state once its cards are deleted, and says how many it has", async () => {
+  const app = setup();
+  const headers = await signedIn();
+  await learn(app, headers, "pl:pies:NOUN");
+  await learn(app, headers, "pl:kot:NOUN");
+  await markWord(app, headers, "pl:pies:NOUN", "known");
+  for (const card of await wordCards(app, headers, "pl:pies:NOUN")) await expectStatus("deletes", deleteCard(app, headers, card.id), 204);
+  assert.deepEqual(await wordsOf(app, headers, ["pl:pies:NOUN", "pl:kot:NOUN", "pl:dom:NOUN"]), [
+    { lemmaId: "pl:kot:NOUN", state: "learning", cards: 2 },
+    { lemmaId: "pl:pies:NOUN", state: "known", cards: 0 },
+  ]);
+  assert.deepEqual(await wordsOf(app, headers, ["pl:dom:NOUN"]), []);
+});
+
+test("a known word learnt again has its new cards reviewed", async () => {
+  const app = setup();
+  const headers = await signedIn();
+  await learn(app, headers, "pl:pies:NOUN");
+  await markWord(app, headers, "pl:pies:NOUN", "known");
+  for (const card of await wordCards(app, headers, "pl:pies:NOUN")) await expectStatus("deletes", deleteCard(app, headers, card.id), 204);
+  await learn(app, headers, "pl:pies:NOUN");
+  assert.deepEqual((await due(app, headers, "pl")).cards, []);
+  await markWord(app, headers, "pl:pies:NOUN", "learning");
+  assert.deepEqual(wordsAndKinds((await due(app, headers, "pl")).cards), [
+    ["pl:pies:NOUN", "production"],
+    ["pl:pies:NOUN", "recognition"],
+  ]);
+  assert.deepEqual(await wordsOf(app, headers, ["pl:pies:NOUN"]), [{ lemmaId: "pl:pies:NOUN", state: "learning", cards: 2 }]);
+});
+
+test("reading words needs a session and one to a hundred word ids", async () => {
+  const app = setup();
+  const headers = await signedIn();
+  await learn(app, headers, "pl:pies:NOUN");
+  assert.equal((await words(app, undefined, ["pl:pies:NOUN"])).status, 401);
+  const bob = await local.signIn((await local.signUp({ name: "Bob", email: "bob@example.com" })).id);
+  assert.deepEqual(await wordsOf(app, bob, ["pl:pies:NOUN"]), []);
+  assert.deepEqual(await wordsOf(app, headers, ["pl:pies:NOUN"]), [{ lemmaId: "pl:pies:NOUN", state: "learning", cards: 2 }]);
+  const many = Array.from({ length: MAX_LOOKUP + 1 }, (_, i): LemmaId => `pl:słowo${i}:NOUN`);
+  await expectStatus("a hundred", words(app, headers, many.slice(0, MAX_LOOKUP)), 200);
+  await expectStatus("too many", words(app, headers, many), 400);
+  await expectStatus("none", words(app, headers, []), 400);
+  assert.equal((await raw(app, "GET", "/api/me/words?lemmaId=pies", headers, undefined)).status, 400);
 });
 
 test("a review schedules the card, a retried review is counted once, and the day's new words are limited by the setting", async () => {
@@ -512,7 +568,7 @@ test("a word's cards come a page at a time, newest first, and no other word's", 
   await refusesBadPages(CARD_PAGE.max, (query) => client(app, headers).me.cards.$get({ query: { lemmaId: "pl:pies:NOUN", ...query } }));
 });
 
-test("changing a word's state needs a session, a word the user has cards of and a state", async () => {
+test("changing a word's state needs a session, a word the user has and a state", async () => {
   const app = setup();
   const headers = await signedIn();
   const word = "pl:żółw:NOUN";

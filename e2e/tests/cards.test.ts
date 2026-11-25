@@ -14,7 +14,7 @@ function dayStart(): string {
   return today.toISOString();
 }
 
-/** A new user's journey with one word: make its cards, review one, mark it known. */
+/** A new user's journey with one word: make its cards, review one, mark it known, take its cards away and learn it again. */
 async function cards(key: string, lang: Lang): Promise<void> {
   const api = client(key);
   const word = WORDS[lang];
@@ -77,6 +77,21 @@ async function cards(key: string, lang: Lang): Promise<void> {
   );
   assert.deepEqual((await due()).cards, [], `${lang}: a known word's cards are due`);
   assert.deepEqual(await counts(), { lang, due: 0, new: 0 }, `${lang}: counts after marking a word known`);
+
+  for (const { id } of await wordCards()) {
+    await expectStatus(`deleting ${word}'s card`, api.me.cards[":cardId"].$delete({ param: { cardId: id } }), 204);
+  }
+  const words = async () => (await body(`${lang} words`, api.me.words.$get({ query: { lemmaId: [word] } }))).words;
+  assert.deepEqual(await words(), [{ lemmaId: word, state: "known", cards: 0 }], `${lang}: a known word without cards`);
+  await expectStatus(
+    `learning ${word} again`,
+    api.me.words[":lemmaId"].$patch({ param: { lemmaId: lemmaParam(word) }, json: { state: "learning" } }),
+    204,
+  );
+  for (const kind of ["recognition", "production"] as const) {
+    await expectStatus(`making ${word}'s ${kind} card again`, api.me.cards.$post({ json: { kind, lemmaId: word } }), 201);
+  }
+  assert.equal((await due()).cards.length, 2, `${lang}: a word learnt again has its cards due`);
 }
 
 describe("card journeys", { concurrency: LANGS.length }, () => {
