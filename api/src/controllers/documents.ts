@@ -1,5 +1,5 @@
 import type {
-  EndpointFailure,
+  Err,
   deleteDocumentErrors,
   documentAnalysisErrors,
   documentErrors,
@@ -66,7 +66,7 @@ export async function list(
   viewer: Identity | null,
   filter: DocumentFilter,
   page: PageRequest<DocumentKey>,
-): Promise<Ok<Paginated<DocumentSummary, DocumentKey>> | EndpointFailure<typeof listDocumentsErrors, 401>> {
+): Promise<Ok<Paginated<DocumentSummary, DocumentKey>> | Err<typeof listDocumentsErrors, 401>> {
   if (filter.mine && viewer === null) return fail(401, { code: "sign-in-required" });
   const { items, next } = await deps.documents.list(viewer?.id ?? null, filter, page);
   return ok({ items: items.map((record) => listed(record, viewer)), next });
@@ -81,7 +81,7 @@ export async function mine(
   deps: { documents: DocumentLookup },
   user: Identity,
   page: PageRequest<DocumentKey>,
-): Promise<Ok<Paginated<DocumentSummary, DocumentKey>> | EndpointFailure<typeof listDocumentsErrors, 401>> {
+): Promise<Ok<Paginated<DocumentSummary, DocumentKey>> | Err<typeof listDocumentsErrors, 401>> {
   return list(deps, user, { tags: {}, lang: undefined, title: undefined, mine: true }, page);
 }
 
@@ -110,7 +110,7 @@ export async function importText(
   deps: DocumentEditDeps & { users: UserRateLimits; roles: Roles; importRate: RateLimit },
   user: Identity,
   body: z.output<typeof schemas.ImportRequest>,
-): Promise<Json<DocumentSummary, 200> | Json<DocumentSummary, 202> | EndpointFailure<typeof importDocumentErrors, 400 | 429>> {
+): Promise<Json<DocumentSummary, 200> | Json<DocumentSummary, 202> | Err<typeof importDocumentErrors, 400 | 429>> {
   const unknown = await unknownTag(deps, body.tags);
   if (unknown !== null) return unknown;
   const limited = await overLimit(deps, user, "import", deps.importRate);
@@ -158,7 +158,7 @@ export async function update(
   user: Identity,
   id: string,
   body: z.output<typeof schemas.DocumentUpdate>,
-): Promise<Ok<DocumentSummary> | EndpointFailure<typeof updateDocumentErrors, 400 | 403 | 404>> {
+): Promise<Ok<DocumentSummary> | Err<typeof updateDocumentErrors, 400 | 403 | 404>> {
   const record = await findDocument(deps, id, user);
   if (!record) return noSuchDocument();
   if (record.user !== user.id) return fail(403, { code: "not-document-importer" });
@@ -185,7 +185,7 @@ export async function remove(
   deps: { documents: DocumentEntries & DocumentLookup },
   user: Identity,
   id: string,
-): Promise<NoContent | EndpointFailure<typeof deleteDocumentErrors, 403 | 404>> {
+): Promise<NoContent | Err<typeof deleteDocumentErrors, 403 | 404>> {
   const record = await findDocument(deps, id, user);
   if (!record) return noSuchDocument();
   if (record.user !== user.id) return fail(403, { code: "not-document-importer" });
@@ -198,7 +198,7 @@ export async function get(
   deps: DocumentDetailDeps,
   id: string,
   viewer: Identity | null,
-): Promise<Ok<DocumentSummary> | EndpointFailure<typeof documentErrors, 404>> {
+): Promise<Ok<DocumentSummary> | Err<typeof documentErrors, 404>> {
   const record = await findDocument(deps, id, viewer);
   if (!record) return noSuchDocument();
   return ok(await withQueue(deps, record, summarize(record, await readStatus(deps.blobs, record.id), viewer)));
@@ -210,7 +210,7 @@ export async function refresh(
   deps: DocumentDetailDeps,
   id: string,
   viewer: Identity | null,
-): Promise<Ok<DocumentSummary> | EndpointFailure<typeof documentErrors, 404>> {
+): Promise<Ok<DocumentSummary> | Err<typeof documentErrors, 404>> {
   const record = await findDocument(deps, id, viewer);
   if (!record) return noSuchDocument();
   return ok(await withQueue(deps, record, await refreshed(deps, record, versionsOf(deps.blobs), viewer)));
@@ -240,7 +240,7 @@ export async function text(
   id: string,
   viewer: Identity | null,
   ifNoneMatch: string | undefined,
-): Promise<BlobResult | NotModified | EndpointFailure<typeof documentTextErrors, 404 | 500>> {
+): Promise<BlobResult | NotModified | Err<typeof documentTextErrors, 404 | 500>> {
   const record = await findDocument(deps, id, viewer);
   if (!record) return noSuchDocument();
   return stored(deps, textKey(record.id), undefined, ifNoneMatch, fail(500, { code: "internal-error" }));
@@ -253,7 +253,7 @@ export async function part(
   viewer: Identity | null,
   name: string,
   ifNoneMatch: string | undefined,
-): Promise<BlobResult | NotModified | EndpointFailure<typeof documentAnalysisErrors, 404>> {
+): Promise<BlobResult | NotModified | Err<typeof documentAnalysisErrors, 404>> {
   const record = await findDocument(deps, id, viewer);
   if (!record || !NAME.test(name)) return noSuchDocument();
   return stored(deps, analysisKey(record.id, name), PART_ENCODING, ifNoneMatch, fail(404, { code: "analysis-not-found", name }));
@@ -273,7 +273,7 @@ async function stored<Missing extends Json<unknown, ContentfulStatusCode>>(
   return blob ? { status: 200, etag, blob, encoding } : missing;
 }
 
-export function noSuchDocument(): EndpointFailure<typeof documentErrors, 404> {
+export function noSuchDocument(): Err<typeof documentErrors, 404> {
   return fail(404, { code: "document-not-found" });
 }
 

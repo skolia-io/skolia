@@ -78,13 +78,13 @@ export const deleteAnnotationErrors = {
 };
 
 /** A controller's failure, retaining the pairing between status and body. */
-export type EndpointFailure<Contract, Status extends keyof Contract & ContentfulStatusCode = keyof Contract & ContentfulStatusCode> = {
+export type Err<Contract, Status extends keyof Contract & ContentfulStatusCode = keyof Contract & ContentfulStatusCode> = {
   [S in Status]: Contract[S] extends { schema: infer Schema extends z.ZodType }
     ? { status: S; body: z.output<Schema>; headers?: Readonly<Record<string, string>> }
     : never;
 }[Status];
 
-type EndpointError<Contract> = EndpointFailure<Contract>["body"];
+type EndpointError<Contract> = Err<Contract>["body"];
 
 export type ReviewError = EndpointError<typeof reviewErrors>;
 export type MakeCardError = EndpointError<typeof makeCardErrors>;

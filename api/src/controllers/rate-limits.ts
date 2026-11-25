@@ -1,4 +1,4 @@
-import type { EndpointFailure, importDocumentErrors } from "../endpoint-errors.ts";
+import type { Err, importDocumentErrors } from "../endpoint-errors.ts";
 // Holding users to rate limits (rate-limits.ts), unless one of their roles grants unlimited-rate.
 import { timestamp, type Identity } from "@skolia/shared/api";
 import { log } from "@skolia/util/log";
@@ -17,7 +17,7 @@ export async function overLimit(
   user: Identity,
   action: RateAction,
   limit: RateLimit,
-): Promise<EndpointFailure<typeof importDocumentErrors, 429> | null> {
+): Promise<Err<typeof importDocumentErrors, 429> | null> {
   if (await hasPermission(deps, user, "unlimited-rate")) return null;
   const outcome = await deps.users.take(user.id, action, timestamp(deps.now()), limit);
   switch (outcome.kind) {

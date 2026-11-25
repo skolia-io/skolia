@@ -1,4 +1,4 @@
-import type { EndpointFailure, setPositionErrors } from "../endpoint-errors.ts";
+import type { Err, setPositionErrors } from "../endpoint-errors.ts";
 // Where each user was in each text they've read, in their own Durable Object.
 import { timestamp, type DocumentId, type ReadingPosition, type Identity } from "@skolia/shared/api";
 import type { Clock } from "../ports/index.ts";
@@ -22,7 +22,7 @@ export async function set(
   user: Identity,
   id: DocumentId,
   { sentence, token, at }: ReadingPosition,
-): Promise<NoContent | EndpointFailure<typeof setPositionErrors, 400 | 404>> {
+): Promise<NoContent | Err<typeof setPositionErrors, 400 | 404>> {
   if (Date.parse(at) > deps.now().getTime() + MAX_CLOCK_SKEW_MS) return fail(400, { code: "future-position" });
   if (!(await deps.documents.visible(id, user.id))) return fail(404, { code: "document-not-found" });
   await deps.users.setPosition(user.id, id, { sentence, token, at: timestamp(new Date(at)) });

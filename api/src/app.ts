@@ -31,7 +31,7 @@ import {
   validator,
 } from "./openapi.ts";
 import * as failures from "./endpoint-errors.ts";
-import type { EndpointFailure } from "./endpoint-errors.ts";
+import type { Err } from "./endpoint-errors.ts";
 import type { Deps } from "./ports/index.ts";
 import spec from "../openapi.json" with { type: "json" };
 
@@ -92,7 +92,7 @@ export function createApp(deps: Deps) {
     maxSize: MAX_BODY_BYTES,
     onError: (c) =>
       c.json(
-        { error: { code: "limit-exceeded", resource: "text-characters", limit: MAX_TEXT_LENGTH } } satisfies EndpointFailure<
+        { error: { code: "limit-exceeded", resource: "text-characters", limit: MAX_TEXT_LENGTH } } satisfies Err<
           typeof failures.importDocumentErrors,
           413
         >["body"],
@@ -104,7 +104,7 @@ export function createApp(deps: Deps) {
     maxSize: MAX_ANNOTATION_BATCH_BYTES,
     onError: (c) =>
       c.json(
-        { error: { code: "limit-exceeded", resource: "annotation-bytes", limit: MAX_ANNOTATION_BATCH_BYTES } } satisfies EndpointFailure<
+        { error: { code: "limit-exceeded", resource: "annotation-bytes", limit: MAX_ANNOTATION_BATCH_BYTES } } satisfies Err<
           typeof failures.addAnnotationsErrors,
           413
         >["body"],
@@ -528,7 +528,7 @@ export function createApp(deps: Deps) {
   return app;
 }
 
-type SignInFailure = EndpointFailure<{ 401: typeof NOT_SIGNED_IN }>;
+type SignInFailure = Err<{ 401: typeof NOT_SIGNED_IN }>;
 
 /** The response for a result, typed by its status so the typed client (hono/client)
  * knows each status's body. */
@@ -562,10 +562,7 @@ function sendBlob(c: Context, result: BlobResult | NotModified): Response {
     const init: ResponseInit & { encodeBody: "manual" } = { headers, encodeBody: "manual" };
     return new Response(blob.body, init);
   }
-  return c.json(
-    { error: { code: "encoding-required", encoding } } satisfies EndpointFailure<typeof failures.documentAnalysisErrors, 406>["body"],
-    406,
-  );
+  return c.json({ error: { code: "encoding-required", encoding } } satisfies Err<typeof failures.documentAnalysisErrors, 406>["body"], 406);
 }
 
 /** Whether an Accept-Encoding header ("gzip, deflate, br;q=0.8") allows the encoding. */

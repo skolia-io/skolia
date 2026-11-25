@@ -1,4 +1,4 @@
-import type { EndpointFailure, deleteCardErrors, makeCardErrors, reviewErrors, setWordStateErrors } from "../endpoint-errors.ts";
+import type { Err, deleteCardErrors, makeCardErrors, reviewErrors, setWordStateErrors } from "../endpoint-errors.ts";
 // Flashcards, reviews and settings, which live in each user's Durable Object, and
 // the lexicon entries the cards show.
 import {
@@ -58,7 +58,7 @@ export async function review(
   deps: { users: UserCards } & Clock,
   user: Identity,
   request: ReviewRequest,
-): Promise<Ok<Reviewed> | EndpointFailure<typeof reviewErrors, 400 | 404 | 409>> {
+): Promise<Ok<Reviewed> | Err<typeof reviewErrors, 400 | 404 | 409>> {
   if (Date.parse(request.at) > deps.now().getTime() + MAX_CLOCK_SKEW_MS) return fail(400, { code: "future-review" });
   const outcome = await deps.users.review(user.id, request, timestamp(deps.now()));
   switch (outcome.kind) {
@@ -91,7 +91,7 @@ export async function makeCard(
   deps: { users: UserCards; documents: DocumentLookup } & Clock,
   user: Identity,
   card: NewCard,
-): Promise<Json<CardMade, 201> | Ok<CardMade> | EndpointFailure<typeof makeCardErrors, 404 | 409>> {
+): Promise<Json<CardMade, 201> | Ok<CardMade> | Err<typeof makeCardErrors, 404 | 409>> {
   if (!(await seesData(deps, user, card))) return noSuchDocument();
   const made = await deps.users.makeCard(user.id, card, timestamp(deps.now()));
   switch (made.kind) {
@@ -123,7 +123,7 @@ export async function setWordState(
   user: Identity,
   lemmaId: LemmaId,
   state: WordState,
-): Promise<NoContent | EndpointFailure<typeof setWordStateErrors, 404>> {
+): Promise<NoContent | Err<typeof setWordStateErrors, 404>> {
   return (await deps.users.setWordState(user.id, lemmaId, state)) ? NO_CONTENT : fail(404, { code: "word-not-found" });
 }
 
@@ -132,7 +132,7 @@ export async function deleteCard(
   deps: { users: UserCards },
   user: Identity,
   cardId: CardId,
-): Promise<NoContent | EndpointFailure<typeof deleteCardErrors, 404>> {
+): Promise<NoContent | Err<typeof deleteCardErrors, 404>> {
   return (await deps.users.deleteCard(user.id, cardId)) ? NO_CONTENT : fail(404, { code: "card-not-found" });
 }
 
