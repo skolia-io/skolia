@@ -700,7 +700,8 @@ const Count = z.number().int().min(0);
 /** newLeft: how many new words are left of today's allowance. */
 export const Due = z.object({ cards: z.array(DueCard), newLeft: Count, featureSets: FeatureSets }).meta({ id: "Due" });
 
-/** new: new words, as newLeft counts them. */
+/** new: the new cards that would come up today, those of started words and of as many new
+ * words as are left of today's allowance. */
 export const CardCounts = z.object({ lang: Lang, due: Count, new: Count }).meta({ id: "CardCounts" });
 
 export const Reviewed = z.object({ cardId: CardId, dueAt: Timestamp });
