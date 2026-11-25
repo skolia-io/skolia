@@ -77,7 +77,7 @@ class BetterAuthAdapter implements Auth {
 
 class NoAuth implements Auth {
   async handle(): Promise<Response> {
-    return Response.json({ error: "sign-in isn't configured" }, { status: 503 });
+    return Response.json({ error: { code: "sign-in-unavailable" } }, { status: 503 });
   }
 
   async user(): Promise<null> {

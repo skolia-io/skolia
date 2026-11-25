@@ -41,7 +41,7 @@ export function ok<T>(body: T): Ok<T> {
   return { status: 200, body };
 }
 
-export function fail<S extends ContentfulStatusCode>(status: S, error: string): Failed<S> {
+export function fail<S extends ContentfulStatusCode>(status: S, error: ApiError["error"]): Failed<S> {
   return { status, body: { error } };
 }
 

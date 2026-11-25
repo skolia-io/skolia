@@ -270,7 +270,7 @@ test("a text's cloze cards come a page at a time, by where their blanks start", 
 test("a cloze card is made from a text the user sees", async () => {
   const app = setup();
   const headers = await signedIn();
-  assert.deepEqual(await body("never imported", make(app, headers, PRACY), 404), { error: "no such document" });
+  assert.deepEqual(await body("never imported", make(app, headers, PRACY), 404), { error: { code: "document-not-found" } });
   const hidden = await importSentences(app, importer, [DOM.data]);
   await expectStatus("another's private text", make(app, headers, changed(DOM, { documentId: hidden })), 404);
   assert.deepEqual(await listed(app, headers, hidden), { items: [], next: null });

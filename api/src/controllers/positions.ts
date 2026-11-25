@@ -22,8 +22,8 @@ export async function set(
   id: DocumentId,
   { sentence, token, at }: ReadingPosition,
 ): Promise<NoContent | Failed<400 | 404>> {
-  if (Date.parse(at) > deps.now().getTime() + MAX_CLOCK_SKEW_MS) return fail(400, "position is in the future");
-  if (!(await deps.documents.visible(id, user.id))) return fail(404, "no such document");
+  if (Date.parse(at) > deps.now().getTime() + MAX_CLOCK_SKEW_MS) return fail(400, { code: "future-position" });
+  if (!(await deps.documents.visible(id, user.id))) return fail(404, { code: "document-not-found" });
   await deps.users.setPosition(user.id, id, { sentence, token, at: timestamp(new Date(at)) });
   return NO_CONTENT;
 }

@@ -58,17 +58,17 @@ export async function review(
   user: Identity,
   request: ReviewRequest,
 ): Promise<Ok<Reviewed> | Failed<400 | 404 | 409>> {
-  if (Date.parse(request.at) > deps.now().getTime() + MAX_CLOCK_SKEW_MS) return fail(400, "review is in the future");
+  if (Date.parse(request.at) > deps.now().getTime() + MAX_CLOCK_SKEW_MS) return fail(400, { code: "future-review" });
   const outcome = await deps.users.review(user.id, request, timestamp(deps.now()));
   switch (outcome.kind) {
     case "reviewed":
       return ok({ cardId: outcome.cardId, dueAt: outcome.dueAt });
     case "no-card":
-      return fail(404, "no such card");
+      return fail(404, { code: "card-not-found" });
     case "out-of-order":
-      return fail(409, "review is older than the card or its last review");
+      return fail(409, { code: "review-too-old" });
     case "id-reused":
-      return fail(409, "review id is another card's");
+      return fail(409, { code: "review-id-conflict" });
   }
 }
 
@@ -99,7 +99,7 @@ export async function makeCard(
     case "had":
       return ok({ cardId: made.cardId });
     case "full":
-      return fail(409, `a user has at most ${MAX_CARDS} cards`);
+      return fail(409, { code: "limit-exceeded", resource: "cards", limit: MAX_CARDS });
   }
 }
 
@@ -123,12 +123,12 @@ export async function setWordState(
   lemmaId: LemmaId,
   state: WordState,
 ): Promise<NoContent | Failed<404>> {
-  return (await deps.users.setWordState(user.id, lemmaId, state)) ? NO_CONTENT : fail(404, "no such word");
+  return (await deps.users.setWordState(user.id, lemmaId, state)) ? NO_CONTENT : fail(404, { code: "word-not-found" });
 }
 
 /** Any kind of card, with its reviews. */
 export async function deleteCard(deps: { users: UserCards }, user: Identity, cardId: CardId): Promise<NoContent | Failed<404>> {
-  return (await deps.users.deleteCard(user.id, cardId)) ? NO_CONTENT : fail(404, "no such card");
+  return (await deps.users.deleteCard(user.id, cardId)) ? NO_CONTENT : fail(404, { code: "card-not-found" });
 }
 
 export async function settings(deps: { users: UserSettings }, user: Identity): Promise<Ok<Settings>> {

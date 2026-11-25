@@ -14,7 +14,6 @@ import {
   isLang,
   lemmaParam,
   type AnnotationKey,
-  type ApiError,
   type Card,
   type CardCounts,
   type CardId,
@@ -49,6 +48,8 @@ import {
 } from "@skolia/shared/api";
 import { allPages, type Cursor } from "@skolia/shared/page";
 import { SCHEMA, type Blob, type Upos } from "@skolia/shared/schema";
+import { ApiError } from "@skolia/shared/schemas";
+import { describeApiError } from "./api-errors.ts";
 
 const api = hc<AppType>("/").api;
 const lexicon = hc<LexiconApp>("/api/lexicon").v1;
@@ -60,8 +61,12 @@ export interface Reading {
 }
 
 async function failure(response: Response): Promise<Error> {
-  const body = (await response.json().catch(() => null)) as ApiError | null;
-  return new Error(body?.error ?? `${response.status} ${response.statusText}`);
+  const body: unknown = await response.json().catch(() => null);
+  const structured = ApiError.safeParse(body);
+  if (structured.success) return new Error(describeApiError(structured.data.error));
+  // Older API deployments and the separate lexicon API still send a string.
+  const legacy = body && typeof body === "object" && "error" in body && typeof body.error === "string" ? body.error : null;
+  return new Error(legacy ?? `${response.status} ${response.statusText}`);
 }
 
 export async function currentUser(): Promise<User | null> {

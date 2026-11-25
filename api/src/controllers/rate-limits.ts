@@ -10,9 +10,6 @@ import type { Failed } from "./result.ts";
 
 const logger = log("rate-limits");
 
-/** What an action's limit counts, in its error. */
-const COUNTED: Readonly<Record<RateAction, string>> = { import: "imports" };
-
 /** Counts the action against the user's limit: null if they may go ahead, else a 429 whose
  * Retry-After says when the window ends. */
 export async function overLimit(
@@ -32,7 +29,7 @@ export async function overLimit(
       return {
         status: 429,
         body: {
-          error: `at most ${limit.limit} ${COUNTED[action]} every ${limit.windowSeconds} seconds; try again in ${retryAfterSeconds}`,
+          error: { code: "rate-limited", action, ...limit, retryAfterSeconds },
         },
         headers: { "retry-after": String(retryAfterSeconds) },
       };

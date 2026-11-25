@@ -49,8 +49,6 @@ const logger = log("api");
 // A character is at most 6 bytes in JSON (\uXXXX), plus room for the title. The exact
 // character limit is checked after parsing.
 const MAX_BODY_BYTES = MAX_TEXT_LENGTH * 6 + 4 * 1024;
-const DOCUMENT_ID_MESSAGE = "document id must be 64 lowercase hex characters";
-const ANNOTATION_ID_MESSAGE = "annotation id must be 64 lowercase hex characters";
 // An annotation's data is a URL or so: room for each of a batch to be 2 KiB, or a few to be big
 const MAX_ANNOTATION_BATCH_BYTES = 2 * 1024 * ANNOTATION_BATCH;
 /** /api/config changes only with a deploy: a few minutes' copy is current enough. */
@@ -82,22 +80,23 @@ export function createApp(deps: Deps) {
   // Stop reading an oversized body early instead of parsing it and then refusing it
   const limit = bodyLimit({
     maxSize: MAX_BODY_BYTES,
-    onError: (c) => c.json({ error: `text is longer than ${MAX_TEXT_LENGTH} characters` } satisfies ApiError, 413),
+    onError: (c) =>
+      c.json({ error: { code: "limit-exceeded", resource: "text-characters", limit: MAX_TEXT_LENGTH } } satisfies ApiError, 413),
   });
 
   const annotationLimit = bodyLimit({
     maxSize: MAX_ANNOTATION_BATCH_BYTES,
-    onError: (c) => c.json({ error: `a batch of annotations is at most ${MAX_ANNOTATION_BATCH_BYTES} bytes` } satisfies ApiError, 413),
+    onError: (c) =>
+      c.json(
+        { error: { code: "limit-exceeded", resource: "annotation-bytes", limit: MAX_ANNOTATION_BATCH_BYTES } } satisfies ApiError,
+        413,
+      ),
   });
 
   /** The controller's result for the signed-in user, or 401. */
-  async function signedIn<R extends Result>(
-    c: Context,
-    run: (user: Identity) => Promise<R>,
-    message = "not signed in",
-  ): Promise<Sent<R | Failed<401>>> {
+  async function signedIn<R extends Result>(c: Context, run: (user: Identity) => Promise<R>): Promise<Sent<R | Failed<401>>> {
     const user = await deps.auth.user(c.req.raw.headers);
-    return send<R | Failed<401>>(c, user ? await run(user) : fail(401, message));
+    return send<R | Failed<401>>(c, user ? await run(user) : fail(401, { code: "sign-in-required" }));
   }
 
   const responds = (specs: Parameters<typeof responses>[0]) => responses(specs, deps.checkResponses ?? false);
@@ -105,10 +104,18 @@ export function createApp(deps: Deps) {
   const app = new Hono()
     .onError((error, c) => {
       if (error instanceof HTTPException && error.status < 500) {
-        return c.json({ error: error.message } satisfies ApiError, error.status);
+        return c.json(
+          {
+            error: {
+              code:
+                error.status === 400 && c.req.header("content-type")?.includes("application/json") ? "invalid-json" : "request-rejected",
+            },
+          } satisfies ApiError,
+          error.status,
+        );
       }
       logger.error("request failed", { method: c.req.method, path: c.req.path, error });
-      return c.json({ error: "internal error" } satisfies ApiError, 500);
+      return c.json({ error: { code: "internal-error" } } satisfies ApiError, 500);
     })
     .get(
       "/api/version",
@@ -136,7 +143,7 @@ export function createApp(deps: Deps) {
     .get(
       "/api/me/cards/counts",
       mine(TAGS.cards, "Cards to review, by language", "dayStart: when the user's day started; today's new cards count from it."),
-      validator("query", schemas.CountsQuery, badRequest("dayStart must be an ISO time")),
+      validator("query", schemas.CountsQuery, badRequest()),
       responds({
         200: json(z.array(schemas.CardCounts), "Due cards, and new cards that would come up today, for each language with words"),
         401: NOT_SIGNED_IN,
@@ -150,7 +157,7 @@ export function createApp(deps: Deps) {
         "Cards to review now",
         "Cards due now, then new cards: those whose words are all started, and those of as many new words as are left of today's allowance. A card is reviewed while one of its words is being learnt.",
       ),
-      validator("query", schemas.DueQuery, badRequest("lang must be a language and dayStart an ISO time")),
+      validator("query", schemas.DueQuery, badRequest()),
       responds({ 200: json(schemas.Due, "The cards, with their lexicon entries"), 401: NOT_SIGNED_IN }),
       (c) => {
         const { lang, dayStart } = c.req.valid("query");
@@ -228,14 +235,14 @@ export function createApp(deps: Deps) {
     .delete(
       "/api/me/cards/:cardId",
       mine(TAGS.cards, "Delete a card", "A card of any kind, with its reviews."),
-      validator("param", z.object({ cardId: schemas.CardId }), badRequest("card id must be a UUID")),
+      validator("param", z.object({ cardId: schemas.CardId }), badRequest()),
       responds({ 204: NO_BODY, 401: NOT_SIGNED_IN, 404: error("No such card") }),
       (c) => signedIn(c, (user) => cards.deleteCard(deps, user, c.req.valid("param").cardId)),
     )
     .get(
       "/api/me/positions/:id",
       mine(TAGS.reading, "Where the user is in a text"),
-      validator("param", z.object({ id: schemas.DocumentId }), badRequest(DOCUMENT_ID_MESSAGE)),
+      validator("param", z.object({ id: schemas.DocumentId }), badRequest()),
       responds({
         200: json(z.object({ position: schemas.StoredPosition.nullable() }), "The position, null if there's none"),
         401: NOT_SIGNED_IN,
@@ -245,7 +252,7 @@ export function createApp(deps: Deps) {
     .put(
       "/api/me/positions/:id",
       mine(TAGS.reading, "Save where the user is in a text", "A position older than the saved one is ignored."),
-      validator("param", z.object({ id: schemas.DocumentId }), badRequest(DOCUMENT_ID_MESSAGE)),
+      validator("param", z.object({ id: schemas.DocumentId }), badRequest()),
       validator("json", schemas.ReadingPosition, badRequest()),
       responds({ 204: NO_BODY, 400: error("The position is in the future"), 401: NOT_SIGNED_IN, 404: error("No such document") }),
       (c) => signedIn(c, (user) => positions.set(deps, user, c.req.valid("param").id, c.req.valid("json"))),
@@ -392,7 +399,7 @@ export function createApp(deps: Deps) {
         413: error("The text is too long"),
         429: { ...error("The user has imported as many texts as the window allows"), headers: RETRY_AFTER },
       }),
-      (c) => signedIn(c, (user) => documents.importText(deps, user, c.req.valid("json")), "sign in to import"),
+      (c) => signedIn(c, (user) => documents.importText(deps, user, c.req.valid("json"))),
     )
     .get(
       "/api/documents/:id",
@@ -510,7 +517,7 @@ export function createApp(deps: Deps) {
     .delete(
       "/api/documents/:id/annotations/:annotationId",
       mine(TAGS.annotations, "Delete an annotation from the user's entry"),
-      validator("param", z.object({ id: z.string(), annotationId: schemas.AnnotationId }), badRequest(ANNOTATION_ID_MESSAGE)),
+      validator("param", z.object({ id: z.string(), annotationId: schemas.AnnotationId }), badRequest()),
       responds({ 204: NO_BODY, 401: NOT_SIGNED_IN, 404: error("No such annotation") }),
       (c) => signedIn(c, (user) => annotations.remove(deps, user, c.req.param("id"), c.req.valid("param").annotationId)),
     );
@@ -549,7 +556,7 @@ function sendBlob(c: Context, result: BlobResult | NotModified): Response {
     const init: ResponseInit & { encodeBody: "manual" } = { headers, encodeBody: "manual" };
     return new Response(blob.body, init);
   }
-  return c.json({ error: `needs Accept-Encoding: ${encoding}` } satisfies ApiError, 406);
+  return c.json({ error: { code: "encoding-required", encoding } } satisfies ApiError, 406);
 }
 
 /** Whether an Accept-Encoding header ("gzip, deflate, br;q=0.8") allows the encoding. */

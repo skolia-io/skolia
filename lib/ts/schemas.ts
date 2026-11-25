@@ -227,7 +227,7 @@ export const CardsQuery = pageQuery(CardKey, CARD_PAGE)
       return z.NEVER;
     }
     if (after !== undefined && after.length !== (documentId === undefined ? 2 : 1)) {
-      context.addIssue({ code: "custom", message: "after isn't a cursor this list gave" });
+      context.addIssue({ code: "custom", path: ["after"], message: "after isn't a cursor this list gave" });
       return z.NEVER;
     }
     if (documentId !== undefined) return { documentId, after: after as z.output<typeof TextCardKey> | undefined, limit };
@@ -469,7 +469,53 @@ export const DocumentRow = z
 // Responses. The API's types (api.ts) are these schemas' outputs, and its OpenAPI spec is
 // made from them; the API doesn't parse what it sends with them.
 
-export const ApiError = z.object({ error: z.string() }).meta({ id: "ApiError" });
+const ErrorCode = z.enum([
+  "internal-error",
+  "lexicon-version-changed",
+  "lexicon-unavailable",
+  "request-rejected",
+  "invalid-json",
+  "sign-in-required",
+  "sign-in-unavailable",
+  "document-not-found",
+  "annotation-not-found",
+  "card-not-found",
+  "word-not-found",
+  "reading-list-not-found",
+  "not-document-importer",
+  "sharing-license-required",
+  "document-not-imported",
+  "future-position",
+  "future-review",
+  "review-too-old",
+  "review-id-conflict",
+]);
+const Limit = z.int().nonnegative();
+export const ApiError = z
+  .object({
+    error: z.discriminatedUnion("code", [
+      z.object({ code: ErrorCode }),
+      z.object({ code: z.literal("invalid-request"), path: z.array(z.union([z.string(), z.int()])) }),
+      z.object({
+        code: z.literal("limit-exceeded"),
+        resource: z.enum(["text-characters", "annotation-bytes", "annotations", "cards", "reading-lists"]),
+        limit: Limit,
+      }),
+      z.object({ code: z.literal("unknown-tag"), tag: z.string() }),
+      z.object({ code: z.literal("analysis-not-found"), name: z.string() }),
+      z.object({ code: z.literal("entry-not-found"), entry: z.string() }),
+      z.object({ code: z.literal("encoding-required"), encoding: z.string() }),
+      z.object({ code: z.literal("annotation-out-of-range"), index: Limit, end: Limit, length: Limit }),
+      z.object({
+        code: z.literal("rate-limited"),
+        action: z.literal("import"),
+        limit: Limit,
+        windowSeconds: Limit,
+        retryAfterSeconds: Limit,
+      }),
+    ]),
+  })
+  .meta({ id: "ApiError" });
 
 /** What the reader is set to do in this deployment (api/wrangler.jsonc vars). */
 export const ReaderConfig = z.object({ lexiconConcurrency: z.int().min(1).max(LEXICON_CONCURRENCY.max) }).meta({ id: "ReaderConfig" });

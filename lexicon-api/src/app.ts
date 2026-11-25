@@ -2,7 +2,7 @@ import { Hono, type Context, type MiddlewareHandler } from "hono";
 import { etag } from "hono/etag";
 import { cors } from "hono/cors";
 import { HTTPException } from "hono/http-exception";
-import { langOf, type Lang } from "@skolia/shared/api";
+import { langOf, type ApiError, type Lang } from "@skolia/shared/api";
 import type { Entry } from "@skolia/shared/schema";
 import * as schemas from "@skolia/shared/schemas";
 import { badRequest, describe, json, responses, scalarPage, validator } from "@skolia/util/openapi";
@@ -50,9 +50,9 @@ export function createApp(deps: Deps) {
       const lang = langOfRequest(c);
       const version = await deps.lexicon.served(lang);
       const requested = c.req.query("version");
-      const changed = () => c.json({ error: "lexicon version changed; fetch the current version and retry" }, 409);
+      const changed = () => c.json({ error: { code: "lexicon-version-changed" } } satisfies ApiError, 409);
       if (requested !== undefined && requested !== version) return changed();
-      if (version === null) return c.json({ error: "no lexicon loaded" }, 404);
+      if (version === null) return c.json({ error: { code: "lexicon-unavailable" } } satisfies ApiError, 404);
       c.set("version", version);
       await next();
       // Once loaded points at a new version, the loader can delete the previous rows.
@@ -74,9 +74,10 @@ export function createApp(deps: Deps) {
     })
     .use(cors({ origin: "*", allowMethods: ["GET"], exposeHeaders: ["ETag", "Link"], maxAge: 86400 }))
     .onError((error, c) => {
-      if (error instanceof HTTPException && error.status < 500) return c.json({ error: error.message }, error.status);
+      if (error instanceof HTTPException && error.status < 500)
+        return c.json({ error: { code: "request-rejected" } } satisfies ApiError, error.status);
       logger.error("request failed", { method: c.req.method, path: c.req.path, error });
-      return c.json({ error: "internal error" }, 500);
+      return c.json({ error: { code: "internal-error" } } satisfies ApiError, 500);
     })
     .get("/openapi.json", describe({ hide: true }), (c) => c.json(spec, 200, { Link: LICENSE_LINK }))
     .get("/docs", describe({ hide: true }), (c) => c.html(scalarPage("skolia lexicon", "openapi.json")))
@@ -97,7 +98,7 @@ export function createApp(deps: Deps) {
         const { id } = c.req.valid("param");
         const lang = langOf(id);
         const found = await deps.lexicon.resolve(lang, c.var.version, id, c.req.valid("query").include);
-        if (found.entries.length === 0) return c.json({ error: `no entry ${id}` }, 404);
+        if (found.entries.length === 0) return c.json({ error: { code: "entry-not-found", entry: id } } satisfies ApiError, 404);
         return c.json({ ...entries(lang, found), requestedId: id }, 200);
       },
     )
@@ -145,7 +146,7 @@ export function createApp(deps: Deps) {
       async (c) => {
         const { lang, lemma } = c.req.valid("param");
         const found = await deps.lexicon.byLemma(lang, c.var.version, lemma, c.req.valid("query").include);
-        if (found.entries.length === 0) return c.json({ error: `no entry is spelt ${lemma}` }, 404);
+        if (found.entries.length === 0) return c.json({ error: { code: "entry-not-found", entry: lemma } } satisfies ApiError, 404);
         return c.json(entries(lang, found), 200);
       },
     );

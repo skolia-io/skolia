@@ -50,7 +50,7 @@ export async function add(
   if (!record) return noEntry();
   const length = await textLength(deps, record.id);
   const after = body.annotations.findIndex((a) => a.end > length);
-  if (after >= 0) return fail(400, `annotation ${after} ends at ${body.annotations[after]?.end}, after the text's end at ${length}`);
+  if (after >= 0) return fail(400, { code: "annotation-out-of-range", index: after, end: body.annotations[after]!.end, length });
   const addedAt = timestamp(deps.now());
   const annotated = await deps.documents.annotate(
     record.id,
@@ -61,14 +61,14 @@ export async function add(
     case "added":
       return ok({ added: annotated.added, annotations: [...annotated.annotations] });
     case "full":
-      return fail(409, `an entry has at most ${MAX_ANNOTATIONS} annotations`);
+      return fail(409, { code: "limit-exceeded", resource: "annotations", limit: MAX_ANNOTATIONS });
   }
 }
 
 export async function remove(deps: AnnotationDeps, user: Identity, id: string, annotation: AnnotationId): Promise<NoContent | Failed<404>> {
   const record = await ownEntry(deps, id, user);
   if (!record) return noEntry();
-  return (await deps.documents.unannotate(record.id, user.id, annotation)) ? NO_CONTENT : fail(404, "no such annotation");
+  return (await deps.documents.unannotate(record.id, user.id, annotation)) ? NO_CONTENT : fail(404, { code: "annotation-not-found" });
 }
 
 /** The text's length in UTF-16 code units, where its annotations end at most. */
@@ -85,5 +85,5 @@ async function ownEntry(deps: { documents: DocumentLookup }, id: string, user: I
 }
 
 function noEntry(): Failed<404> {
-  return fail(404, "you haven't imported this text");
+  return fail(404, { code: "document-not-imported" });
 }

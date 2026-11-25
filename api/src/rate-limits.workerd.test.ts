@@ -20,7 +20,9 @@ test("imports past the limit get 429 with Retry-After until the window ends", as
   await body("second", importAt(after(10), importer, "Drugi tekst."), 202);
   const refused = await expectStatus("third", importAt(after(15), importer, "Trzeci tekst."), 429);
   assert.equal(refused.headers.get("retry-after"), "45");
-  assert.deepEqual(await refused.json(), { error: "at most 2 imports every 60 seconds; try again in 45" });
+  assert.deepEqual(await refused.json(), {
+    error: { code: "rate-limited", action: "import", limit: 2, windowSeconds: 60, retryAfterSeconds: 45 },
+  });
   // A refused import doesn't count, and doesn't import
   assert.equal((await expectStatus("still", importAt(after(59), importer, "Trzeci tekst."), 429)).headers.get("retry-after"), "1");
   assert.equal(local.started.length, 2);

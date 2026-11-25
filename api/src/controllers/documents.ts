@@ -57,7 +57,7 @@ export async function list(
   filter: DocumentFilter,
   page: PageRequest<DocumentKey>,
 ): Promise<Ok<Paginated<DocumentSummary, DocumentKey>> | Failed<401>> {
-  if (filter.mine && viewer === null) return fail(401, "sign in to see your own texts");
+  if (filter.mine && viewer === null) return fail(401, { code: "sign-in-required" });
   const { items, next } = await deps.documents.list(viewer?.id ?? null, filter, page);
   return ok({ items: items.map((record) => listed(record, viewer)), next });
 }
@@ -86,7 +86,7 @@ async function unknownTag(deps: { documents: DocumentTags }, tags: Tags): Promis
   if (given.length === 0) return null;
   const known = new Set((await deps.documents.known(given)).map(formatTag));
   const unknown = given.map(formatTag).find((tag) => !known.has(tag));
-  return unknown === undefined ? null : fail(400, `no tag ${unknown}`);
+  return unknown === undefined ? null : fail(400, { code: "unknown-tag", tag: unknown });
 }
 
 /** 202 if the text is queued, 200 if it's already here and not failed (a failed import is
@@ -148,7 +148,7 @@ export async function update(
 ): Promise<Ok<DocumentSummary> | Failed<400 | 403 | 404>> {
   const record = await findDocument(deps, id, user);
   if (!record) return noSuchDocument();
-  if (record.user !== user.id) return fail(403, "only the document's importer can change it");
+  if (record.user !== user.id) return fail(403, { code: "not-document-importer" });
   const fields: EntryFields = {
     title: body.title ?? record.title,
     visibility: body.visibility ?? record.visibility,
@@ -158,7 +158,7 @@ export async function update(
     tags: body.tags ?? record.tags,
   };
   if (fields.visibility === "public" && !isShareable(fields.licence)) {
-    return fail(400, "a public text needs a licence that allows sharing it");
+    return fail(400, { code: "sharing-license-required" });
   }
   const unknown = await unknownTag(deps, fields.tags);
   if (unknown !== null) return unknown;
@@ -175,7 +175,7 @@ export async function remove(
 ): Promise<NoContent | Failed<403 | 404>> {
   const record = await findDocument(deps, id, user);
   if (!record) return noSuchDocument();
-  if (record.user !== user.id) return fail(403, "only the document's importer can delete it");
+  if (record.user !== user.id) return fail(403, { code: "not-document-importer" });
   await deps.documents.remove(record.id, user.id);
   return NO_CONTENT;
 }
@@ -222,7 +222,7 @@ export async function text(
 ): Promise<BlobResult | NotModified | Failed<404 | 500>> {
   const record = await findDocument(deps, id, viewer);
   if (!record) return noSuchDocument();
-  return stored(deps, textKey(record.id), undefined, ifNoneMatch, fail(500, "missing text"));
+  return stored(deps, textKey(record.id), undefined, ifNoneMatch, fail(500, { code: "internal-error" }));
 }
 
 /** A document's analysis at a URL keyed by its immutable version name. */
@@ -235,7 +235,7 @@ export async function part(
 ): Promise<BlobResult | NotModified | Failed<404>> {
   const record = await findDocument(deps, id, viewer);
   if (!record || !NAME.test(name)) return noSuchDocument();
-  return stored(deps, analysisKey(record.id, name), PART_ENCODING, ifNoneMatch, fail(404, `no analysis ${name}`));
+  return stored(deps, analysisKey(record.id, name), PART_ENCODING, ifNoneMatch, fail(404, { code: "analysis-not-found", name }));
 }
 
 /** The blob at a key that never changes, or 304 without reading it when the client has it. */
@@ -253,7 +253,7 @@ async function stored<S extends ContentfulStatusCode>(
 }
 
 export function noSuchDocument(): Failed<404> {
-  return fail(404, "no such document");
+  return fail(404, { code: "document-not-found" });
 }
 
 /** The entry the viewer sees: theirs, else a public one. A text private to others is
