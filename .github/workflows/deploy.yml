@@ -71,7 +71,9 @@ jobs:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
       - run: |
-          infra/cache-push.sh "$(nix build --no-link --print-out-paths .#skolia-worker)"
+          : "${NIKS3_AUTH_TOKEN:?NIKS3_AUTH_TOKEN is required to cache the worker build}"
+          out=$(nix build --no-link --print-out-paths .#skolia-worker)
+          infra/cache-push.sh "$out"
           infra/plan.py built worker
         env:
           NIKS3_AUTH_TOKEN: ${{ secrets.NIKS3_AUTH_TOKEN }}

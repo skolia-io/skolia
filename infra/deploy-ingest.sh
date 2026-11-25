@@ -82,7 +82,9 @@ build_lang() {
     --format v2s2 --dest-creds "v1:$creds" "docker://$repo/$name:$tag"
   # Everything the next build needs but the models, which would fill the cache
   if [ -n "${NIKS3_AUTH_TOKEN:-}" ]; then
-    "$root/infra/cache-push.sh" "$(nix build --no-link --print-out-paths "./analysis#cacheable-$lang")"
+    local out
+    out=$(nix build --no-link --print-out-paths "./analysis#cacheable-$lang")
+    "$root/infra/cache-push.sh" "$out"
   fi
   "$root/infra/plan.py" built "image-$lang"
 }
