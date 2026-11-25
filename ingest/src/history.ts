@@ -25,7 +25,7 @@ function attemptQuery(doc: DocumentId, lang: Lang, attempt: JobAttempt): Sql {
     attempt.startedAt,
     attempt.finishedAt,
     attempt.outcome,
-    attempt.error,
+    attempt.error === null ? null : JSON.stringify(attempt.error),
     attempt.chars,
     attempt.words,
     JSON.stringify(attempt.stages),

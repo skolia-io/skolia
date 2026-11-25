@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { describeIngestFailure } from "../lib/ingest-failures.ts";
   import { createQuery } from "@tanstack/svelte-query";
   import { LANGUAGE_INFO, type IngestedDocument, type StageTime, type User } from "@skolia/shared/api";
   import Button from "../components/Button.svelte";
@@ -117,7 +118,7 @@
                       <p class="muted">No result yet: its container stopped before it finished, or the result is on its way.</p>
                     {:else}
                       {#if result.error}
-                        <p class="error">{result.error}</p>
+                        <p class="error">{describeIngestFailure(result.error)}</p>
                       {/if}
                       {@render stages(result.stages)}
                     {/if}

@@ -25,14 +25,11 @@ from typing import Literal, TypedDict, override
 import structlog
 
 from .jobs import InvalidJob, Received, parse_job
-from .schema import IngestJob, JobAnswer, JobAttempt, JobResult, Stage, StageTime
+from .schema import IngestFailure, IngestJob, JobAnswer, JobAttempt, JobResult, Stage, StageTime
 
 log = structlog.get_logger(module=__name__)
 
 MAX_BODY_BYTES = 4096
-# An attempt's error is cut to this many code points: at most 2 UTF-16 code units each,
-# within MAX_INGEST_ERROR (lib/ts/schemas.ts)
-MAX_ERROR = 1000
 
 
 class ContainerJob(TypedDict):
@@ -137,7 +134,10 @@ class _Job:
         }
 
     def attempt(
-        self, image: str, outcome: Literal["ready", "failed", "retried"], error: str | None
+        self,
+        image: str,
+        outcome: Literal["ready", "failed", "retried"],
+        error: IngestFailure | None,
     ) -> JobAttempt:
         assert self.started_at is not None, "finished before it was received"
         return {
@@ -147,7 +147,7 @@ class _Job:
             "startedAt": self.started_at,
             "finishedAt": iso_now(),
             "outcome": outcome,
-            "error": None if error is None else error[:MAX_ERROR],
+            "error": error,
             "chars": self._chars,
             "words": self._words,
             "stages": list(self._stages),
@@ -207,7 +207,7 @@ class HttpJobs:
             job.answer.attempted(job.attempt(self._image, result["outcome"], result["error"]))
         job.answer.give(result)
 
-    def release(self, received: Received, error: str) -> None:
+    def release(self, received: Received, error: IngestFailure) -> None:
         # The next attempt has its own id, since the finished one keeps the old
         with self._changed:
             job = self._take(received)

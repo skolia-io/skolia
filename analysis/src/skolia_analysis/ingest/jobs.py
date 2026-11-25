@@ -7,7 +7,7 @@ import json
 from collections import deque
 from typing import Protocol, cast
 
-from .schema import IngestJob, JobResult, Stage
+from .schema import IngestFailure, IngestJob, JobResult, Stage
 
 
 class InvalidJob(ValueError):
@@ -56,7 +56,7 @@ class JobQueue(Protocol):
         """Done with the job, ready or failed as result says: don't deliver it again."""
         ...
 
-    def release(self, received: Received, error: str) -> None:
+    def release(self, received: Received, error: IngestFailure) -> None:
         """Not done, for the reason given: deliver the job again later."""
         ...
 
@@ -92,6 +92,6 @@ class MemoryQueue:
     def ack(self, received: Received, result: JobResult) -> None:
         self.acked.append(received.job)
 
-    def release(self, received: Received, error: str) -> None:
+    def release(self, received: Received, error: IngestFailure) -> None:
         self.released.append(received.job)
         self.pending.append(received.raw)

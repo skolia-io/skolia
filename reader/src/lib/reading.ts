@@ -1,6 +1,7 @@
 // What the reader page does while a document is analysed, re-analysed or out of reach,
 // decided from each poll so it can be tested without a browser.
 import type { DocumentSummary, ReadingNames } from "@skolia/shared/api";
+import { describeIngestFailure } from "./ingest-failures.ts";
 
 export const POLL_MS = 1500;
 export const MAX_RETRY_MS = 30_000;
@@ -50,7 +51,7 @@ export function notice(summary: DocumentSummary | null, showing: boolean, error:
   if (error !== null) return { kind: "unreachable", error };
   if (summary === null) return { kind: "none" };
   if (summary.state === "failed") {
-    return { kind: "failed", error: summary.error ?? "unknown error", previous: showing };
+    return { kind: "failed", error: describeIngestFailure(summary.error), previous: showing };
   }
   if (!isBusy(summary)) return { kind: "none" };
   if (showing) return { kind: "updating" };

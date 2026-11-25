@@ -421,10 +421,13 @@ export const AnnotationRow = z
 
 export const State = gen.State;
 
+// Old jobs and documents may still store an arbitrary error string. Never surface it.
+const IngestError = z.preprocess((value) => (typeof value === "string" ? { kind: "unknown" } : value), gen.IngestFailure);
+
 export const Status = z.discriminatedUnion("state", [
   z.object({ state: z.literal("queued"), updated: z.string(), artifacts: gen.ReadyAnalysis.exactOptional() }),
   z.object({ state: z.literal("ready"), updated: z.string(), artifacts: gen.ReadyAnalysis }),
-  z.object({ state: z.literal("failed"), updated: z.string(), error: z.string(), artifacts: gen.ReadyAnalysis.exactOptional() }),
+  z.object({ state: z.literal("failed"), updated: z.string(), error: IngestError, artifacts: gen.ReadyAnalysis.exactOptional() }),
 ]) satisfies z.ZodType<StatusType>;
 
 export const Versions = z.object({
@@ -516,8 +519,6 @@ export const IngestOutcome = z.enum(["ready", "failed", "retried"]).meta({
 export const StageTime = z.object({ stage: IngestStage, ms: z.number().int().min(0) }).meta({ id: "StageTime" });
 
 const IngestJobId = z.string().min(1).max(64);
-/** The longest error a job's attempt can have, in UTF-16 code units (http.py MAX_ERROR) */
-export const MAX_INGEST_ERROR = 2000;
 const Size = z.number().int().min(0).nullable();
 
 /** A job in an ingest container (http.py ContainerJob): running, or waiting its turn */
@@ -549,7 +550,7 @@ export const IngestResult = z
   .object({
     finishedAt: Timestamp,
     outcome: IngestOutcome,
-    error: z.string().max(MAX_INGEST_ERROR).nullable(),
+    error: IngestError.nullable(),
     chars: Size,
     words: Size,
     stages: z.array(StageTime).max(32).describe("The stages it ran, in order, the one it failed in included."),
@@ -570,7 +571,23 @@ export const JobResult = gen.JobResult;
 
 /** What an ingest container answers to POST /jobs, once the job has run: its result, and
  * its attempts for the history (ingest/schema.py) */
-export const JobAnswer = gen.JobAnswer;
+export const JobAnswer = z.object({
+  result: z.object({ outcome: z.enum(["ready", "failed"]), analysis: gen.ReadyAnalysis.nullable(), error: IngestError.nullable() }),
+  attempts: z.array(
+    z.object({
+      id: z.string(),
+      image: z.string(),
+      acceptedAt: z.string(),
+      startedAt: z.string(),
+      finishedAt: z.string(),
+      outcome: IngestOutcome,
+      error: IngestError.nullable(),
+      chars: Size,
+      words: Size,
+      stages: z.array(StageTime),
+    }),
+  ),
+}) satisfies z.ZodType<z.output<typeof gen.JobAnswer>>;
 
 /** An IngestWorkflow instance (ingest/src/workflow.ts): one document made to one analysis
  * version, `{doc}-{short hash of the analysis name}` (api/src/worker/adapters/ingest.ts runId) */
@@ -593,7 +610,20 @@ export const IngestJobRow = z
     ...StartedFields,
     finishedAt: Timestamp.nullable(),
     outcome: IngestOutcome.nullable(),
-    error: z.string().nullable(),
+    error: z
+      .string()
+      .transform((value, ctx): unknown => {
+        // This existing TEXT column holds JSON objects for new attempts, prose for older ones.
+        if (!value.startsWith("{")) return value;
+        try {
+          return JSON.parse(value);
+        } catch {
+          ctx.addIssue({ code: "custom", message: "invalid stored ingest failure" });
+          return z.NEVER;
+        }
+      })
+      .pipe(IngestError)
+      .nullable(),
     chars: Size,
     words: Size,
     stages: JsonStages.nullable(),
@@ -666,7 +696,7 @@ export const DocumentSummary = z
     reading: ReadingNames.optional().describe(
       "The analysis to show by name (GET .../analysis/{name}). While an update is pending or failed, the previous analysis stays available.",
     ),
-    error: z.string().optional(),
+    error: IngestError.optional(),
   })
   .meta({
     id: "DocumentSummary",

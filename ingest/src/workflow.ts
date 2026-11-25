@@ -52,12 +52,13 @@ export class IngestWorkflow extends WorkflowEntrypoint<Env, Params> {
     const { doc, lang } = event.payload;
     let answer: JobAnswer;
     try {
-      answer = await step.do("analyse", ANALYSE, async () =>
+      const cached = await step.do("analyse", ANALYSE, async () =>
         schemas.JobAnswer.parse(await this.env.INGESTER.getByName(lang).analyse(lang, { doc, lang })),
       );
+      answer = schemas.JobAnswer.parse(cached);
     } catch (error: unknown) {
       logger.error("ingest didn't answer", { doc, lang, run: event.instanceId, error });
-      answer = { result: { outcome: "failed", analysis: null, error: `ingest didn't answer: ${String(error)}` }, attempts: [] };
+      answer = { result: { outcome: "failed", analysis: null, error: { kind: "ingest-no-answer" } }, attempts: [] };
     }
     const { result, attempts } = answer;
     await step.do("publish", STORE, () => setStatus(this.env.BLOBS, this.env.DOCUMENT_STATUS, doc, result));
@@ -86,7 +87,7 @@ async function setStatus(blobs: R2Bucket, publisher: StatusPublisher, doc: Docum
     return {
       state: "failed",
       updated,
-      error: result.error ?? "ingest failed without saying why",
+      error: result.error ?? { kind: "unknown" },
       ...(artifacts === undefined ? {} : { artifacts }),
     };
   })();

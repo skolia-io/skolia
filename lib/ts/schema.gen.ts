@@ -496,10 +496,32 @@ export interface ReadyAnalysis {
   analysis: string;
 }
 
+export interface UnsupportedLanguage {
+  kind: "unsupported-language";
+  lang: string;
+}
+
+export interface TextTooLong {
+  kind: "text-too-long";
+  chars: number;
+  limit: number;
+}
+
+export interface JobRefused {
+  kind: "job-refused";
+  status: number;
+}
+
+export interface IngestFailureWithoutDetails {
+  kind: "missing-text" | "document-mismatch" | "analysis-failed" | "storage-unavailable" | "ingest-no-answer" | "status-unavailable" | "unknown";
+}
+
+export type IngestFailure = UnsupportedLanguage | TextTooLong | JobRefused | IngestFailureWithoutDetails;
+
 export interface JobResult {
   outcome: "ready" | "failed";
   analysis: ReadyAnalysis | null;
-  error: string | null;
+  error: IngestFailure | null;
 }
 
 export interface StageTime {
@@ -514,7 +536,7 @@ export interface JobAttempt {
   startedAt: string;
   finishedAt: string;
   outcome: "ready" | "failed" | "retried";
-  error: string | null;
+  error: IngestFailure | null;
   chars: number | null;
   words: number | null;
   stages: StageTime[];
@@ -542,7 +564,7 @@ export interface ReadyStatus {
 export interface FailedStatus {
   state: "failed";
   updated: string;
-  error: string;
+  error: IngestFailure;
   artifacts?: ReadyAnalysis;
 }
 

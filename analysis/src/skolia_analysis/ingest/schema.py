@@ -19,13 +19,44 @@ class ReadyAnalysis(TypedDict):
     """Blob key of the analysis."""
 
 
+class UnsupportedLanguage(TypedDict):
+    kind: Literal["unsupported-language"]
+    lang: str
+
+
+class TextTooLong(TypedDict):
+    kind: Literal["text-too-long"]
+    chars: int
+    limit: int
+
+
+class JobRefused(TypedDict):
+    kind: Literal["job-refused"]
+    status: int
+
+
+class IngestFailureWithoutDetails(TypedDict):
+    kind: Literal[
+        "missing-text",
+        "document-mismatch",
+        "analysis-failed",
+        "storage-unavailable",
+        "ingest-no-answer",
+        "status-unavailable",
+        "unknown",
+    ]
+
+
+type IngestFailure = UnsupportedLanguage | TextTooLong | JobRefused | IngestFailureWithoutDetails
+
+
 class JobResult(TypedDict):
     """How a job ended, the answer to POST /jobs: its analysis, or why it failed. The
     ingest Worker's run that asked for it writes the document's status from it."""
 
     outcome: Literal["ready", "failed"]
     analysis: ReadyAnalysis | None
-    error: str | None
+    error: IngestFailure | None
 
 
 Stage = Literal[
@@ -55,7 +86,7 @@ class JobAttempt(TypedDict):
     startedAt: str
     finishedAt: str
     outcome: Literal["ready", "failed", "retried"]
-    error: str | None
+    error: IngestFailure | None
     chars: int | None
     """Null for an attempt that failed before it read the text, as is words."""
     words: int | None
@@ -90,7 +121,7 @@ class ReadyStatus(TypedDict):
 class FailedStatus(TypedDict):
     state: Literal["failed"]
     updated: str
-    error: str
+    error: IngestFailure
     artifacts: NotRequired[ReadyAnalysis]
 
 
