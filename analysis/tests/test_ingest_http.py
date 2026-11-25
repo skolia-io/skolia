@@ -45,7 +45,7 @@ def test_busy_while_a_job_waits_or_runs() -> None:
 def test_a_released_job_comes_back() -> None:
     jobs = HttpJobs()
     jobs.add(json.dumps(JOB))
-    jobs.release(started(jobs), "storage-unavailable")
+    jobs.release(started(jobs), {"kind": "storage-unavailable"})
     assert jobs.busy()
     assert started(jobs).job == JOB
 
@@ -125,12 +125,12 @@ def test_stages_are_recorded_in_order_and_answered_with_the_attempt() -> None:
 def test_a_failed_job_is_answered_with_its_error() -> None:
     jobs = HttpJobs(IMAGE)
     answer = jobs.add(json.dumps(JOB))
-    failed: JobResult = {"outcome": "failed", "analysis": None, "error": "missing-text"}
+    failed: JobResult = {"outcome": "failed", "analysis": None, "error": {"kind": "missing-text"}}
     jobs.ack(started(jobs), failed)
     answered = answer.wait()
     assert answered["result"] == failed
     (attempt,) = answered["attempts"]
-    assert (attempt["outcome"], attempt["error"]) == ("failed", "missing-text")
+    assert (attempt["outcome"], attempt["error"]) == ("failed", {"kind": "missing-text"})
 
 
 def test_a_released_job_is_attempted_again_under_a_new_id() -> None:
@@ -140,7 +140,7 @@ def test_a_released_job_is_attempted_again_under_a_new_id() -> None:
     received.progress.stage_started("reading")
     received.progress.stage_finished("reading", 5)
     (first,) = jobs.state()["jobs"]
-    jobs.release(received, "storage-unavailable")
+    jobs.release(received, {"kind": "storage-unavailable"})
     (again,) = jobs.state()["jobs"]
     assert again["id"] != first["id"]
     assert again["acceptedAt"] == first["acceptedAt"]
@@ -148,7 +148,7 @@ def test_a_released_job_is_attempted_again_under_a_new_id() -> None:
     jobs.ack(started(jobs), READY)
     retried, ready = answer.wait()["attempts"]
     assert (retried["id"], retried["outcome"]) == (first["id"], "retried")
-    assert retried["error"] == "storage-unavailable"
+    assert retried["error"] == {"kind": "storage-unavailable"}
     assert retried["stages"] == [{"stage": "reading", "ms": 5}]
     assert (ready["id"], ready["outcome"], ready["acceptedAt"]) == (
         again["id"],
@@ -220,8 +220,8 @@ def test_a_released_job_is_answered_when_it_finishes_on_a_later_attempt(
     jobs, port = server
     answer = posted(port, JOB)
     until(jobs.busy)
-    jobs.release(started(jobs), "storage-unavailable")
-    failed: JobResult = {"outcome": "failed", "analysis": None, "error": "missing-text"}
+    jobs.release(started(jobs), {"kind": "storage-unavailable"})
+    failed: JobResult = {"outcome": "failed", "analysis": None, "error": {"kind": "missing-text"}}
     jobs.ack(started(jobs), failed)
     status, body = answer()
     assert status == 200

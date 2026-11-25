@@ -49,7 +49,12 @@ test("anyone sees what analysis is doing, without the texts they can't see", asy
   const secret = await imported(setup(), importer, "Secret", "Jest pies.", "private");
   const history = new D1IngestHistory(local.env.INGEST_DB);
   await history.record(shared, "pl", [attempt("done", at("09:00:05"))], at("00:00:00"));
-  await history.record(secret, "pl", [attempt("failed", at("09:00:10"), { outcome: "failed", error: "missing-text" })], at("00:00:00"));
+  await history.record(
+    secret,
+    "pl",
+    [attempt("failed", at("09:00:10"), { outcome: "failed", error: { kind: "text-too-long", chars: 20_001, limit: 20_000 } })],
+    at("00:00:00"),
+  );
   // Its container stopped before it finished
   await unfinished("lost", shared, at("09:00:20"));
   // Still running: shown with its container
@@ -119,7 +124,7 @@ test("anyone sees what analysis is doing, without the texts they can't see", asy
 
   const owner = await body("importer", client(app, importer).ingest.$get());
   assert.deepEqual(owner.languages[2]?.container?.jobs[0]?.document, { id: secret, title: "Secret" });
-  assert.equal(owner.recent[1]?.result?.error, "missing-text");
+  assert.deepEqual(owner.recent[1]?.result?.error, { kind: "text-too-long", chars: 20_001, limit: 20_000 });
 
   const alice = await local.signIn((await local.signUp(ALICE)).id);
   assert.equal((await body("someone else", client(app, alice).ingest.$get())).recent[1]?.document, null);
@@ -128,7 +133,10 @@ test("anyone sees what analysis is doing, without the texts they can't see", asy
 test("a job's attempts are recorded once, however often its run records them, and old jobs go", async () => {
   const doc = "a".repeat(64) as DocumentId;
   const history = new D1IngestHistory(local.env.INGEST_DB);
-  const attempts = [attempt("one", at("08:00:00"), { outcome: "retried", error: "storage-unavailable" }), attempt("two", at("08:01:00"))];
+  const attempts = [
+    attempt("one", at("08:00:00"), { outcome: "retried", error: { kind: "storage-unavailable" } }),
+    attempt("two", at("08:01:00")),
+  ];
   await history.record(doc, "pl", attempts, at("00:00:00"));
   await history.record(doc, "pl", attempts, at("00:00:00"));
   assert.deepEqual(

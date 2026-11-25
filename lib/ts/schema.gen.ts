@@ -496,7 +496,27 @@ export interface ReadyAnalysis {
   analysis: string;
 }
 
-export type IngestFailure = "unsupported-language" | "missing-text" | "document-mismatch" | "text-too-long" | "analysis-failed" | "storage-unavailable" | "job-refused" | "ingest-no-answer" | "status-unavailable" | "unknown";
+export interface UnsupportedLanguage {
+  kind: "unsupported-language";
+  lang: string;
+}
+
+export interface TextTooLong {
+  kind: "text-too-long";
+  chars: number;
+  limit: number;
+}
+
+export interface JobRefused {
+  kind: "job-refused";
+  status: number;
+}
+
+export interface IngestFailureWithoutDetails {
+  kind: "missing-text" | "document-mismatch" | "analysis-failed" | "storage-unavailable" | "ingest-no-answer" | "status-unavailable" | "unknown";
+}
+
+export type IngestFailure = UnsupportedLanguage | TextTooLong | JobRefused | IngestFailureWithoutDetails;
 
 export interface JobResult {
   outcome: "ready" | "failed";

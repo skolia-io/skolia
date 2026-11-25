@@ -28,7 +28,7 @@ test("stuck and outdated rules", () => {
   assert.equal(isOutdated(ready, latest), false);
   assert.equal(isOutdated(ready, { ...latest, analysis: "s3-a1" }), true);
   assert.equal(isOutdated(ready, null), false);
-  assert.equal(isOutdated({ ...ready, state: "failed", error: "analysis-failed" }, { ...latest, analysis: "s3-a1" }), false);
+  assert.equal(isOutdated({ ...ready, state: "failed", error: { kind: "analysis-failed" } }, { ...latest, analysis: "s3-a1" }), false);
 });
 
 test("versions parsing ignores malformed blobs", () => {

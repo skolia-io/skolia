@@ -389,7 +389,7 @@ function summarize(
   };
   const analysis = nameOf(status?.artifacts?.analysis);
   if (analysis !== undefined) summary.reading = { analysis };
-  if (status === null) summary.error = "status-unavailable";
+  if (status === null) summary.error = { kind: "status-unavailable" };
   else if (status.state === "failed") summary.error = status.error;
   return summary;
 }

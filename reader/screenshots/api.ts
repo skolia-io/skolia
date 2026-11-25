@@ -28,7 +28,7 @@ import {
 } from "@skolia/shared/api";
 import { caseReasonFor } from "../src/lib/case-explanations.ts";
 import { analysisKey, statusKey, textKey } from "@skolia/shared/keys";
-import type { Blob, Entry, Feats, Pronunciation, Recording, Status } from "@skolia/shared/schema";
+import { MAX_TEXT_LENGTH, type Blob, type Entry, type Feats, type Pronunciation, type Recording, type Status } from "@skolia/shared/schema";
 import { AnnotationId, CardId, DocumentId, LemmaId, ReadingListId, Timestamp, UserId } from "@skolia/shared/schemas";
 
 type Deps = Parameters<typeof createApp>[0];
@@ -200,7 +200,7 @@ const statuses: readonly (readonly [DocumentIdType, Status])[] = [
     },
   ],
   [NOTATKI.id, { state: "queued", updated: "2026-11-09T09:55:00.000Z" }],
-  [PETER_RABBIT.id, { state: "failed", updated: "2026-11-08T10:00:00.000Z", error: "analysis-failed" }],
+  [PETER_RABBIT.id, { state: "failed", updated: "2026-11-08T10:00:00.000Z", error: { kind: "analysis-failed" } }],
 ];
 
 const JSON_TYPE = "application/json";
@@ -582,7 +582,7 @@ const INGEST_HISTORY: readonly IngestJobRecord[] = [
     result: {
       finishedAt: before(1879),
       outcome: "failed",
-      error: "text-too-long",
+      error: { kind: "text-too-long", chars: 210_400, limit: MAX_TEXT_LENGTH },
       chars: 210_400,
       words: 33_012,
       stages: [{ stage: "reading", ms: 610 }],

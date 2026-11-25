@@ -148,12 +148,12 @@ def test_all_of_a_document_is_under_one_prefix(tmp_path: Path) -> None:
 def test_missing_text_and_unknown_language_fail_without_retry(tmp_path: Path) -> None:
     blobs = DirBlobs(tmp_path)
     ingester = Ingester(blobs, analyzers())
-    assert ingester.process(job("abc"))["outcome"] == "failed"
+    assert ingester.process(job("abc"))["error"] == {"kind": "missing-text"}
     doc = doc_id("pl", TEXT)
     blobs.put(text_key(doc), TEXT.encode(), "text/plain")
     failed = ingester.process(job(doc, "xx"))
     assert failed["outcome"] == "failed"
-    assert failed["error"] == "unsupported-language"
+    assert failed["error"] == {"kind": "unsupported-language", "lang": "xx"}
 
 
 def test_text_over_the_limit_fails_before_analysis(tmp_path: Path) -> None:
@@ -164,6 +164,11 @@ def test_text_over_the_limit_fails_before_analysis(tmp_path: Path) -> None:
     analyzer = FakeAnalyzer()
     failed = Ingester(blobs, {"pl": analyzer}).process(job(doc))
     assert failed["outcome"] == "failed"
+    assert failed["error"] == {
+        "kind": "text-too-long",
+        "chars": len(text),
+        "limit": MAX_TEXT_LENGTH,
+    }
     assert analyzer.analysed == []
 
 

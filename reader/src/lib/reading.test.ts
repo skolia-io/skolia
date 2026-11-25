@@ -43,8 +43,8 @@ test("an outdated document opens on the old reading and switches when the new on
 });
 
 test("a failed re-analysis keeps the old reading and stops polling", () => {
-  assert.deepEqual(afterPoll(summary("failed", OLD, "analysis-failed"), OLD), { load: null, pollAfter: null });
-  assert.deepEqual(notice(summary("failed", OLD, "analysis-failed"), true, null), {
+  assert.deepEqual(afterPoll(summary("failed", OLD, { kind: "analysis-failed" }), OLD), { load: null, pollAfter: null });
+  assert.deepEqual(notice(summary("failed", OLD, { kind: "analysis-failed" }), true, null), {
     kind: "failed",
     error: "The analyser couldn't process this text.",
     previous: true,

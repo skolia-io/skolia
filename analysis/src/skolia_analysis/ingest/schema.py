@@ -19,18 +19,35 @@ class ReadyAnalysis(TypedDict):
     """Blob key of the analysis."""
 
 
-type IngestFailure = Literal[
-    "unsupported-language",
-    "missing-text",
-    "document-mismatch",
-    "text-too-long",
-    "analysis-failed",
-    "storage-unavailable",
-    "job-refused",
-    "ingest-no-answer",
-    "status-unavailable",
-    "unknown",
-]
+class UnsupportedLanguage(TypedDict):
+    kind: Literal["unsupported-language"]
+    lang: str
+
+
+class TextTooLong(TypedDict):
+    kind: Literal["text-too-long"]
+    chars: int
+    limit: int
+
+
+class JobRefused(TypedDict):
+    kind: Literal["job-refused"]
+    status: int
+
+
+class IngestFailureWithoutDetails(TypedDict):
+    kind: Literal[
+        "missing-text",
+        "document-mismatch",
+        "analysis-failed",
+        "storage-unavailable",
+        "ingest-no-answer",
+        "status-unavailable",
+        "unknown",
+    ]
+
+
+type IngestFailure = UnsupportedLanguage | TextTooLong | JobRefused | IngestFailureWithoutDetails
 
 
 class JobResult(TypedDict):

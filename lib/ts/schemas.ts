@@ -422,10 +422,7 @@ export const AnnotationRow = z
 export const State = gen.State;
 
 // Old jobs and documents may still store an arbitrary error string. Never surface it.
-const IngestError = z.preprocess(
-  (value) => (typeof value === "string" && !gen.IngestFailure.safeParse(value).success ? "unknown" : value),
-  gen.IngestFailure,
-);
+const IngestError = z.preprocess((value) => (typeof value === "string" ? { kind: "unknown" } : value), gen.IngestFailure);
 
 export const Status = z.discriminatedUnion("state", [
   z.object({ state: z.literal("queued"), updated: z.string(), artifacts: gen.ReadyAnalysis.exactOptional() }),
@@ -613,7 +610,20 @@ export const IngestJobRow = z
     ...StartedFields,
     finishedAt: Timestamp.nullable(),
     outcome: IngestOutcome.nullable(),
-    error: IngestError.nullable(),
+    error: z
+      .string()
+      .transform((value, ctx): unknown => {
+        // This existing TEXT column holds JSON objects for new attempts, prose for older ones.
+        if (!value.startsWith("{")) return value;
+        try {
+          return JSON.parse(value);
+        } catch {
+          ctx.addIssue({ code: "custom", message: "invalid stored ingest failure" });
+          return z.NEVER;
+        }
+      })
+      .pipe(IngestError)
+      .nullable(),
     chars: Size,
     words: Size,
     stages: JsonStages.nullable(),

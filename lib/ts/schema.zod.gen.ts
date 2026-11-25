@@ -500,7 +500,27 @@ export const ReadyAnalysis: z.ZodType<types.ReadyAnalysis> = /* @__PURE__ */ (()
   analysis: z.string(),
 }).meta({ id: "ReadyAnalysis" }))();
 
-export const IngestFailure: z.ZodType<types.IngestFailure> = /* @__PURE__ */ (() => z.enum(["unsupported-language", "missing-text", "document-mismatch", "text-too-long", "analysis-failed", "storage-unavailable", "job-refused", "ingest-no-answer", "status-unavailable", "unknown"]).meta({ id: "IngestFailure" }))();
+export const UnsupportedLanguage: z.ZodType<types.UnsupportedLanguage> = /* @__PURE__ */ (() => z.object({
+  kind: z.enum(["unsupported-language"]),
+  lang: z.string(),
+}).meta({ id: "UnsupportedLanguage" }))();
+
+export const TextTooLong: z.ZodType<types.TextTooLong> = /* @__PURE__ */ (() => z.object({
+  kind: z.enum(["text-too-long"]),
+  chars: z.number().int(),
+  limit: z.number().int(),
+}).meta({ id: "TextTooLong" }))();
+
+export const JobRefused: z.ZodType<types.JobRefused> = /* @__PURE__ */ (() => z.object({
+  kind: z.enum(["job-refused"]),
+  status: z.number().int(),
+}).meta({ id: "JobRefused" }))();
+
+export const IngestFailureWithoutDetails: z.ZodType<types.IngestFailureWithoutDetails> = /* @__PURE__ */ (() => z.object({
+  kind: z.enum(["missing-text", "document-mismatch", "analysis-failed", "storage-unavailable", "ingest-no-answer", "status-unavailable", "unknown"]),
+}).meta({ id: "IngestFailureWithoutDetails" }))();
+
+export const IngestFailure: z.ZodType<types.IngestFailure> = /* @__PURE__ */ (() => z.union([UnsupportedLanguage, TextTooLong, JobRefused, IngestFailureWithoutDetails]).meta({ id: "IngestFailure" }))();
 
 export const JobResult: z.ZodType<types.JobResult> = /* @__PURE__ */ (() => z.object({
   outcome: z.enum(["ready", "failed"]),

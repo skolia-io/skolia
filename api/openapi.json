@@ -2923,19 +2923,108 @@
         "additionalProperties": false
       },
       "IngestFailure": {
-        "type": "string",
-        "enum": [
-          "unsupported-language",
-          "missing-text",
-          "document-mismatch",
-          "text-too-long",
-          "analysis-failed",
-          "storage-unavailable",
-          "job-refused",
-          "ingest-no-answer",
-          "status-unavailable",
-          "unknown"
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/UnsupportedLanguage"
+          },
+          {
+            "$ref": "#/components/schemas/TextTooLong"
+          },
+          {
+            "$ref": "#/components/schemas/JobRefused"
+          },
+          {
+            "$ref": "#/components/schemas/IngestFailureWithoutDetails"
+          }
         ]
+      },
+      "UnsupportedLanguage": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "unsupported-language"
+            ]
+          },
+          "lang": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "lang"
+        ],
+        "additionalProperties": false
+      },
+      "TextTooLong": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "text-too-long"
+            ]
+          },
+          "chars": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "kind",
+          "chars",
+          "limit"
+        ],
+        "additionalProperties": false
+      },
+      "JobRefused": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "job-refused"
+            ]
+          },
+          "status": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "kind",
+          "status"
+        ],
+        "additionalProperties": false
+      },
+      "IngestFailureWithoutDetails": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "missing-text",
+              "document-mismatch",
+              "analysis-failed",
+              "storage-unavailable",
+              "ingest-no-answer",
+              "status-unavailable",
+              "unknown"
+            ]
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "additionalProperties": false
       },
       "IngestOverview": {
         "type": "object",

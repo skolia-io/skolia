@@ -39,11 +39,11 @@ BROTLI_QUALITY = 11
 class JobError(Exception):
     """A job that can't succeed as given; recorded in the status, not retried."""
 
-    code: IngestFailure
+    failure: IngestFailure
 
-    def __init__(self, code: IngestFailure) -> None:
-        super().__init__(code)
-        self.code = code
+    def __init__(self, failure: IngestFailure) -> None:
+        super().__init__(failure["kind"])
+        self.failure = failure
 
 
 def versions(analyzer: Analyzer) -> Versions:
@@ -92,14 +92,16 @@ class Ingester:
         except BlobError:
             raise
         except JobError as error:
-            log.warning("ingest rejected job", doc=job["doc"], lang=job["lang"], code=error.code)
-            return {"outcome": "failed", "analysis": None, "error": error.code}
+            log.warning(
+                "ingest rejected job", doc=job["doc"], lang=job["lang"], failure=error.failure
+            )
+            return {"outcome": "failed", "analysis": None, "error": error.failure}
         except Exception:
             log.exception("ingest failed", doc=job["doc"])
             return {
                 "outcome": "failed",
                 "analysis": None,
-                "error": "analysis-failed",
+                "error": {"kind": "analysis-failed"},
             }
         return {"outcome": "ready", "analysis": analysis, "error": None}
 
@@ -107,18 +109,20 @@ class Ingester:
         doc = job["doc"]
         analyzer = self._analyzers.get(job["lang"])
         if analyzer is None:
-            raise JobError("unsupported-language")
+            raise JobError({"kind": "unsupported-language", "lang": job["lang"]})
         with timed(progress, doc, None, "reading"):
             raw = self._blobs.get(text_key(doc))
             if raw is None:
-                raise JobError("missing-text")
+                raise JobError({"kind": "missing-text"})
             text = raw.decode("utf-8")
             words = len(text.split())
             progress.text(len(text), words)
             if doc_id(job["lang"], text) != doc:
-                raise JobError("document-mismatch")
+                raise JobError({"kind": "document-mismatch"})
             if len(text) > MAX_TEXT_LENGTH:
-                raise JobError("text-too-long")
+                raise JobError(
+                    {"kind": "text-too-long", "chars": len(text), "limit": MAX_TEXT_LENGTH}
+                )
         names = versions(analyzer)
         a_key = analysis_key(doc, names["analysis"])
         if not self._blobs.exists(a_key):
@@ -162,7 +166,7 @@ class Ingester:
                 failures += 1
                 delay = min(MAX_BACKOFF_SECONDS, 2.0**failures)
                 job_log.exception("storage failed", retry_ms=round(delay * 1000))
-                queue.release(received, "storage-unavailable")
+                queue.release(received, {"kind": "storage-unavailable"})
                 sleep(delay)
                 continue
             failures = 0

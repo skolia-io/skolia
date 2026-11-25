@@ -58,7 +58,7 @@ export class IngestWorkflow extends WorkflowEntrypoint<Env, Params> {
       answer = schemas.JobAnswer.parse(cached);
     } catch (error: unknown) {
       logger.error("ingest didn't answer", { doc, lang, run: event.instanceId, error });
-      answer = { result: { outcome: "failed", analysis: null, error: "ingest-no-answer" }, attempts: [] };
+      answer = { result: { outcome: "failed", analysis: null, error: { kind: "ingest-no-answer" } }, attempts: [] };
     }
     const { result, attempts } = answer;
     await step.do("publish", STORE, () => setStatus(this.env.BLOBS, this.env.DOCUMENT_STATUS, doc, result));
@@ -87,7 +87,7 @@ async function setStatus(blobs: R2Bucket, publisher: StatusPublisher, doc: Docum
     return {
       state: "failed",
       updated,
-      error: result.error ?? "unknown",
+      error: result.error ?? { kind: "unknown" },
       ...(artifacts === undefined ? {} : { artifacts }),
     };
   })();
