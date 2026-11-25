@@ -153,7 +153,7 @@ def test_missing_text_and_unknown_language_fail_without_retry(tmp_path: Path) ->
     blobs.put(text_key(doc), TEXT.encode(), "text/plain")
     failed = ingester.process(job(doc, "xx"))
     assert failed["outcome"] == "failed"
-    assert "xx" in (failed["error"] or "")
+    assert failed["error"] == "unsupported-language"
 
 
 def test_text_over_the_limit_fails_before_analysis(tmp_path: Path) -> None:

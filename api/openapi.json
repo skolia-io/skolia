@@ -2854,7 +2854,7 @@
             "$ref": "#/components/schemas/ReadingNames"
           },
           "error": {
-            "type": "string"
+            "$ref": "#/components/schemas/IngestFailure"
           }
         },
         "required": [
@@ -2921,6 +2921,21 @@
           "analysis"
         ],
         "additionalProperties": false
+      },
+      "IngestFailure": {
+        "type": "string",
+        "enum": [
+          "unsupported-language",
+          "missing-text",
+          "document-mismatch",
+          "text-too-long",
+          "analysis-failed",
+          "storage-unavailable",
+          "job-refused",
+          "ingest-no-answer",
+          "status-unavailable",
+          "unknown"
+        ]
       },
       "IngestOverview": {
         "type": "object",
@@ -3207,8 +3222,7 @@
           "error": {
             "anyOf": [
               {
-                "type": "string",
-                "maxLength": 2000
+                "$ref": "#/components/schemas/IngestFailure"
               },
               {
                 "type": "null"

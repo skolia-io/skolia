@@ -200,7 +200,7 @@ const statuses: readonly (readonly [DocumentIdType, Status])[] = [
     },
   ],
   [NOTATKI.id, { state: "queued", updated: "2026-11-09T09:55:00.000Z" }],
-  [PETER_RABBIT.id, { state: "failed", updated: "2026-11-08T10:00:00.000Z", error: "The analyser stopped" }],
+  [PETER_RABBIT.id, { state: "failed", updated: "2026-11-08T10:00:00.000Z", error: "analysis-failed" }],
 ];
 
 const JSON_TYPE = "application/json";
@@ -582,7 +582,7 @@ const INGEST_HISTORY: readonly IngestJobRecord[] = [
     result: {
       finishedAt: before(1879),
       outcome: "failed",
-      error: "text is longer than 200000 characters",
+      error: "text-too-long",
       chars: 210_400,
       words: 33_012,
       stages: [{ stage: "reading", ms: 610 }],

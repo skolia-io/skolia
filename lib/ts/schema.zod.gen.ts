@@ -500,10 +500,12 @@ export const ReadyAnalysis: z.ZodType<types.ReadyAnalysis> = /* @__PURE__ */ (()
   analysis: z.string(),
 }).meta({ id: "ReadyAnalysis" }))();
 
+export const IngestFailure: z.ZodType<types.IngestFailure> = /* @__PURE__ */ (() => z.enum(["unsupported-language", "missing-text", "document-mismatch", "text-too-long", "analysis-failed", "storage-unavailable", "job-refused", "ingest-no-answer", "status-unavailable", "unknown"]).meta({ id: "IngestFailure" }))();
+
 export const JobResult: z.ZodType<types.JobResult> = /* @__PURE__ */ (() => z.object({
   outcome: z.enum(["ready", "failed"]),
   analysis: ReadyAnalysis.nullable(),
-  error: z.string().nullable(),
+  error: IngestFailure.nullable(),
 }).meta({ id: "JobResult" }))();
 
 export const StageTime: z.ZodType<types.StageTime> = /* @__PURE__ */ (() => z.object({
@@ -518,7 +520,7 @@ export const JobAttempt: z.ZodType<types.JobAttempt> = /* @__PURE__ */ (() => z.
   startedAt: z.string(),
   finishedAt: z.string(),
   outcome: z.enum(["ready", "failed", "retried"]),
-  error: z.string().nullable(),
+  error: IngestFailure.nullable(),
   chars: z.number().int().nullable(),
   words: z.number().int().nullable(),
   stages: z.array(StageTime),
@@ -546,7 +548,7 @@ export const ReadyStatus: z.ZodType<types.ReadyStatus> = /* @__PURE__ */ (() => 
 export const FailedStatus: z.ZodType<types.FailedStatus> = /* @__PURE__ */ (() => z.object({
   state: z.enum(["failed"]),
   updated: z.string(),
-  error: z.string(),
+  error: IngestFailure,
   artifacts: ReadyAnalysis.exactOptional(),
 }).meta({ id: "FailedStatus" }))();
 

@@ -7,7 +7,7 @@ import { MAX_RETRY_MS, POLL_MS, afterPoll, badge, notice, queueText, retryAfter 
 const OLD = { analysis: "s2-a1" };
 const NEW = { analysis: "s2-a2" };
 
-function summary(state: DocumentSummary["state"], reading?: typeof OLD, error?: string): DocumentSummary {
+function summary(state: DocumentSummary["state"], reading?: typeof OLD, error?: DocumentSummary["error"]): DocumentSummary {
   const base: DocumentSummary = {
     id: DocumentId.parse("d".repeat(64)),
     title: "t",
@@ -43,10 +43,10 @@ test("an outdated document opens on the old reading and switches when the new on
 });
 
 test("a failed re-analysis keeps the old reading and stops polling", () => {
-  assert.deepEqual(afterPoll(summary("failed", OLD, "boom"), OLD), { load: null, pollAfter: null });
-  assert.deepEqual(notice(summary("failed", OLD, "boom"), true, null), {
+  assert.deepEqual(afterPoll(summary("failed", OLD, "analysis-failed"), OLD), { load: null, pollAfter: null });
+  assert.deepEqual(notice(summary("failed", OLD, "analysis-failed"), true, null), {
     kind: "failed",
-    error: "boom",
+    error: "The analyser couldn't process this text.",
     previous: true,
   });
 });
@@ -57,7 +57,11 @@ test("the notice says what's going on", () => {
   assert.deepEqual(notice(summary("analysing"), false, null), { kind: "analysing" });
   assert.deepEqual(notice(summary("queued", OLD), true, null), { kind: "updating" });
   assert.deepEqual(notice(summary("ready", OLD), true, null), { kind: "none" });
-  assert.deepEqual(notice(summary("failed"), false, null), { kind: "failed", error: "unknown error", previous: false });
+  assert.deepEqual(notice(summary("failed"), false, null), {
+    kind: "failed",
+    error: "The analysis failed for an unknown reason.",
+    previous: false,
+  });
   assert.deepEqual(notice(summary("ready", OLD), true, "offline"), { kind: "unreachable", error: "offline" });
 });
 

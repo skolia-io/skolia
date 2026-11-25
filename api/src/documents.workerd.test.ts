@@ -87,7 +87,7 @@ test("listings keep the published status, versions and error without status blob
   });
   await expectStatus("save", api.me["reading-lists"][":listId"].documents[":id"].$put({ param: { listId: "1", id } }), 204);
   await local.env.BLOBS.delete(statusKey(id));
-  const expected = { ...ready, state: "failed", error: "ingest failed" };
+  const expected = { ...ready, state: "failed", error: "unknown" };
   assert.deepEqual((await body("mine", api.documents.$get({ query: { mine: "true" } }))).items, [expected]);
   assert.deepEqual((await body("public", client(app).documents.$get({ query: {} }))).items, [{ ...expected, mine: false }]);
   const reading = await body("reading list", api.me["reading-lists"][":listId"].documents.$get({ param: { listId: "1" }, query: {} }));
@@ -106,7 +106,7 @@ test("a list does not fall back to R2 when the status row is missing", async () 
     items: [item],
   } = await body("list", api.documents.$get({ query: {} }));
   assert.equal(item?.state, "failed");
-  assert.equal(item?.error, "no status");
+  assert.equal(item?.error, "status-unavailable");
   assert.equal((await body("detail", api.documents[":id"].$get({ param: { id } }))).state, "ready");
 });
 
