@@ -1,3 +1,13 @@
+import type {
+  Err,
+  deleteDocumentErrors,
+  documentAnalysisErrors,
+  documentErrors,
+  documentTextErrors,
+  importDocumentErrors,
+  listDocumentsErrors,
+  updateDocumentErrors,
+} from "../endpoint-errors.ts";
 // Documents: importing a text, listing and opening them, and their text, analysis and
 // queueing a document again, when asked, if ingest makes other versions or its job is lost.
 import type { ContentfulStatusCode } from "hono/utils/http-status";
@@ -56,8 +66,8 @@ export async function list(
   viewer: Identity | null,
   filter: DocumentFilter,
   page: PageRequest<DocumentKey>,
-): Promise<Ok<Paginated<DocumentSummary, DocumentKey>> | Failed<401>> {
-  if (filter.mine && viewer === null) return fail(401, "sign in to see your own texts");
+): Promise<Ok<Paginated<DocumentSummary, DocumentKey>> | Err<typeof listDocumentsErrors, 401>> {
+  if (filter.mine && viewer === null) return fail(401, { code: "sign-in-required" });
   const { items, next } = await deps.documents.list(viewer?.id ?? null, filter, page);
   return ok({ items: items.map((record) => listed(record, viewer)), next });
 }
@@ -71,7 +81,7 @@ export async function mine(
   deps: { documents: DocumentLookup },
   user: Identity,
   page: PageRequest<DocumentKey>,
-): Promise<Ok<Paginated<DocumentSummary, DocumentKey>> | Failed<401>> {
+): Promise<Ok<Paginated<DocumentSummary, DocumentKey>> | Err<typeof listDocumentsErrors, 401>> {
   return list(deps, user, { tags: {}, lang: undefined, title: undefined, mine: true }, page);
 }
 
@@ -81,12 +91,15 @@ export async function tags(deps: { documents: DocumentTags }, page: PageRequest<
 }
 
 /** A 400 naming the first of the tags skolia doesn't have, or null if it has them all. */
-async function unknownTag(deps: { documents: DocumentTags }, tags: Tags): Promise<Failed<400> | null> {
+async function unknownTag(
+  deps: { documents: DocumentTags },
+  tags: Tags,
+): Promise<Failed<400, { code: "unknown-tag"; tag: string }> | null> {
   const given = Object.entries(tags).map(([kind, value]) => ({ kind, value }));
   if (given.length === 0) return null;
   const known = new Set((await deps.documents.known(given)).map(formatTag));
   const unknown = given.map(formatTag).find((tag) => !known.has(tag));
-  return unknown === undefined ? null : fail(400, `no tag ${unknown}`);
+  return unknown === undefined ? null : fail(400, { code: "unknown-tag", tag: unknown });
 }
 
 /** 202 if the text is queued, 200 if it's already here and not failed (a failed import is
@@ -97,7 +110,7 @@ export async function importText(
   deps: DocumentEditDeps & { users: UserRateLimits; roles: Roles; importRate: RateLimit },
   user: Identity,
   body: z.output<typeof schemas.ImportRequest>,
-): Promise<Json<DocumentSummary, 200> | Json<DocumentSummary, 202> | Failed<400 | 429>> {
+): Promise<Json<DocumentSummary, 200> | Json<DocumentSummary, 202> | Err<typeof importDocumentErrors, 400 | 429>> {
   const unknown = await unknownTag(deps, body.tags);
   if (unknown !== null) return unknown;
   const limited = await overLimit(deps, user, "import", deps.importRate);
@@ -145,10 +158,10 @@ export async function update(
   user: Identity,
   id: string,
   body: z.output<typeof schemas.DocumentUpdate>,
-): Promise<Ok<DocumentSummary> | Failed<400 | 403 | 404>> {
+): Promise<Ok<DocumentSummary> | Err<typeof updateDocumentErrors, 400 | 403 | 404>> {
   const record = await findDocument(deps, id, user);
   if (!record) return noSuchDocument();
-  if (record.user !== user.id) return fail(403, "only the document's importer can change it");
+  if (record.user !== user.id) return fail(403, { code: "not-document-importer" });
   const fields: EntryFields = {
     title: body.title ?? record.title,
     visibility: body.visibility ?? record.visibility,
@@ -158,7 +171,7 @@ export async function update(
     tags: body.tags ?? record.tags,
   };
   if (fields.visibility === "public" && !isShareable(fields.licence)) {
-    return fail(400, "a public text needs a licence that allows sharing it");
+    return fail(400, { code: "sharing-license-required" });
   }
   const unknown = await unknownTag(deps, fields.tags);
   if (unknown !== null) return unknown;
@@ -172,16 +185,20 @@ export async function remove(
   deps: { documents: DocumentEntries & DocumentLookup },
   user: Identity,
   id: string,
-): Promise<NoContent | Failed<403 | 404>> {
+): Promise<NoContent | Err<typeof deleteDocumentErrors, 403 | 404>> {
   const record = await findDocument(deps, id, user);
   if (!record) return noSuchDocument();
-  if (record.user !== user.id) return fail(403, "only the document's importer can delete it");
+  if (record.user !== user.id) return fail(403, { code: "not-document-importer" });
   await deps.documents.remove(record.id, user.id);
   return NO_CONTENT;
 }
 
 /** The entry as it stands; it isn't queued again here (refresh does that). */
-export async function get(deps: DocumentDetailDeps, id: string, viewer: Identity | null): Promise<Ok<DocumentSummary> | Failed<404>> {
+export async function get(
+  deps: DocumentDetailDeps,
+  id: string,
+  viewer: Identity | null,
+): Promise<Ok<DocumentSummary> | Err<typeof documentErrors, 404>> {
   const record = await findDocument(deps, id, viewer);
   if (!record) return noSuchDocument();
   return ok(await withQueue(deps, record, summarize(record, await readStatus(deps.blobs, record.id), viewer)));
@@ -189,7 +206,11 @@ export async function get(deps: DocumentDetailDeps, id: string, viewer: Identity
 
 /** The entry, after queueing it again if ingest now makes other versions or its run seems
  * lost. Anyone who can see it may ask: it's queued only when it needs it. */
-export async function refresh(deps: DocumentDetailDeps, id: string, viewer: Identity | null): Promise<Ok<DocumentSummary> | Failed<404>> {
+export async function refresh(
+  deps: DocumentDetailDeps,
+  id: string,
+  viewer: Identity | null,
+): Promise<Ok<DocumentSummary> | Err<typeof documentErrors, 404>> {
   const record = await findDocument(deps, id, viewer);
   if (!record) return noSuchDocument();
   return ok(await withQueue(deps, record, await refreshed(deps, record, versionsOf(deps.blobs), viewer)));
@@ -219,10 +240,10 @@ export async function text(
   id: string,
   viewer: Identity | null,
   ifNoneMatch: string | undefined,
-): Promise<BlobResult | NotModified | Failed<404 | 500>> {
+): Promise<BlobResult | NotModified | Err<typeof documentTextErrors, 404 | 500>> {
   const record = await findDocument(deps, id, viewer);
   if (!record) return noSuchDocument();
-  return stored(deps, textKey(record.id), undefined, ifNoneMatch, fail(500, "missing text"));
+  return stored(deps, textKey(record.id), undefined, ifNoneMatch, fail(500, { code: "internal-error" }));
 }
 
 /** A document's analysis at a URL keyed by its immutable version name. */
@@ -232,28 +253,28 @@ export async function part(
   viewer: Identity | null,
   name: string,
   ifNoneMatch: string | undefined,
-): Promise<BlobResult | NotModified | Failed<404>> {
+): Promise<BlobResult | NotModified | Err<typeof documentAnalysisErrors, 404>> {
   const record = await findDocument(deps, id, viewer);
   if (!record || !NAME.test(name)) return noSuchDocument();
-  return stored(deps, analysisKey(record.id, name), PART_ENCODING, ifNoneMatch, fail(404, `no analysis ${name}`));
+  return stored(deps, analysisKey(record.id, name), PART_ENCODING, ifNoneMatch, fail(404, { code: "analysis-not-found", name }));
 }
 
 /** The blob at a key that never changes, or 304 without reading it when the client has it. */
-async function stored<S extends ContentfulStatusCode>(
+async function stored<Missing extends Json<unknown, ContentfulStatusCode>>(
   deps: { blobs: BlobStore },
   key: string,
   encoding: typeof PART_ENCODING | undefined,
   ifNoneMatch: string | undefined,
-  missing: Failed<S>,
-): Promise<BlobResult | NotModified | Failed<S>> {
+  missing: Missing,
+): Promise<BlobResult | NotModified | Missing> {
   const etag = `"${key}"`;
   if (ifNoneMatch?.split(",").some((tag) => tag.trim().replace(/^W\//u, "") === etag)) return { status: 304, etag, encoding };
   const blob = await deps.blobs.get(key);
   return blob ? { status: 200, etag, blob, encoding } : missing;
 }
 
-export function noSuchDocument(): Failed<404> {
-  return fail(404, "no such document");
+export function noSuchDocument(): Err<typeof documentErrors, 404> {
+  return fail(404, { code: "document-not-found" });
 }
 
 /** The entry the viewer sees: theirs, else a public one. A text private to others is

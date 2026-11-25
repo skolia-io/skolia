@@ -206,11 +206,11 @@ export async function refusesBadPages(
 ): Promise<void> {
   for (const after of [forged("nope"), forged(encodeCursor([1.5]))]) {
     const refused = await expectStatus(`after ${after}`, list({ after }), 400);
-    assert.deepEqual(await refused.json(), { error: "after isn't a cursor this list gave" });
+    assert.deepEqual(await refused.json(), { error: { code: "invalid-request", path: ["after"] } });
   }
   for (const limit of [String(max + 1), "0"]) {
     const refused = await expectStatus(`limit ${limit}`, list({ limit }), 400);
-    assert.deepEqual(await refused.json(), { error: `limit must be 1 to ${max}` });
+    assert.deepEqual(await refused.json(), { error: { code: "invalid-request", path: ["limit"] } });
   }
 }
 

@@ -227,7 +227,7 @@ export const CardsQuery = pageQuery(CardKey, CARD_PAGE)
       return z.NEVER;
     }
     if (after !== undefined && after.length !== (documentId === undefined ? 2 : 1)) {
-      context.addIssue({ code: "custom", message: "after isn't a cursor this list gave" });
+      context.addIssue({ code: "custom", path: ["after"], message: "after isn't a cursor this list gave" });
       return z.NEVER;
     }
     if (documentId !== undefined) return { documentId, after: after as z.output<typeof TextCardKey> | undefined, limit };
@@ -469,7 +469,65 @@ export const DocumentRow = z
 // Responses. The API's types (api.ts) are these schemas' outputs, and its OpenAPI spec is
 // made from them; the API doesn't parse what it sends with them.
 
-export const ApiError = z.object({ error: z.string() }).meta({ id: "ApiError" });
+function errorCode<const Code extends string>(code: Code) {
+  return z.object({ code: z.literal(code) });
+}
+
+const Limit = z.int().nonnegative();
+const LimitResource = z.enum(["text-characters", "annotation-bytes", "annotations", "cards", "reading-lists"]);
+const LimitExceeded = errorCode("limit-exceeded").extend({ resource: LimitResource, limit: Limit });
+
+export function limitExceeded<const Resource extends z.output<typeof LimitResource>>(resource: Resource) {
+  return LimitExceeded.extend({ resource: z.literal(resource) });
+}
+
+const errorVariants = {
+  "internal-error": errorCode("internal-error"),
+  "lexicon-version-changed": errorCode("lexicon-version-changed"),
+  "lexicon-unavailable": errorCode("lexicon-unavailable"),
+  "request-rejected": errorCode("request-rejected"),
+  "invalid-json": errorCode("invalid-json"),
+  "sign-in-required": errorCode("sign-in-required"),
+  "sign-in-unavailable": errorCode("sign-in-unavailable"),
+  "document-not-found": errorCode("document-not-found"),
+  "annotation-not-found": errorCode("annotation-not-found"),
+  "card-not-found": errorCode("card-not-found"),
+  "word-not-found": errorCode("word-not-found"),
+  "reading-list-not-found": errorCode("reading-list-not-found"),
+  "not-document-importer": errorCode("not-document-importer"),
+  "sharing-license-required": errorCode("sharing-license-required"),
+  "document-not-imported": errorCode("document-not-imported"),
+  "future-position": errorCode("future-position"),
+  "future-review": errorCode("future-review"),
+  "review-too-old": errorCode("review-too-old"),
+  "review-id-conflict": errorCode("review-id-conflict"),
+  "invalid-request": errorCode("invalid-request").extend({ path: z.array(z.union([z.string(), z.int()])) }),
+  "limit-exceeded": LimitExceeded,
+  "unknown-tag": errorCode("unknown-tag").extend({ tag: z.string() }),
+  "analysis-not-found": errorCode("analysis-not-found").extend({ name: z.string() }),
+  "entry-not-found": errorCode("entry-not-found").extend({ entry: z.string() }),
+  "encoding-required": errorCode("encoding-required").extend({ encoding: z.string() }),
+  "annotation-out-of-range": errorCode("annotation-out-of-range").extend({ index: Limit, end: Limit, length: Limit }),
+  "rate-limited": errorCode("rate-limited").extend({
+    action: z.literal("import"),
+    limit: Limit,
+    windowSeconds: Limit,
+    retryAfterSeconds: Limit,
+  }),
+} as const;
+
+type ErrorVariant = keyof typeof errorVariants | ReturnType<typeof limitExceeded>;
+type VariantSchema<V extends ErrorVariant> = V extends keyof typeof errorVariants ? (typeof errorVariants)[V] : V;
+
+/** A response's subset of the shared error variants. */
+export function apiError<const V extends ErrorVariant>(first: V, ...others: readonly V[]) {
+  const select = (variant: ErrorVariant) => (typeof variant === "string" ? errorVariants[variant] : variant) as VariantSchema<V>;
+  const head = select(first);
+  return z.object({ error: others.length === 0 ? head : z.discriminatedUnion("code", [head, ...others.map(select)]) });
+}
+
+/** The full catalog, for consumers that handle errors across endpoints. */
+export const ApiError = z.object({ error: z.union(Object.values(errorVariants)) }).meta({ id: "ApiError" });
 
 /** What the reader is set to do in this deployment (api/wrangler.jsonc vars). */
 export const ReaderConfig = z.object({ lexiconConcurrency: z.int().min(1).max(LEXICON_CONCURRENCY.max) }).meta({ id: "ReaderConfig" });

@@ -1,6 +1,7 @@
 // A spec made by hono-openapi from the marks on an app's routes' middleware (openapi.ts).
 // Node only: what it imports turns schemas into JSON Schema, which a Worker doesn't need.
 import type { Hono } from "hono";
+import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { generateSpecs, resolver, uniqueSymbol } from "hono-openapi";
 import type { OpenAPIV3_1 } from "openapi-types";
 import { MARK, type Mark, type Specs } from "./openapi.ts";
@@ -30,26 +31,34 @@ function responseObjects(specs: Specs) {
   );
 }
 
-/** The spec of the app's routes. A request that doesn't fit its schema gets an
- * ApiError, which some route's schema must name so it's among the components. */
 // Accept any Hono app environment, routes and base path.
 type AnyHono = Hono<any, any, any>;
 
-export async function openApiSpec(app: AnyHono, documentation: Partial<OpenAPIV3_1.Document>): Promise<OpenAPIV3_1.Document> {
+/** The spec of the app's routes. An explicit 400 takes precedence over the validation error. */
+export async function openApiSpec(
+  app: AnyHono,
+  documentation: Partial<OpenAPIV3_1.Document>,
+  validationError: StandardSchemaV1,
+): Promise<OpenAPIV3_1.Document> {
   for (const { handler } of app.routes) {
     const mark = (handler as { [MARK]?: Mark })[MARK];
     if (mark !== undefined) Object.assign(handler, { [uniqueSymbol]: described(mark) });
   }
+  const { schema } = await resolver(validationError).toOpenAPISchema();
   return await generateSpecs(app, {
     documentation,
     defaultValidationErrorResponse: {
       description: "The request doesn't fit its schema",
-      content: { "application/json": { schema: { $ref: "#/components/schemas/ApiError" } } },
+      content: { "application/json": { schema } },
     },
   });
 }
 
 /** The spec, as JSON has it. */
-export async function specJson(app: AnyHono, documentation: Partial<OpenAPIV3_1.Document>): Promise<unknown> {
-  return JSON.parse(JSON.stringify(await openApiSpec(app, documentation))) as unknown;
+export async function specJson(
+  app: AnyHono,
+  documentation: Partial<OpenAPIV3_1.Document>,
+  validationError: StandardSchemaV1,
+): Promise<unknown> {
+  return JSON.parse(JSON.stringify(await openApiSpec(app, documentation, validationError))) as unknown;
 }

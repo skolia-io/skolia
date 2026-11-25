@@ -7,16 +7,7 @@ import type { Context, TypedResponse } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import type { JSONParsed } from "hono/utils/types";
 import * as z from "zod";
-import {
-  ANNOTATION_BATCH,
-  MAX_LOOKUP,
-  MAX_TEXT_LENGTH,
-  type ApiError,
-  type Config,
-  type Identity,
-  type User,
-  type Version,
-} from "@skolia/shared/api";
+import { ANNOTATION_BATCH, MAX_TEXT_LENGTH, type ApiError, type Config, type Identity, type User, type Version } from "@skolia/shared/api";
 import * as schemas from "@skolia/shared/schemas";
 import * as annotations from "./controllers/annotations.ts";
 import * as cards from "./controllers/cards.ts";
@@ -24,10 +15,9 @@ import * as documents from "./controllers/documents.ts";
 import * as ingest from "./controllers/ingest.ts";
 import * as positions from "./controllers/positions.ts";
 import * as readingLists from "./controllers/reading-lists.ts";
-import { fail, ok, type BlobResult, type Failed, type NotModified, type Result } from "./controllers/result.ts";
+import { fail, ok, type BlobResult, type NotModified, type Result } from "./controllers/result.ts";
 import { log } from "@skolia/util/log";
 import {
-  NOT_SIGNED_IN,
   NO_BODY,
   RETRY_AFTER,
   REDOC_PAGE,
@@ -36,11 +26,12 @@ import {
   TAGS,
   badRequest,
   describe,
-  error,
   json,
   responses,
   validator,
 } from "./openapi.ts";
+import * as failures from "./endpoint-errors.ts";
+import type { Err } from "./endpoint-errors.ts";
 import type { Deps } from "./ports/index.ts";
 import spec from "../openapi.json" with { type: "json" };
 
@@ -49,14 +40,33 @@ const logger = log("api");
 // A character is at most 6 bytes in JSON (\uXXXX), plus room for the title. The exact
 // character limit is checked after parsing.
 const MAX_BODY_BYTES = MAX_TEXT_LENGTH * 6 + 4 * 1024;
-const DOCUMENT_ID_MESSAGE = "document id must be 64 lowercase hex characters";
-const ANNOTATION_ID_MESSAGE = "annotation id must be 64 lowercase hex characters";
 // An annotation's data is a URL or so: room for each of a batch to be 2 KiB, or a few to be big
 const MAX_ANNOTATION_BATCH_BYTES = 2 * 1024 * ANNOTATION_BATCH;
 /** /api/config changes only with a deploy: a few minutes' copy is current enough. */
 const CONFIG_CACHE = "public, max-age=300";
 
 export type AppType = ReturnType<typeof createApp>;
+export type {
+  AddAnnotationsError,
+  AddToReadingListError,
+  CreateReadingListError,
+  DeleteAnnotationError,
+  DeleteCardError,
+  DeleteDocumentError,
+  DocumentAnalysisError,
+  DocumentError,
+  DocumentTextError,
+  ImportDocumentError,
+  ListAnnotationsError,
+  ListDocumentsError,
+  MakeCardError,
+  ReadingListError,
+  RenameReadingListError,
+  ReviewError,
+  SetPositionError,
+  SetWordStateError,
+  UpdateDocumentError,
+} from "./endpoint-errors.ts";
 
 /** A route for the signed-in user, in the spec. */
 function mine(tag: string, summary: string, description?: string) {
@@ -68,36 +78,44 @@ function anyone(tag: string, summary: string, description?: string) {
   return describe({ tags: [tag], summary, ...(description === undefined ? {} : { description }), security: [{}, ...SIGNED_IN] });
 }
 
-const JSON_ERROR = { "application/json": { schema: { $ref: "#/components/schemas/ApiError" } } };
+const { NOT_SIGNED_IN, INVALID_JSON_REQUEST } = failures;
 
 /** An analysis: stored Brotli-compressed, and sent that way. */
 const PART_RESPONSES = {
   200: { description: "The JSON, with Content-Encoding: br", content: { "application/json": { schema: { type: "object" } } } },
   304: { description: "The client's copy is current" },
-  404: { description: "No such document, or it has no such analysis", content: JSON_ERROR },
-  406: { description: "The client doesn't accept Brotli", content: JSON_ERROR },
 } as const;
 
 export function createApp(deps: Deps) {
   // Stop reading an oversized body early instead of parsing it and then refusing it
   const limit = bodyLimit({
     maxSize: MAX_BODY_BYTES,
-    onError: (c) => c.json({ error: `text is longer than ${MAX_TEXT_LENGTH} characters` } satisfies ApiError, 413),
+    onError: (c) =>
+      c.json(
+        { error: { code: "limit-exceeded", resource: "text-characters", limit: MAX_TEXT_LENGTH } } satisfies Err<
+          typeof failures.importDocumentErrors,
+          413
+        >["body"],
+        413,
+      ),
   });
 
   const annotationLimit = bodyLimit({
     maxSize: MAX_ANNOTATION_BATCH_BYTES,
-    onError: (c) => c.json({ error: `a batch of annotations is at most ${MAX_ANNOTATION_BATCH_BYTES} bytes` } satisfies ApiError, 413),
+    onError: (c) =>
+      c.json(
+        { error: { code: "limit-exceeded", resource: "annotation-bytes", limit: MAX_ANNOTATION_BATCH_BYTES } } satisfies Err<
+          typeof failures.addAnnotationsErrors,
+          413
+        >["body"],
+        413,
+      ),
   });
 
   /** The controller's result for the signed-in user, or 401. */
-  async function signedIn<R extends Result>(
-    c: Context,
-    run: (user: Identity) => Promise<R>,
-    message = "not signed in",
-  ): Promise<Sent<R | Failed<401>>> {
+  async function signedIn<R extends Result>(c: Context, run: (user: Identity) => Promise<R>): Promise<Sent<R | SignInFailure>> {
     const user = await deps.auth.user(c.req.raw.headers);
-    return send<R | Failed<401>>(c, user ? await run(user) : fail(401, message));
+    return send<R | SignInFailure>(c, user ? await run(user) : fail(401, { code: "sign-in-required" }));
   }
 
   const responds = (specs: Parameters<typeof responses>[0]) => responses(specs, deps.checkResponses ?? false);
@@ -105,10 +123,18 @@ export function createApp(deps: Deps) {
   const app = new Hono()
     .onError((error, c) => {
       if (error instanceof HTTPException && error.status < 500) {
-        return c.json({ error: error.message } satisfies ApiError, error.status);
+        return c.json(
+          {
+            error: {
+              code:
+                error.status === 400 && c.req.header("content-type")?.includes("application/json") ? "invalid-json" : "request-rejected",
+            },
+          } satisfies ApiError,
+          error.status,
+        );
       }
       logger.error("request failed", { method: c.req.method, path: c.req.path, error });
-      return c.json({ error: "internal error" } satisfies ApiError, 500);
+      return c.json({ error: { code: "internal-error" } } satisfies ApiError, 500);
     })
     .get(
       "/api/version",
@@ -136,7 +162,7 @@ export function createApp(deps: Deps) {
     .get(
       "/api/me/cards/counts",
       mine(TAGS.cards, "Cards to review, by language", "dayStart: when the user's day started; today's new cards count from it."),
-      validator("query", schemas.CountsQuery, badRequest("dayStart must be an ISO time")),
+      validator("query", schemas.CountsQuery, badRequest()),
       responds({
         200: json(z.array(schemas.CardCounts), "Due cards, and new cards that would come up today, for each language with words"),
         401: NOT_SIGNED_IN,
@@ -150,7 +176,7 @@ export function createApp(deps: Deps) {
         "Cards to review now",
         "Cards due now, then new cards: those whose words are all started, and those of as many new words as are left of today's allowance. A card is reviewed while one of its words is being learnt.",
       ),
-      validator("query", schemas.DueQuery, badRequest("lang must be a language and dayStart an ISO time")),
+      validator("query", schemas.DueQuery, badRequest()),
       responds({ 200: json(schemas.Due, "The cards, with their lexicon entries"), 401: NOT_SIGNED_IN }),
       (c) => {
         const { lang, dayStart } = c.req.valid("query");
@@ -163,10 +189,7 @@ export function createApp(deps: Deps) {
       validator("json", schemas.ReviewRequest, badRequest()),
       responds({
         200: json(schemas.Reviewed, "When the card is due next"),
-        400: error("The review is in the future"),
-        401: NOT_SIGNED_IN,
-        404: error("No such card"),
-        409: error("The review's id was used for another review"),
+        ...failures.reviewErrors,
       }),
       (c) => signedIn(c, (user) => cards.review(deps, user, c.req.valid("json"))),
     )
@@ -180,7 +203,6 @@ export function createApp(deps: Deps) {
       validator("query", schemas.CardsQuery, badRequest()),
       responds({
         200: json(schemas.page(schemas.Card), "A page of cards"),
-        400: error("Not one of lang, lemmaId and documentId, or another list's cursor"),
         401: NOT_SIGNED_IN,
       }),
       (c) => signedIn(c, (user) => cards.cards(deps, user, c.req.valid("query"))),
@@ -196,9 +218,7 @@ export function createApp(deps: Deps) {
       responds({
         200: json(schemas.CardMade, "The word had a card of the kind, or the sentence and word had one"),
         201: json(schemas.CardMade, "A new card"),
-        401: NOT_SIGNED_IN,
-        404: error("No such document"),
-        409: error("The user has as many cards as they may"),
+        ...failures.makeCardErrors,
       }),
       (c) => signedIn(c, (user) => cards.makeCard(deps, user, c.req.valid("json"))),
     )
@@ -209,7 +229,7 @@ export function createApp(deps: Deps) {
         "Some of the user's words",
         "Those of the words (lemmaId, once or more) the user has, with their states and how many cards each has. A word is the user's once they've made a card of it, and stays, with its state, once its cards are deleted.",
       ),
-      validator("query", schemas.WordsQuery, badRequest(`lemmaId, once or more, at most ${MAX_LOOKUP} times`)),
+      validator("query", schemas.WordsQuery, badRequest()),
       responds({ 200: json(z.object({ words: z.array(schemas.Word) }), "The words the user has, in no set order"), 401: NOT_SIGNED_IN }),
       (c) => signedIn(c, (user) => cards.words(deps, user, c.req.valid("query").lemmaId)),
     )
@@ -222,20 +242,20 @@ export function createApp(deps: Deps) {
       ),
       validator("param", z.object({ lemmaId: schemas.LemmaId }), badRequest()),
       validator("json", schemas.WordChange, badRequest()),
-      responds({ 204: NO_BODY, 401: NOT_SIGNED_IN, 404: error("The user hasn't the word") }),
+      responds({ 204: NO_BODY, ...failures.setWordStateErrors }),
       (c) => signedIn(c, (user) => cards.setWordState(deps, user, c.req.valid("param").lemmaId, c.req.valid("json").state)),
     )
     .delete(
       "/api/me/cards/:cardId",
       mine(TAGS.cards, "Delete a card", "A card of any kind, with its reviews."),
-      validator("param", z.object({ cardId: schemas.CardId }), badRequest("card id must be a UUID")),
-      responds({ 204: NO_BODY, 401: NOT_SIGNED_IN, 404: error("No such card") }),
+      validator("param", z.object({ cardId: schemas.CardId }), badRequest()),
+      responds({ 204: NO_BODY, ...failures.deleteCardErrors }),
       (c) => signedIn(c, (user) => cards.deleteCard(deps, user, c.req.valid("param").cardId)),
     )
     .get(
       "/api/me/positions/:id",
       mine(TAGS.reading, "Where the user is in a text"),
-      validator("param", z.object({ id: schemas.DocumentId }), badRequest(DOCUMENT_ID_MESSAGE)),
+      validator("param", z.object({ id: schemas.DocumentId }), badRequest()),
       responds({
         200: json(z.object({ position: schemas.StoredPosition.nullable() }), "The position, null if there's none"),
         401: NOT_SIGNED_IN,
@@ -245,9 +265,9 @@ export function createApp(deps: Deps) {
     .put(
       "/api/me/positions/:id",
       mine(TAGS.reading, "Save where the user is in a text", "A position older than the saved one is ignored."),
-      validator("param", z.object({ id: schemas.DocumentId }), badRequest(DOCUMENT_ID_MESSAGE)),
+      validator("param", z.object({ id: schemas.DocumentId }), badRequest()),
       validator("json", schemas.ReadingPosition, badRequest()),
-      responds({ 204: NO_BODY, 400: error("The position is in the future"), 401: NOT_SIGNED_IN, 404: error("No such document") }),
+      responds({ 204: NO_BODY, ...failures.setPositionErrors }),
       (c) => signedIn(c, (user) => positions.set(deps, user, c.req.valid("param").id, c.req.valid("json"))),
     )
     .get(
@@ -262,8 +282,7 @@ export function createApp(deps: Deps) {
       validator("json", schemas.ReadingListName, badRequest()),
       responds({
         200: json(z.object({ id: schemas.ReadingListId }), "Created list"),
-        401: NOT_SIGNED_IN,
-        409: error("List limit reached"),
+        ...failures.createReadingListErrors,
       }),
       (c) => signedIn(c, (user) => readingLists.create(deps, user, c.req.valid("json").name)),
     )
@@ -272,14 +291,14 @@ export function createApp(deps: Deps) {
       mine(TAGS.reading, "Rename a reading list"),
       validator("param", z.object({ listId: schemas.ReadingListIdParam }), badRequest()),
       validator("json", schemas.ReadingListName, badRequest()),
-      responds({ 204: NO_BODY, 401: NOT_SIGNED_IN, 404: error("No such list") }),
+      responds({ 204: NO_BODY, ...failures.renameReadingListErrors }),
       (c) => signedIn(c, (user) => readingLists.rename(deps, user, c.req.valid("param").listId, c.req.valid("json").name)),
     )
     .delete(
       "/api/me/reading-lists/:listId",
       mine(TAGS.reading, "Delete a reading list without deleting its documents"),
       validator("param", z.object({ listId: schemas.ReadingListIdParam }), badRequest()),
-      responds({ 204: NO_BODY, 401: NOT_SIGNED_IN, 404: error("No such list") }),
+      responds({ 204: NO_BODY, ...failures.readingListErrors }),
       (c) => signedIn(c, (user) => readingLists.remove(deps, user, c.req.valid("param").listId)),
     )
     .get(
@@ -287,7 +306,7 @@ export function createApp(deps: Deps) {
       mine(TAGS.reading, "A page of a reading list's texts"),
       validator("param", z.object({ listId: schemas.ReadingListIdParam }), badRequest()),
       validator("query", schemas.ReadingListDocumentsQuery, badRequest()),
-      responds({ 200: json(schemas.page(schemas.ReadingListDocument), "Texts"), 401: NOT_SIGNED_IN, 404: error("No such list") }),
+      responds({ 200: json(schemas.page(schemas.ReadingListDocument), "Texts"), ...failures.readingListErrors }),
       (c) =>
         signedIn(c, (user) => {
           const { lang, ...page } = c.req.valid("query");
@@ -305,14 +324,14 @@ export function createApp(deps: Deps) {
       "/api/me/reading-lists/:listId/documents/:id",
       mine(TAGS.reading, "Add a text to a reading list"),
       validator("param", z.object({ listId: schemas.ReadingListIdParam, id: schemas.DocumentId }), badRequest()),
-      responds({ 204: NO_BODY, 401: NOT_SIGNED_IN, 404: error("No such list or document") }),
+      responds({ 204: NO_BODY, ...failures.addToReadingListErrors }),
       (c) => signedIn(c, (user) => readingLists.addDocument(deps, user, c.req.valid("param").listId, c.req.valid("param").id)),
     )
     .delete(
       "/api/me/reading-lists/:listId/documents/:id",
       mine(TAGS.reading, "Remove a text from a reading list"),
       validator("param", z.object({ listId: schemas.ReadingListIdParam, id: schemas.DocumentId }), badRequest()),
-      responds({ 204: NO_BODY, 401: NOT_SIGNED_IN, 404: error("No such list") }),
+      responds({ 204: NO_BODY, ...failures.readingListErrors }),
       (c) => signedIn(c, (user) => readingLists.removeDocument(deps, user, c.req.valid("param").listId, c.req.valid("param").id)),
     )
     .get(
@@ -332,7 +351,7 @@ export function createApp(deps: Deps) {
       "/api/me/settings",
       mine(TAGS.cards, "Change the user's review settings"),
       validator("json", schemas.Settings, badRequest()),
-      responds({ 204: NO_BODY, 401: NOT_SIGNED_IN }),
+      responds({ 204: NO_BODY, 400: INVALID_JSON_REQUEST, 401: NOT_SIGNED_IN }),
       (c) => signedIn(c, (user) => cards.setSettings(deps, user, c.req.valid("json"))),
     )
     .get(
@@ -344,7 +363,7 @@ export function createApp(deps: Deps) {
           "lang, those in the language; q, those whose title has it; mine=true, only the viewer's own.",
       ),
       validator("query", schemas.DocumentsQuery, badRequest()),
-      responds({ 200: json(schemas.page(schemas.DocumentSummary), "A page of documents"), 401: error("mine=true without a session") }),
+      responds({ 200: json(schemas.page(schemas.DocumentSummary), "A page of documents"), ...failures.listDocumentsErrors }),
       async (c) => {
         const { tag, lang, q, mine, ...page } = c.req.valid("query");
         return send(
@@ -387,12 +406,10 @@ export function createApp(deps: Deps) {
       responds({
         200: json(schemas.DocumentSummary, "The text was here already"),
         202: json(schemas.DocumentSummary, "The text is queued for analysis"),
-        400: error("A tag skolia doesn't have"),
-        401: error("Not signed in"),
-        413: error("The text is too long"),
-        429: { ...error("The user has imported as many texts as the window allows"), headers: RETRY_AFTER },
+        ...failures.importDocumentErrors,
+        429: { ...failures.importDocumentErrors[429], headers: RETRY_AFTER },
       }),
-      (c) => signedIn(c, (user) => documents.importText(deps, user, c.req.valid("json")), "sign in to import"),
+      (c) => signedIn(c, (user) => documents.importText(deps, user, c.req.valid("json"))),
     )
     .get(
       "/api/documents/:id",
@@ -401,7 +418,7 @@ export function createApp(deps: Deps) {
         "A document",
         "The viewer's own entry for it, else a public one, as it stands. POST …/refresh queues it again if it needs it.",
       ),
-      responds({ 200: json(schemas.DocumentSummary, "The entry, with where it is in the queue"), 404: error("No such document") }),
+      responds({ 200: json(schemas.DocumentSummary, "The entry, with where it is in the queue"), ...failures.documentErrors }),
       async (c) => send(c, await documents.get(deps, c.req.param("id"), await deps.auth.user(c.req.raw.headers))),
     )
     .post(
@@ -411,7 +428,7 @@ export function createApp(deps: Deps) {
         "Queue a document again if it needs it",
         "If ingest now makes another analysis than the document's, or its run seems lost, it's queued again, keeping its last reading meanwhile. Otherwise nothing changes. A reader asks when it opens a text.",
       ),
-      responds({ 200: json(schemas.DocumentSummary, "The entry, with where it is in the queue"), 404: error("No such document") }),
+      responds({ 200: json(schemas.DocumentSummary, "The entry, with where it is in the queue"), ...failures.documentErrors }),
       async (c) => send(c, await documents.refresh(deps, c.req.param("id"), await deps.auth.user(c.req.raw.headers))),
     )
     .patch(
@@ -424,10 +441,7 @@ export function createApp(deps: Deps) {
       validator("json", schemas.DocumentUpdate, badRequest()),
       responds({
         200: json(schemas.DocumentSummary, "The changed entry"),
-        400: error("A change that isn't allowed"),
-        401: NOT_SIGNED_IN,
-        403: error("Not the user's entry"),
-        404: error("No such document"),
+        ...failures.updateDocumentErrors,
       }),
       (c) => signedIn(c, (user) => documents.update(deps, user, c.req.param("id"), c.req.valid("json"))),
     )
@@ -438,7 +452,7 @@ export function createApp(deps: Deps) {
         "Delete the user's entry for a text",
         "The text and its analyses stay, so importing it again needn't analyse it again.",
       ),
-      responds({ 204: NO_BODY, 401: NOT_SIGNED_IN, 403: error("Not the user's entry"), 404: error("No such document") }),
+      responds({ 204: NO_BODY, ...failures.deleteDocumentErrors }),
       (c) => signedIn(c, (user) => documents.remove(deps, user, c.req.param("id"))),
     )
     .get(
@@ -448,9 +462,9 @@ export function createApp(deps: Deps) {
         responses: {
           200: { description: "The text", content: { "text/plain": { schema: { type: "string" } } } },
           304: { description: "The client's copy is current" },
-          404: { description: "No such document", content: JSON_ERROR },
         },
       }),
+      responses(failures.documentTextErrors, false),
       async (c) =>
         send(c, await documents.text(deps, c.req.param("id"), await deps.auth.user(c.req.raw.headers), c.req.header("if-none-match"))),
     )
@@ -462,6 +476,7 @@ export function createApp(deps: Deps) {
         "By its name in DocumentSummary.reading: its sentences and tokens (Blob in lib/ts/schema.gen.ts), Brotli-compressed.",
       ),
       describe({ responses: PART_RESPONSES }),
+      responses(failures.documentAnalysisErrors, false),
       async (c) =>
         send(
           c,
@@ -482,7 +497,7 @@ export function createApp(deps: Deps) {
         "Those of the entry the viewer sees, by where they start; from and to keep those overlapping [from, to).",
       ),
       validator("query", schemas.AnnotationsQuery, badRequest()),
-      responds({ 200: json(schemas.page(schemas.Annotation), "A page of annotations"), 404: error("No such document") }),
+      responds({ 200: json(schemas.page(schemas.Annotation), "A page of annotations"), ...failures.listAnnotationsErrors }),
       async (c) => {
         const { from, to, ...page } = c.req.valid("query");
         return send(c, await annotations.list(deps, c.req.param("id"), await deps.auth.user(c.req.raw.headers), { from, to }, page));
@@ -499,23 +514,21 @@ export function createApp(deps: Deps) {
       validator("json", schemas.NewAnnotations, badRequest()),
       responds({
         200: json(schemas.Annotated, "The annotations, as the entry has them, and how many are new"),
-        400: error("One ends after the text does"),
-        401: NOT_SIGNED_IN,
-        404: error("The user hasn't imported the text"),
-        409: error("The entry filled up before it had them all; those before stay"),
-        413: error("The annotations are too big"),
+        ...failures.addAnnotationsErrors,
       }),
       (c) => signedIn(c, (user) => annotations.add(deps, user, c.req.param("id"), c.req.valid("json"))),
     )
     .delete(
       "/api/documents/:id/annotations/:annotationId",
       mine(TAGS.annotations, "Delete an annotation from the user's entry"),
-      validator("param", z.object({ id: z.string(), annotationId: schemas.AnnotationId }), badRequest(ANNOTATION_ID_MESSAGE)),
-      responds({ 204: NO_BODY, 401: NOT_SIGNED_IN, 404: error("No such annotation") }),
+      validator("param", z.object({ id: z.string(), annotationId: schemas.AnnotationId }), badRequest()),
+      responds({ 204: NO_BODY, ...failures.deleteAnnotationErrors }),
       (c) => signedIn(c, (user) => annotations.remove(deps, user, c.req.param("id"), c.req.valid("param").annotationId)),
     );
   return app;
 }
+
+type SignInFailure = Err<{ 401: typeof NOT_SIGNED_IN }>;
 
 /** The response for a result, typed by its status so the typed client (hono/client)
  * knows each status's body. */
@@ -549,7 +562,7 @@ function sendBlob(c: Context, result: BlobResult | NotModified): Response {
     const init: ResponseInit & { encodeBody: "manual" } = { headers, encodeBody: "manual" };
     return new Response(blob.body, init);
   }
-  return c.json({ error: `needs Accept-Encoding: ${encoding}` } satisfies ApiError, 406);
+  return c.json({ error: { code: "encoding-required", encoding } } satisfies Err<typeof failures.documentAnalysisErrors, 406>["body"], 406);
 }
 
 /** Whether an Accept-Encoding header ("gzip, deflate, br;q=0.8") allows the encoding. */

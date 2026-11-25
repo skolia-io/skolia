@@ -25,15 +25,18 @@ function marked<H extends object>(handler: H, mark: Mark): H {
 export const validator = ((target: keyof ValidationTargets, schema: StandardSchemaV1, hook?: Parameters<typeof sValidator>[2]) =>
   marked(sValidator(target, schema, hook), { kind: "validator", target, schema })) as typeof sValidator;
 
-/** A validator's hook: a 400 with the first problem the schema found, or `message` in its
- * place, as { error }. */
-export function badRequest(message?: string) {
+/** A validator's hook: a 400 with the path of the first invalid field. */
+export function badRequest() {
   return <E extends Env, P extends string>(
     result: { success: true } | { success: false; error: readonly StandardSchemaV1.Issue[] },
     c: Context<E, P>,
   ) => {
     if (result.success) return undefined;
-    return c.json({ error: message ?? result.error[0]?.message ?? "invalid request" }, 400);
+    const path = (result.error[0]?.path ?? []).map((part) => {
+      const key = typeof part === "object" ? part.key : part;
+      return typeof key === "number" ? key : String(key);
+    });
+    return c.json({ error: { code: "invalid-request" as const, path } }, 400);
   };
 }
 

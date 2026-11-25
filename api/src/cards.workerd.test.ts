@@ -711,9 +711,9 @@ test("a list of cards needs a session, one of a language, a word and a text, and
   assert.equal((await client(app).me.cards.$get({ query: { lang: "pl" } })).status, 401);
   const headers = await signedIn();
   const cards = client(app, headers).me.cards;
-  const refused = async (query: Parameters<typeof cards.$get>[0]["query"], error: string) =>
-    assert.deepEqual(await body(JSON.stringify(query), cards.$get({ query }), 400), { error });
-  const one = "give one of lang, lemmaId and documentId";
+  const refused = async (query: Parameters<typeof cards.$get>[0]["query"], path: string[]) =>
+    assert.deepEqual(await body(JSON.stringify(query), cards.$get({ query }), 400), { error: { code: "invalid-request", path } });
+  const one: string[] = [];
   await refused({}, one);
   await refused({ lang: "pl", documentId: "a".repeat(64) }, one);
   await refused({ lang: "pl", lemmaId: "pl:pies:NOUN" }, one);
@@ -729,7 +729,7 @@ test("a list of cards needs a session, one of a language, a word and a text, and
   const cloze = (await listCards(app, headers, "pl")).find((c) => c.kind === "cloze");
   assert.ok(cloze?.kind === "cloze");
   const { documentId } = cloze.data;
-  await refused({ documentId, after: newest.next }, "after isn't a cursor this list gave");
+  await refused({ documentId, after: newest.next }, ["after"]);
 });
 
 test("a user has at most MAX_CARDS cards, of every kind", async () => {
@@ -749,7 +749,7 @@ test("a user has at most MAX_CARDS cards, of every kind", async () => {
     cardId,
   );
   const full = await expectStatus("full", makeCard(app, headers, "pl:kot:NOUN", "recognition"), 409);
-  assert.deepEqual(await full.json(), { error: `a user has at most ${MAX_CARDS} cards` });
+  assert.deepEqual(await full.json(), { error: { code: "limit-exceeded", resource: "cards", limit: MAX_CARDS } });
   await expectStatus("full, for a cloze card", postCloze(app, headers, "pl:kot:NOUN", clozeAt(documentId, 1)), 409);
   assert.deepEqual(await wordCards(app, headers, "pl:kot:NOUN"), []);
   assert.deepEqual(await body("a word card it has", makeCard(app, headers, "pl:pies:NOUN", "recognition")), { cardId });

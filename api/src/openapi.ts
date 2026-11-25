@@ -2,16 +2,9 @@
 // @skolia/util/openapi's helpers. spec.ts makes the spec, and just openapi writes it to
 // api/openapi.json, which the Worker serves with two pages that render it.
 import type { OpenAPIV3_1 } from "openapi-types";
-import { json, redocPage, scalarPage } from "@skolia/util/openapi";
-import * as schemas from "@skolia/shared/schemas";
+import { redocPage, scalarPage } from "@skolia/util/openapi";
 
 export { MARK, NO_BODY, badRequest, describe, json, responses, validator, type Mark, type Spec, type Specs } from "@skolia/util/openapi";
-
-export function error(description: string) {
-  return json(schemas.ApiError, description);
-}
-
-export const NOT_SIGNED_IN = error("Not signed in");
 
 /** A 429's header: when the client may try again. */
 export const RETRY_AFTER = {

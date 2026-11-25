@@ -1,3 +1,4 @@
+import type { Err, deleteCardErrors, makeCardErrors, reviewErrors, setWordStateErrors } from "../endpoint-errors.ts";
 // Flashcards, reviews and settings, which live in each user's Durable Object, and
 // the lexicon entries the cards show.
 import {
@@ -31,7 +32,7 @@ import type { DocumentLookup } from "../ports/documents.ts";
 import type { Lexicon } from "../ports/lexicon.ts";
 import type { UserCards, UserSettings } from "../ports/users.ts";
 import { noSuchDocument } from "./documents.ts";
-import { NO_CONTENT, fail, ok, type Failed, type Json, type NoContent, type Ok } from "./result.ts";
+import { NO_CONTENT, fail, ok, type Json, type NoContent, type Ok } from "./result.ts";
 
 /** Most cards one due list has: a session's worth. */
 const MAX_DUE = 200;
@@ -57,18 +58,18 @@ export async function review(
   deps: { users: UserCards } & Clock,
   user: Identity,
   request: ReviewRequest,
-): Promise<Ok<Reviewed> | Failed<400 | 404 | 409>> {
-  if (Date.parse(request.at) > deps.now().getTime() + MAX_CLOCK_SKEW_MS) return fail(400, "review is in the future");
+): Promise<Ok<Reviewed> | Err<typeof reviewErrors, 400 | 404 | 409>> {
+  if (Date.parse(request.at) > deps.now().getTime() + MAX_CLOCK_SKEW_MS) return fail(400, { code: "future-review" });
   const outcome = await deps.users.review(user.id, request, timestamp(deps.now()));
   switch (outcome.kind) {
     case "reviewed":
       return ok({ cardId: outcome.cardId, dueAt: outcome.dueAt });
     case "no-card":
-      return fail(404, "no such card");
+      return fail(404, { code: "card-not-found" });
     case "out-of-order":
-      return fail(409, "review is older than the card or its last review");
+      return fail(409, { code: "review-too-old" });
     case "id-reused":
-      return fail(409, "review id is another card's");
+      return fail(409, { code: "review-id-conflict" });
   }
 }
 
@@ -90,7 +91,7 @@ export async function makeCard(
   deps: { users: UserCards; documents: DocumentLookup } & Clock,
   user: Identity,
   card: NewCard,
-): Promise<Json<CardMade, 201> | Ok<CardMade> | Failed<404 | 409>> {
+): Promise<Json<CardMade, 201> | Ok<CardMade> | Err<typeof makeCardErrors, 404 | 409>> {
   if (!(await seesData(deps, user, card))) return noSuchDocument();
   const made = await deps.users.makeCard(user.id, card, timestamp(deps.now()));
   switch (made.kind) {
@@ -99,7 +100,7 @@ export async function makeCard(
     case "had":
       return ok({ cardId: made.cardId });
     case "full":
-      return fail(409, `a user has at most ${MAX_CARDS} cards`);
+      return fail(409, { code: "limit-exceeded", resource: "cards", limit: MAX_CARDS });
   }
 }
 
@@ -122,13 +123,17 @@ export async function setWordState(
   user: Identity,
   lemmaId: LemmaId,
   state: WordState,
-): Promise<NoContent | Failed<404>> {
-  return (await deps.users.setWordState(user.id, lemmaId, state)) ? NO_CONTENT : fail(404, "no such word");
+): Promise<NoContent | Err<typeof setWordStateErrors, 404>> {
+  return (await deps.users.setWordState(user.id, lemmaId, state)) ? NO_CONTENT : fail(404, { code: "word-not-found" });
 }
 
 /** Any kind of card, with its reviews. */
-export async function deleteCard(deps: { users: UserCards }, user: Identity, cardId: CardId): Promise<NoContent | Failed<404>> {
-  return (await deps.users.deleteCard(user.id, cardId)) ? NO_CONTENT : fail(404, "no such card");
+export async function deleteCard(
+  deps: { users: UserCards },
+  user: Identity,
+  cardId: CardId,
+): Promise<NoContent | Err<typeof deleteCardErrors, 404>> {
+  return (await deps.users.deleteCard(user.id, cardId)) ? NO_CONTENT : fail(404, { code: "card-not-found" });
 }
 
 export async function settings(deps: { users: UserSettings }, user: Identity): Promise<Ok<Settings>> {
