@@ -698,7 +698,7 @@ def main(args: list[str]) -> None:  # noqa: C901
         "name", choices=scope("check")
     )
     commands.add_parser(
-        "built", help="record a build's key once it's in the registry or Cachix"
+        "built", help="record a build's key once it's in the registry or the Nix cache"
     ).add_argument("name", choices=scope("build"))
     for command, description in (
         ("deploying", "record that a deploy has started, before it changes anything"),

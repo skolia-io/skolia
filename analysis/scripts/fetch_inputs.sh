@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Puts the lexicon inputs pinned in analysis/inputs.sha256 in the Nix store,
-# where the flake finds them by hash, unless the lexicon itself can be fetched from Cachix:
+# where the flake finds them by hash, unless the lexicon itself can be fetched from the Nix cache:
 #   fetch_inputs.sh [lang...]   every language when none is given
 # Each input is kept in R2 as skolia-lexicon-sources/{sha256}-{name}.zst, since kaikki.org
 # overwrites its extract in place and Commons' categories grow. Needs zstd and wrangler credentials.

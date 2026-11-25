@@ -132,7 +132,7 @@ flowchart TB
     BW["build-web: skolia-worker"]
     DW["deploy-web, e2e"]
   end
-  CX[("Cachix")]
+  CX[("Nix cache (niks3, R2)")]
   CIDB[("D1 skolia-ci: build, deployment")]
   REG[("Cloudflare registry")]
   subgraph CF["Cloudflare"]
@@ -189,7 +189,7 @@ flowchart TB
 
 - D1 is bound by name. If Terraform hasn't made a database, `wrangler deploy` creates one outside Terraform, so `deploy-infra` goes first.
 - The lexicon build makes each entry with `lexicon/entry.py`. Polish ingest carries Walenty for case analysis.
-- `load-lexicon` only substitutes from Cachix and never fetches the inputs, so it needs the lexicon there; `build-ingest-image` pushes it only when an image is rebuilt.
+- `load-lexicon` only substitutes from the Nix cache and never fetches the inputs, so it needs the lexicon there; `build-ingest-image` pushes it only when an image is rebuilt.
 - `deploy-web` waits for `deploy-lexicon`, which it binds, and for `load-lexicon` and `deploy-ingest`: the end-to-end tests read the lexicon.
 - Deploys don't wait for `check`. `infra/plan.py` has a dependency graph of projects (each pnpm package by its `package.json`, `analysis/`, `infra/`, `curated/`) and the targets CI builds, checks and deploys, each node keyed by a hash of its Nix content and its build and test dependencies' keys. CI skips each one whose key `skolia-ci` has a row for: in `build` for an image, the skolia Worker's bundle or a check, done once for every environment, and as the environment's last row in `deployment` for Terraform, the ingest Worker, the lexicon, the lexicon Worker, the skolia Worker, the end-to-end tests and the curated sync. Both tables only grow.
 - `schema.gen.ts` is generated from analysis; the blob keys in `lib/ts/keys.ts` are kept in step by hand.

@@ -81,8 +81,8 @@ build_lang() {
   nix run "./analysis#ingest-$lang.copyTo" -- --retry-times 5 \
     --format v2s2 --dest-creds "v1:$creds" "docker://$repo/$name:$tag"
   # Everything the next build needs but the models, which would fill the cache
-  if [ -n "${CACHIX_AUTH_TOKEN:-}" ]; then
-    nix build --no-link --print-out-paths "./analysis#cacheable-$lang" | cachix push andyyu2004
+  if [ -n "${NIKS3_AUTH_TOKEN:-}" ]; then
+    "$root/infra/cache-push.sh" "$(nix build --no-link --print-out-paths "./analysis#cacheable-$lang")"
   fi
   "$root/infra/plan.py" built "image-$lang"
 }

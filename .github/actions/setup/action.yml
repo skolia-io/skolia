@@ -1,5 +1,5 @@
 name: Setup
-description: Nix with flake.nix's packages.ci (terraform, just, Node, pnpm and uv), substituting from the andyyu2004 Cachix cache. The JS dependencies are ./.github/actions/pnpm, the Python ones' cache ./.github/actions/uv, in the jobs that use them.
+description: Nix with flake.nix's packages.ci (terraform, just, Node, pnpm, uv and niks3), substituting from the Nix cache at nix-cache.andyyu.io. The JS dependencies are ./.github/actions/pnpm, the Python ones' cache ./.github/actions/uv, in the jobs that use them.
 inputs:
   nix-conf:
     description: Extra nix.conf lines for the Nix install
@@ -9,13 +9,12 @@ runs:
   steps:
     - uses: DeterminateSystems/determinate-nix-action@v3
       with:
-        extra-conf: ${{ inputs.nix-conf }}
-    # Read only: what's pushed is chosen (deploy-ingest.sh pushes all but the models), and
-    # cachix push reads CACHIX_AUTH_TOKEN where a job sets it
-    - uses: cachix/cachix-action@v17
-      with:
-        name: andyyu2004
-        skipPush: true
+        # Read only: what's pushed is chosen (infra/cache-push.sh, where a job sets
+        # NIKS3_AUTH_TOKEN; deploy-ingest.sh pushes all but the models)
+        extra-conf: |
+          extra-substituters = https://nix-cache.andyyu.io
+          extra-trusted-public-keys = nix-cache.andyyu.io-1:+SGDInebCOChTtOfCeGffBw3qjb73Sq/FSDIj4K+CbU=
+          ${{ inputs.nix-conf }}
     - run: |
         out=$(nix build --no-link --print-out-paths .#ci)
         echo "$out/bin" >> "$GITHUB_PATH"

@@ -60,9 +60,9 @@ jobs:
       - uses: ./.github/actions/pnpm
       - run: infra/deploy-ingest.sh build ${{ matrix.lang }}
         env:
-          CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          NIKS3_AUTH_TOKEN: ${{ secrets.NIKS3_AUTH_TOKEN }}
 
-  # The skolia Worker (flake.nix skolia-worker), into Cachix for deploy-web, while what it
+  # The skolia Worker (flake.nix skolia-worker), into the Nix cache for deploy-web, while what it
   # waits for runs; built once for every environment
   build-web:
     if: fromJSON(inputs.plan).worker
@@ -71,10 +71,10 @@ jobs:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
       - run: |
-          nix build --no-link --print-out-paths .#skolia-worker | cachix push andyyu2004
+          infra/cache-push.sh "$(nix build --no-link --print-out-paths .#skolia-worker)"
           infra/plan.py built worker
         env:
-          CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          NIKS3_AUTH_TOKEN: ${{ secrets.NIKS3_AUTH_TOKEN }}
 
   deploy-infra:
     if: fromJSON(inputs.plan).infra
@@ -96,7 +96,7 @@ jobs:
         run: .github/uninterruptible.sh just deploy-infra ${{ inputs.env }}
 
   # Each language's lexicon database, made whole from a build with Nix from the lexicon and
-  # venv build-ingest-image put in Cachix (just load-lexicon), so after it when it runs
+  # venv build-ingest-image put in the Nix cache (just load-lexicon), so after it when it runs
   load-lexicon:
     needs: [deploy-infra, build-ingest-image]
     if: ${{ !cancelled() && !failure() && fromJSON(inputs.plan).lexicon }}
@@ -113,7 +113,7 @@ jobs:
       - if: steps.preview.outputs.state == 'open'
         run: just load-lexicon ${{ inputs.env }}
         env:
-          CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          NIKS3_AUTH_TOKEN: ${{ secrets.NIKS3_AUTH_TOKEN }}
 
   # API-owned internal capabilities: no ingest bindings, so deploy before callers.
   deploy-internal:

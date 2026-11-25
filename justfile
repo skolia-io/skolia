@@ -190,7 +190,7 @@ lexicon-cli lang *args:
 # named for its rows, unless one already has them (infra/load-lexicon.py); just deploy-lexicon binds it.
 # A preview gets each language's entries for wordfreq's 3,000 most common words (infra/load-lexicon.py --sample).
 # A language whose build evaluates to a Nix output already loaded is skipped without building it.
-# With CACHIX_AUTH_TOKEN set (CI), a build is pushed to Cachix, so the next environment substitutes it.
+# With NIKS3_AUTH_TOKEN set (CI), a build is pushed to the Nix cache (infra/cache-push.sh), so the next environment substitutes it.
 # flags go to infra/load-lexicon.py (e2e/e2e.sh: --sample, --persist-to).
 load-lexicon env *flags:
     #!/usr/bin/env bash
@@ -202,7 +202,7 @@ load-lexicon env *flags:
       state=$(infra/load-lexicon.py state {{ env }} --lang "$lang" --built-from "$out" $sample {{ flags }})
       if [ "$state" = current ]; then echo "{{ env }}: $lang already has $out"; continue; fi
       out=$(nix build --no-link --print-out-paths "$build")
-      if [ -n "${CACHIX_AUTH_TOKEN:-}" ]; then cachix push andyyu2004 "$out"; fi
+      infra/cache-push.sh "$out"
       if [ {{ env }} != local ]; then infra/plan.py deploying {{ env }} lexicon; fi
       infra/load-lexicon.py load {{ env }} "$out/$lang.sqlite" --built-from "$out" $sample {{ flags }}
     done
@@ -264,7 +264,7 @@ deploy-lexicon env:
 
 # The skolia Worker (reader and API) with wrangler, with Terraform's BETTER_AUTH_SECRET and, if set,
 # GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and OAUTH_PROXY_SECRET from the environment (GitHub's, in CI) as its secrets.
-# It uploads the Worker Nix builds (flake.nix skolia-worker), from Cachix if CI's build-web put it there.
+# It uploads the Worker Nix builds (flake.nix skolia-worker), from the Nix cache if CI's build-web put it there.
 # It records what it deployed (infra/plan.py), which CI skips a deploy for; a changed secret needs a deploy by hand.
 deploy-web env:
     #!/usr/bin/env bash

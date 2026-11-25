@@ -21,11 +21,11 @@ reader (Vite, :5173) → wrangler dev (:8787): skolia → local workflow run (sk
 
 `wrangler dev` runs all three Workers (public API, internal API capabilities and ingest) from their configs, with local D1, R2 and Workflows in `api/.wrangler/state`, and runs each language's ingest container in Docker from the image Nix builds (`analysis/flake.nix`), which `just images` loads as `skolia-ingest-{lang}:dev` (`analysis/image/Dockerfile` is just that image). The container reaches the local bucket through the ingest Worker, as deployed (`Blobs` in `ingest/src/main.ts`). `api/.env` and `ingest/.env` set each Worker's local vars (wrangler dev loads the one beside each config; a `.dev.vars` there would replace it).
 
-Once: install Nix, direnv (with nix-direnv) and Docker, and run `direnv allow` in the repo. `.envrc` loads the flake's dev shell, which puts `just`, terraform, sops and age on PATH (`flake.nix`), and tells sops where your age key is. The images and lexicons are `x86_64-linux` builds. On a Mac that needs [Determinate Nix](https://docs.determinate.systems/), whose native Linux builder builds them: run `determinate-nixd login` (the builder needs a FlakeHub login). Everywhere, add the `andyyu2004` Cachix cache, which has everything but the models, to `/etc/nix/nix.custom.conf` (Determinate Nix) or `/etc/nix/nix.conf`, and restart the Nix daemon:
+Once: install Nix, direnv (with nix-direnv) and Docker, and run `direnv allow` in the repo. `.envrc` loads the flake's dev shell, which puts `just`, terraform, sops and age on PATH (`flake.nix`), and tells sops where your age key is. The images and lexicons are `x86_64-linux` builds. On a Mac that needs [Determinate Nix](https://docs.determinate.systems/), whose native Linux builder builds them: run `determinate-nixd login` (the builder needs a FlakeHub login). Everywhere, add the Nix cache CI pushes to, which has everything but the models, to `/etc/nix/nix.custom.conf` (Determinate Nix) or `/etc/nix/nix.conf`, and restart the Nix daemon:
 
 ```
-extra-substituters = https://andyyu2004.cachix.org
-extra-trusted-public-keys = andyyu2004.cachix.org-1:NgqnQARhcBguLqfW/INkdJd8SZjtunkNUENFbQrAwW4=
+extra-substituters = https://nix-cache.andyyu.io
+extra-trusted-public-keys = nix-cache.andyyu.io-1:+SGDInebCOChTtOfCeGffBw3qjb73Sq/FSDIj4K+CbU=
 ```
 
 `just dev` and `just e2e` install the JavaScript packages (`just install`) and build everything else they need.
@@ -37,7 +37,7 @@ just e2e                     # fresh local state, lexicon samples: the end-to-en
 ```
 
 - `just e2e` needs port 8787 free, so stop `just dev` first. Its log is `api/.wrangler/e2e.log`.
-- `just dev` and `just e2e` first run `just images`, which loads an image into Docker only when Docker doesn't have it under its Nix hash yet. The first build downloads the models (about 2 GB per language) and gets the rest from Cachix; what Cachix doesn't have needs the lexicon inputs (`scripts/fetch_inputs.sh`, which needs `wrangler login`). Both then load each language's cards lexicon into local D1 (`just load-lexicon local`), skipping one D1 already has.
+- `just dev` and `just e2e` first run `just images`, which loads an image into Docker only when Docker doesn't have it under its Nix hash yet. The first build downloads the models (about 2 GB per language) and gets the rest from the Nix cache; what the cache doesn't have needs the lexicon inputs (`scripts/fetch_inputs.sh`, which needs `wrangler login`). Both then load each language's cards lexicon into local D1 (`just load-lexicon local`), skipping one D1 already has.
 - The images are `linux/amd64` only, as wrangler dev (4.151.2) builds and pulls containers for amd64, so on Apple Silicon they run under emulation. Morfeusz is PyPI's `morfeusz2` x86-64 wheel, with SGJP's dictionary from the same release (1.99.15, 2026-06-01).
 - On a phone on the same network: `pnpm --filter @skolia/reader dev --host` and open the address it prints.
 - Without signing in you can read, but not import or make flashcards. `just dev` writes the dev OAuth client's credentials (infra/README.md), `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, to `api/.env.local` (git-ignored, loaded with `api/.env`) if it's missing, decrypting them from `secrets/dev.env` with sops and your age key. Without them only API keys sign in (`just e2e` writes one for the system user). Sign in from http://localhost:5173, the origin `BASE_URL` names.
