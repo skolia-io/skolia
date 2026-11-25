@@ -460,8 +460,7 @@ export const MAX_ANNOTATION_TEXT = 2000;
 /** Cards due now, then the new cards of as many new words as are left of today's allowance. */
 export type Due = z.output<typeof schemas.Due>;
 
-/** A language's cards to review: due now, and new words that would come up today, as newLeft
- * counts them. */
+/** A language's cards to review: due now, and new cards that would come up today. */
 export type CardCounts = Readonly<z.output<typeof schemas.CardCounts>>;
 
 /** A card after a review: when it's due next. */
