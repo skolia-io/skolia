@@ -1,9 +1,10 @@
-import { Hono, type Context, type MiddlewareHandler } from "hono";
+import { Hono, type Context, type Next } from "hono";
 import { etag } from "hono/etag";
 import { cors } from "hono/cors";
 import { HTTPException } from "hono/http-exception";
 import { langOf, type ApiError, type Lang } from "@skolia/shared/api";
 import type { Entry } from "@skolia/shared/schema";
+import type * as z from "zod";
 import * as schemas from "@skolia/shared/schemas";
 import { badRequest, describe, json, responses, scalarPage, validator } from "@skolia/util/openapi";
 import { log } from "@skolia/util/log";
@@ -33,8 +34,15 @@ const conditional = etag({
 
 const TAG = "Lexicon";
 
-const NOT_FOUND = json(schemas.ApiError, "The lexicon has no such entry");
-const VERSION_CHANGED = json(schemas.ApiError, "The requested version is no longer served");
+const VERSION_CHANGED = json(schemas.apiError("lexicon-version-changed"), "The requested version is no longer served");
+const UNAVAILABLE = json(schemas.apiError("lexicon-unavailable"), "No lexicon version is served");
+const ENTRY_NOT_FOUND = json(schemas.apiError("entry-not-found", "lexicon-unavailable"), "No such entry or no lexicon version is served");
+const INVALID_REQUEST = schemas.apiError("invalid-request");
+
+type Body<S extends { schema: z.ZodType }> = z.output<S["schema"]>;
+type ValidationError = z.output<typeof INVALID_REQUEST>;
+export type EntryLookupError = ValidationError | Body<typeof ENTRY_NOT_FOUND> | Body<typeof VERSION_CHANGED>;
+export type FormLookupError = ValidationError | Body<typeof UNAVAILABLE> | Body<typeof VERSION_CHANGED>;
 const NOT_MODIFIED = { description: "The representation matches If-None-Match" } as const;
 
 export type AppType = ReturnType<typeof createApp>;
@@ -45,14 +53,14 @@ export type { FormAudio, Found, Lexicon } from "./ports.ts";
 export function createApp(deps: Deps) {
   const responds = (specs: Parameters<typeof responses>[0]) => responses(specs, deps.checkResponses ?? false);
 
-  function versioned(langOfRequest: (c: Context<Env>) => Lang): MiddlewareHandler<Env> {
-    return async (c, next) => {
+  function versioned(langOfRequest: (c: Context<Env>) => Lang) {
+    return async (c: Context<Env>, next: Next) => {
       const lang = langOfRequest(c);
       const version = await deps.lexicon.served(lang);
       const requested = c.req.query("version");
-      const changed = () => c.json({ error: { code: "lexicon-version-changed" } } satisfies ApiError, 409);
+      const changed = () => c.json({ error: { code: "lexicon-version-changed" } } satisfies Body<typeof VERSION_CHANGED>, 409);
       if (requested !== undefined && requested !== version) return changed();
-      if (version === null) return c.json({ error: { code: "lexicon-unavailable" } } satisfies ApiError, 404);
+      if (version === null) return c.json({ error: { code: "lexicon-unavailable" } } satisfies Body<typeof UNAVAILABLE>, 404);
       c.set("version", version);
       await next();
       // Once loaded points at a new version, the loader can delete the previous rows.
@@ -89,7 +97,7 @@ export function createApp(deps: Deps) {
       responds({
         200: json(api.ResolvedEntry, "The resolved entry, first in entries"),
         304: NOT_MODIFIED,
-        404: NOT_FOUND,
+        404: ENTRY_NOT_FOUND,
         409: VERSION_CHANGED,
       }),
       versioned((c) => langOf(schemas.LemmaId.parse(c.req.param("id")))),
@@ -98,7 +106,8 @@ export function createApp(deps: Deps) {
         const { id } = c.req.valid("param");
         const lang = langOf(id);
         const found = await deps.lexicon.resolve(lang, c.var.version, id, c.req.valid("query").include);
-        if (found.entries.length === 0) return c.json({ error: { code: "entry-not-found", entry: id } } satisfies ApiError, 404);
+        if (found.entries.length === 0)
+          return c.json({ error: { code: "entry-not-found", entry: id } } satisfies Body<typeof ENTRY_NOT_FOUND>, 404);
         return c.json({ ...entries(lang, found), requestedId: id }, 200);
       },
     )
@@ -120,7 +129,7 @@ export function createApp(deps: Deps) {
       responds({
         200: json(api.FormAudio, "The form's pronunciation and recordings"),
         304: NOT_MODIFIED,
-        404: NOT_FOUND,
+        404: UNAVAILABLE,
         409: VERSION_CHANGED,
       }),
       versioned((c) => schemas.Lang.parse(c.req.param("lang"))),
@@ -140,13 +149,14 @@ export function createApp(deps: Deps) {
       }),
       validator("param", api.LemmaParam, badRequest()),
       validator("query", api.IncludeQuery, badRequest()),
-      responds({ 200: json(api.Entries, "The entries"), 304: NOT_MODIFIED, 404: NOT_FOUND, 409: VERSION_CHANGED }),
+      responds({ 200: json(api.Entries, "The entries"), 304: NOT_MODIFIED, 404: ENTRY_NOT_FOUND, 409: VERSION_CHANGED }),
       versioned((c) => schemas.Lang.parse(c.req.param("lang"))),
       conditional,
       async (c) => {
         const { lang, lemma } = c.req.valid("param");
         const found = await deps.lexicon.byLemma(lang, c.var.version, lemma, c.req.valid("query").include);
-        if (found.entries.length === 0) return c.json({ error: { code: "entry-not-found", entry: lemma } } satisfies ApiError, 404);
+        if (found.entries.length === 0)
+          return c.json({ error: { code: "entry-not-found", entry: lemma } } satisfies Body<typeof ENTRY_NOT_FOUND>, 404);
         return c.json(entries(lang, found), 200);
       },
     );

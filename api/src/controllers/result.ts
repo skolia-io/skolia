@@ -14,7 +14,7 @@ export interface Json<T, S extends ContentfulStatusCode> {
 }
 
 export type Ok<T> = Json<T, 200>;
-export type Failed<S extends ContentfulStatusCode> = Json<ApiError, S>;
+export type Failed<S extends ContentfulStatusCode, E extends ApiError["error"]> = Json<{ error: E }, S>;
 
 export interface NoContent {
   status: 204;
@@ -41,7 +41,7 @@ export function ok<T>(body: T): Ok<T> {
   return { status: 200, body };
 }
 
-export function fail<S extends ContentfulStatusCode>(status: S, error: ApiError["error"]): Failed<S> {
+export function fail<S extends ContentfulStatusCode, const E extends ApiError["error"]>(status: S, error: E): Failed<S, E> {
   return { status, body: { error } };
 }
 

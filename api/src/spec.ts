@@ -2,6 +2,7 @@
 // (openapi.ts). just openapi writes it, and openapi.test.ts checks it's current.
 // Node only: what it imports turns schemas into JSON Schema, which the Worker doesn't need.
 import type { OpenAPIV3_1 } from "openapi-types";
+import { apiError } from "@skolia/shared/schemas";
 import { specJson } from "@skolia/util/openapi-spec";
 import { createApp } from "./app.ts";
 import { API_KEY_HEADER } from "./auth.ts";
@@ -47,7 +48,7 @@ const DOCUMENTATION = {
 /** The spec, as JSON has it. Its version is filled in where it's served, with the deploy's.
  * Making it runs no route, so the app needs no deps. */
 export async function appSpec(): Promise<unknown> {
-  return await specJson(createApp({} as Deps), DOCUMENTATION);
+  return await specJson(createApp({} as Deps), DOCUMENTATION, apiError("invalid-request"));
 }
 
 if (import.meta.main) {

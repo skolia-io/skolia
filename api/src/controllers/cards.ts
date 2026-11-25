@@ -1,3 +1,4 @@
+import type { EndpointFailure, deleteCardErrors, makeCardErrors, reviewErrors, setWordStateErrors } from "../endpoint-errors.ts";
 // Flashcards, reviews and settings, which live in each user's Durable Object, and
 // the lexicon entries the cards show.
 import {
@@ -31,7 +32,7 @@ import type { DocumentLookup } from "../ports/documents.ts";
 import type { Lexicon } from "../ports/lexicon.ts";
 import type { UserCards, UserSettings } from "../ports/users.ts";
 import { noSuchDocument } from "./documents.ts";
-import { NO_CONTENT, fail, ok, type Failed, type Json, type NoContent, type Ok } from "./result.ts";
+import { NO_CONTENT, fail, ok, type Json, type NoContent, type Ok } from "./result.ts";
 
 /** Most cards one due list has: a session's worth. */
 const MAX_DUE = 200;
@@ -57,7 +58,7 @@ export async function review(
   deps: { users: UserCards } & Clock,
   user: Identity,
   request: ReviewRequest,
-): Promise<Ok<Reviewed> | Failed<400 | 404 | 409>> {
+): Promise<Ok<Reviewed> | EndpointFailure<typeof reviewErrors, 400 | 404 | 409>> {
   if (Date.parse(request.at) > deps.now().getTime() + MAX_CLOCK_SKEW_MS) return fail(400, { code: "future-review" });
   const outcome = await deps.users.review(user.id, request, timestamp(deps.now()));
   switch (outcome.kind) {
@@ -90,7 +91,7 @@ export async function makeCard(
   deps: { users: UserCards; documents: DocumentLookup } & Clock,
   user: Identity,
   card: NewCard,
-): Promise<Json<CardMade, 201> | Ok<CardMade> | Failed<404 | 409>> {
+): Promise<Json<CardMade, 201> | Ok<CardMade> | EndpointFailure<typeof makeCardErrors, 404 | 409>> {
   if (!(await seesData(deps, user, card))) return noSuchDocument();
   const made = await deps.users.makeCard(user.id, card, timestamp(deps.now()));
   switch (made.kind) {
@@ -122,12 +123,16 @@ export async function setWordState(
   user: Identity,
   lemmaId: LemmaId,
   state: WordState,
-): Promise<NoContent | Failed<404>> {
+): Promise<NoContent | EndpointFailure<typeof setWordStateErrors, 404>> {
   return (await deps.users.setWordState(user.id, lemmaId, state)) ? NO_CONTENT : fail(404, { code: "word-not-found" });
 }
 
 /** Any kind of card, with its reviews. */
-export async function deleteCard(deps: { users: UserCards }, user: Identity, cardId: CardId): Promise<NoContent | Failed<404>> {
+export async function deleteCard(
+  deps: { users: UserCards },
+  user: Identity,
+  cardId: CardId,
+): Promise<NoContent | EndpointFailure<typeof deleteCardErrors, 404>> {
   return (await deps.users.deleteCard(user.id, cardId)) ? NO_CONTENT : fail(404, { code: "card-not-found" });
 }
 

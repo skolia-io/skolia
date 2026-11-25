@@ -1,3 +1,4 @@
+import type { EndpointFailure, addAnnotationsErrors, deleteAnnotationErrors, documentErrors } from "../endpoint-errors.ts";
 // An entry's annotations: what its user attached to ranges of its text (lib/ts/annotations.ts),
 // seen by whoever sees the entry.
 import type * as z from "zod";
@@ -33,7 +34,7 @@ export async function list(
   viewer: Identity | null,
   filter: AnnotationFilter,
   page: PageRequest<AnnotationKey>,
-): Promise<Ok<Paginated<Annotation, AnnotationKey>> | Failed<404>> {
+): Promise<Ok<Paginated<Annotation, AnnotationKey>> | EndpointFailure<typeof documentErrors, 404>> {
   const record = await findDocument(deps, id, viewer);
   if (!record) return noSuchDocument();
   return ok(await deps.documents.annotations(record.id, record.user, filter, page));
@@ -45,7 +46,7 @@ export async function add(
   user: Identity,
   id: string,
   body: z.output<typeof schemas.NewAnnotations>,
-): Promise<Ok<Annotated> | Failed<400 | 404 | 409>> {
+): Promise<Ok<Annotated> | EndpointFailure<typeof addAnnotationsErrors, 400 | 404 | 409>> {
   const record = await ownEntry(deps, id, user);
   if (!record) return noEntry();
   const length = await textLength(deps, record.id);
@@ -65,7 +66,12 @@ export async function add(
   }
 }
 
-export async function remove(deps: AnnotationDeps, user: Identity, id: string, annotation: AnnotationId): Promise<NoContent | Failed<404>> {
+export async function remove(
+  deps: AnnotationDeps,
+  user: Identity,
+  id: string,
+  annotation: AnnotationId,
+): Promise<NoContent | EndpointFailure<typeof deleteAnnotationErrors, 404>> {
   const record = await ownEntry(deps, id, user);
   if (!record) return noEntry();
   return (await deps.documents.unannotate(record.id, user.id, annotation)) ? NO_CONTENT : fail(404, { code: "annotation-not-found" });
@@ -84,6 +90,6 @@ async function ownEntry(deps: { documents: DocumentLookup }, id: string, user: I
   return record?.user === user.id ? record : null;
 }
 
-function noEntry(): Failed<404> {
+function noEntry(): Failed<404, { code: "document-not-imported" }> {
   return fail(404, { code: "document-not-imported" });
 }

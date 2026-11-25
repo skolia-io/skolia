@@ -1,6 +1,7 @@
 // The spec lexicon-api/openapi.json holds, made from the marks on the routes' middleware
 // (@skolia/util/openapi). just openapi writes it, and spec.test.ts checks it's current.
 import type { OpenAPIV3_1 } from "openapi-types";
+import { apiError } from "@skolia/shared/schemas";
 import { specJson } from "@skolia/util/openapi-spec";
 import { createApp, type Deps } from "./app.ts";
 import { LICENSE } from "./licence.ts";
@@ -25,7 +26,7 @@ const DOCUMENTATION = {
 
 /** The spec, as JSON has it. Making it runs no route, so the app needs no deps. */
 export async function lexiconSpec(): Promise<unknown> {
-  return await specJson(createApp({} as Deps), DOCUMENTATION);
+  return await specJson(createApp({} as Deps), DOCUMENTATION, apiError("invalid-request"));
 }
 
 if (import.meta.main) {
