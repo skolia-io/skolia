@@ -319,7 +319,7 @@
             touch $out
           '';
 
-      # What deploy-ingest pushes to the Cachix cache: an image's build but the models, which
+      # What deploy-ingest pushes to the Nix cache: an image's build but the models, which
       # would fill it. Nothing here references them (a push takes a path's whole closure).
       cacheable =
         lang:
